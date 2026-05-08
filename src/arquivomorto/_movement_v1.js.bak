@@ -1,0 +1,1023 @@
+// ═══════════════════════════════════════════════════════════════════
+// movement.js — Sistema de posicionamento de quadra (refatorado)
+// ═══════════════════════════════════════════════════════════════════
+//
+// RESPONSABILIDADE ÚNICA: onde o jogador deve estar em cada momento.
+//
+// NÃO decide como bater → ai.js / aiDecideShot
+// NÃO decide qual golpe → evChooseShot
+// NÃO gerencia stamina, spin, física de bola
+//
+// Para ativar: USE_NEW_MOVEMENT = true em constants.js
+// Em game.js: if (USE_NEW_MOVEMENT) updatePlayerMovement(p, gs, dt);
+//             else updatePlayer(p, gs, dt);
+// ═══════════════════════════════════════════════════════════════════
+
+import { COURT, THRESHOLDS, PLAYER_CFG, STAMINA, INERTIA, MOVEMENT } from './constants.js';
+import { clamp, dist2 } from './math.js';
+import { predictTrajectory } from './physics.js';
+
+// ──────────────────────────────────────────────────────────────────
+// HELPERS DE ESTILO
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Posição Y de home base para um jogador.
+ * GARANTIA: sempre retorna |Y| >= COURT.halfL (nunca dentro da quadra).
+ *
+ * Bug central do sistema antigo: sem esse clamp, AGG_BASELINER com momentum
+ * alto calculava baselineY = 12.14m < halfL (11.885m) → jogador esperava
+ * DENTRO da quadra e avançava cada vez mais sem nunca recuar.
+ */
+export function getStyleBaselineY(player) {
+  const style = player.styleData ?? player.style;
+  const BEHIND = 0.70; // buffer mínimo atrás da baseline
+
+  // Menor offset = mais atrás. Maior offset = mais perto da baseline (agressivo).
+  const styleOffsets = {
+    AGG_BASELINER:          0.40,
+    CTR_PUNCHER:            0.30,
+    ALL_COURT:              0.50,
+    SRV_VOL:                0.80,
+    RETRIEVER:              0.20,
+    GRINDER:                0.20,
+    BIG_SERVER:             0.30,
+    POWER_BASELINER:        0.50,
+    TACTICAL_TECHNICIAN:    0.40,
+    NET_SPECIALIST:         0.60,
+    MOMENTUM_PLAYER:        0.45,
+    TAKEALLRISK:            0.50,
+  };
+
+  const offset = styleOffsets[style?.id] ?? 0.40;
+
+  // Estilos defensivos NÃO recuam mais sob pressão — ficar atrás É a arma deles.
+  const retreatFactor =
+    style?.id === 'RETRIEVER'   ? 0.35 :
+    style?.id === 'CTR_PUNCHER' ? 0.50 :
+    style?.id === 'GRINDER'     ? 0.50 : 1.0;
+
+  const mom    = player.ctx?.momentum ?? 0.5;
+  const dynOff = offset + clamp((0.5 - mom) * 1.2 * retreatFactor, -0.3, 0.6);
+
+  const rawY     = player.side * (COURT.halfL + BEHIND - dynOff);
+  const minDepth = player.side * COURT.halfL;
+
+  // CLAMP CRÍTICO: nunca entra na quadra
+  return player.side > 0
+    ? Math.max(rawY, minDepth + 0.05)
+    : Math.min(rawY, minDepth - 0.05);
+}
+
+/**
+ * Quanto ATRÁS do optimalHitPoint o jogador prefere bater.
+ * Define "onde bater", não "onde esperar" — são coisas diferentes.
+ */
+function getStyleDepthOffset(player) {
+  const id = player.styleData?.id ?? player.style?.id;
+  const offsets = {
+    RETRIEVER:              1.0,
+    BIG_SERVER:             1.0,
+    CTR_PUNCHER:            0.4,
+    AGG_BASELINER:          0.4,
+    ALL_COURT:              0.6,
+    GRINDER:                0.8,
+    POWER_BASELINER:        0.5,
+    TACTICAL_TECHNICIAN:    0.5,
+    SRV_VOL:                0.0,
+    NET_SPECIALIST:         0.0,
+    TAKEALLRISK:            0.3,
+    MOMENTUM_PLAYER:        0.3,
+  };
+  return offsets[id] ?? 0.6;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// FSM — MÁQUINA DE ESTADOS
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * 4 estados: WAIT | MOVE | HIT | RECOVER
+ *
+ * WAIT    → bola no lado adversário. Posiciona no bisector. Não avança.
+ * MOVE    → bola vindo. Corre para optimalHitPoint com urgência proporcional.
+ * HIT     → chegou com margem positiva. Planta. Prepara o golpe.
+ * RECOVER → acabou de bater. Retorna imediatamente ao bisector de baseline.
+ */
+function getMovementState(player, gs) {
+  const justHit = gs.ball.lastHitBy === player.id;
+
+  // 1. Acabou de bater → RECOVER imediatamente (prioridade máxima)
+  if (justHit) return 'RECOVER';
+
+  const ball = gs.ball;
+
+  // ── Detecção de direção real da bola ─────────────────────────────────────
+  // vel.y é um proxy ruim para bolas que quicaram no lado adversário e voltam:
+  // logo após o quique, vel.y ainda aponta "para frente" por alguns frames
+  // enquanto a bola desacelera — o jogador fica em WAIT quando deveria ir buscar.
+  //
+  // Fix: usar ballOnMySide OR ballComingToMe (vel.y), mas TAMBÉM checar se a bola
+  // quicou no lado adversário e o landPoint previsto cai no nosso lado.
+  // Isso cobre drops curtos, slices mortos, e bolas que quicam perto da rede
+  // e voltam — o jogador precisa ir buscar imediatamente após o quique.
+  const ballComing =
+    ball.inFlight &&
+    ((player.side > 0 && ball.vel.y > 0) ||
+     (player.side < 0 && ball.vel.y < 0));
+
+  const ballOnMySide =
+    Math.sign(ball.pos.y) === player.side ||
+    Math.abs(ball.pos.y) < 0.5;
+
+  // Bola quicou no lado adversário mas vai voltar para o nosso lado?
+  // Casos: drop shot devolvido, slice curto, lob curto, bola lenta retornada.
+  // Detectar pela posição atual (campo adversário) + velocidade revertida OU
+  // pelo fato de já ter quicado e estar descendo de volta.
+  const bouncedOnOppSide = (ball.bounceCount ?? 0) >= 1
+    && Math.sign(ball.pos.y) !== player.side
+    && Math.abs(ball.pos.y) > 0.5;
+
+  // Bola que quicou no lado adversário e está se movendo de volta para nós
+  // OU ainda está no ar voltando (vel.y revertido por gravidade/spin)
+  const isReturnBounce = bouncedOnOppSide && (
+    // Velocidade já reverteu — bola claramente voltando
+    (player.side > 0 && ball.vel.y > 0) ||
+    (player.side < 0 && ball.vel.y < 0) ||
+    // Velocidade ainda não reverteu mas bola está baixa (quicou recentemente)
+    // e lenta — vai voltar em breve. Threshold conservador: só ativa se
+    // a bola está dentro de 5m da rede (drop/slice curto típico).
+    (Math.abs(ball.pos.y) < 5.0 && ball.pos.z < 1.5)
+  );
+
+  // 2. Bola vindo, no meu lado, ou voltando após quique adversário → MOVE ou HIT
+  if (ballComing || ballOnMySide || isReturnBounce) {
+    const margin  = player._arrivalMargin ?? -1;
+    const hitTgt  = player._hitTarget ?? ball.pos;
+    const d       = dist2(player.pos, hitTgt);
+    const reach   = player.reach ?? 0.85;
+    const bounced = (ball.bounceCount ?? 0) >= 1;
+
+    // HIT: chegou cedo, bola já quicou (pode bater).
+    // CRÍTICO: também exige que a bola real esteja próxima — evita falso HIT
+    // quando o _hitTarget é do pré-quique (posição obsoleta perto do jogador)
+    // mas a bola acabou de quicar e ainda está a vários metros de distância.
+    const distToBall = Math.sqrt(
+      (ball.pos.x - player.pos.x) ** 2 + (ball.pos.y - player.pos.y) ** 2
+    );
+    // ── BUG FIX: stale _hitTarget consistency check ──────────────────────────
+    // predictTrajectory não simula o "dead-ball kill" (vel *= 0.30) aplicado
+    // em handleGroundBounce para drop shots. Para bolas lentas/drops, o ponto
+    // ótimo previsto cai perto da baseline do jogador (~0.07 m de distância),
+    // enquanto a bola real está a 2.6 m — inHitWindow dispara erroneamente.
+    //
+    // Guard: se a bola real está muito mais longe do que o hitTarget indica
+    // (distToBall > d * 4 + reach), o hitTarget é obsoleto — não entrar em HIT.
+    // Em cenário real o jogador está perto TANTO do hitTarget quanto da bola.
+    // Ratio 37x (bug: d=0.07m, distToBall=2.62m) vs 1-3x (normal).
+    const ballReachConsistent = distToBall <= d * 4.0 + reach;
+    const inHitWindow = d < reach * 1.5 && margin > 0.05 && bounced
+        && distToBall < reach * 3.5
+        && ballReachConsistent;
+    return inHitWindow ? 'HIT' : 'MOVE';
+  }
+
+  // 3. Bola no lado adversário → WAIT
+  return 'WAIT';
+}
+
+// ──────────────────────────────────────────────────────────────────
+// CÁLCULO DE TARGETS
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * WAIT target: bisector do lado atacado + baselineY (nunca avança).
+ *
+ * X: lastShotX * 0.20 — cobre DTL sem abandonar o CC.
+ *    Fórmula validada no sistema antigo. Manter.
+ *
+ * Y (BASE): NUNCA avança enquanto em WAIT. Fica onde está ou recua à baseline.
+ * Y (TRANSITION): mantém a posição de mid-court — não recua à baseline.
+ *    O jogador acabou de dar o approach shot e está avançando para a rede.
+ *    Puxar de volta para a baseline nesse momento quebraria toda a subida.
+ */
+function computeWaitTarget(player, gs) {
+  const opp        = gs.players?.find(p => p.id !== player.id);
+  const lastShotX  = player.ctx?._lastShotX ?? 0;
+  const courtMode  = player.ctx?.courtMode ?? 'BASE';
+  const isNetApproach = courtMode === 'TRANSITION' || courtMode === 'NET';
+
+  // Bisector com 20% de bias para o lado atacado + 10% da posição do adversário
+  const bisectorX = clamp(
+    lastShotX * 0.20 + (opp?.pos.x ?? 0) * 0.10,
+    -1.5, 1.5
+  );
+
+  // Antecipação por padrão de rally (FASE 1.4 do sistema antigo — preservar)
+  // Não aplica durante approach — o jogador tem um objetivo diferente: a rede.
+  let finalX = bisectorX;
+  if (!isNetApproach && player.styleData?.id !== 'TAKEALLRISK' && opp) {
+    const hist     = opp.ctx?.patternHistory ?? [];
+    const minHist  = (player.styleData?.id === 'RETRIEVER' || player.styleData?.id === 'CTR_PUNCHER') ? 2 : 3;
+    if (hist.length >= minHist) {
+      const last = hist.slice(-minHist);
+      if (last.every(h => h.dir === last[0].dir) && last[0].dir !== 0) {
+        const sid = player.styleData?.id;
+        const antMult = (sid === 'RETRIEVER' || sid === 'CTR_PUNCHER') ? 1.5
+                      : sid === 'MOMENTUM_PLAYER' ? 0.5 : 1.0;
+        finalX = clamp(finalX + last[0].dir * 0.25 * antMult, -2.5, 2.5);
+      }
+    }
+  }
+
+  // ── Coach POSITIONING_HINT: bias lateral de posicionamento base ──
+  // Gravado em player._positionBias por CoachInfluencer (applyCoachInfluence).
+  // Aplicado no WAIT target para que o jogador se posicione lateralmente
+  // conforme a instrução do técnico (cobrir FH / cobrir BH).
+  if (player._positionBias && Math.abs(player._positionBias) > 0.01) {
+    finalX = clamp(finalX + player._positionBias, -2.5, 2.5);
+  }
+
+  // ── Y por court mode ──────────────────────────────────────────────────────
+  let safeY;
+
+  if (isNetApproach) {
+    // TRANSITION / NET: jogador avança para a rede.
+    // Target Y = meio entre posição atual e netY — carrega para frente
+    // sem teletransportar. Quanto mais perto da rede, mais se aproxima de netY.
+    const netY     = player.side * 2.8;
+    const midY     = player.side * (COURT.halfL * 0.40); // ~4.75m da rede — sweet spot volley
+    // Durante TRANSITION: alvo é o mid-court ofensivo (não netY ainda — espera atNet=true)
+    // Durante NET (atNet já true): o basePos.y=netY já cuida disso, então manter pos atual
+    safeY = courtMode === 'NET' ? netY : midY;
+  } else {
+    // BASE: nunca avança enquanto em WAIT
+    const baselineY = getStyleBaselineY(player);
+    safeY = player.side > 0
+      ? Math.max(baselineY, player.pos.y)  // side>0: maior Y = mais longe da rede
+      : Math.min(baselineY, player.pos.y); // side<0: menor Y = mais longe da rede
+  }
+
+  return { x: finalX, y: safeY };
+}
+
+/**
+ * MOVE target: onde a bola estará na altura ideal para bater.
+ * Reutiliza predictTrajectory() — não reinventa.
+ *
+ * O depthOffset de estilo é aplicado aqui: jogador vai para
+ * ATRÁS do optimalHitPoint (onde prefere bater por estilo).
+ */
+function computeMoveTarget(player, gs) {
+  const airDens     = gs.environment?.airDensity ?? 1.2;
+  const baselineY   = getStyleBaselineY(player);
+  const depthOffset = getStyleDepthOffset(player);
+  const outerX      = COURT.halfW + THRESHOLDS.outerPlayerX;
+  const outerY      = COURT.halfL + THRESHOLDS.outerPlayerY;
+
+  // ── BOLA LENTA: override determinístico ───────────────────────────────────
+  // Se a bola já quicou e está muito lenta, a predictTrajectory falha — a simulação
+  // para cedo (vel < 0.4), não acha optimalHitPoint, e o jogador congela.
+  // Solução direta: ignorar predição e ir na posição atual da bola.
+  // Condições: quicou + lenta (< ~18 km/h) + ainda em jogo (não rolando no chão parada)
+  // t: null → sprint máximo, sem cálculo de margem.
+  const ballSpd3dSlow = Math.sqrt(gs.ball.vel.x**2 + gs.ball.vel.y**2 + gs.ball.vel.z**2);
+  const isSlowBounced = (gs.ball.bounceCount ?? 0) >= 1
+    && ballSpd3dSlow < 8.3   // < ~30 km/h — perseguição direta
+    && ballSpd3dSlow > 0.05  // ainda se movendo (não totalmente parada)
+    && gs.ball.inFlight;     // ainda em jogo
+
+  if (isSlowBounced) {
+    return {
+      x: clamp(gs.ball.pos.x, -outerX + 0.2, outerX - 0.2),
+      y: clamp(gs.ball.pos.y, -outerY, outerY),
+      t: null, // sprint — sem margem calculada
+    };
+  }
+
+  // isNearBounce: bola já quicou E jogador está perto E bola ainda vem em direção ao jogador.
+  // (evita mandar jogador recuar com a bola já na frente)
+  // BUG FIX: se a bola já quicou e está indo para LONGE do jogador (drop shot com backspin
+  // que voltou, ou bola que já passou), isNearBounce deve ser falso — o jogador precisa
+  // predizer onde a bola vai parar com predY=baselineY, não travar no pos.y atual e parar.
+  const alreadyBounced   = (gs.ball.bounceCount ?? 0) >= 1;
+  const distToBallY      = Math.abs(gs.ball.pos.y - player.pos.y);
+  // ball.vel.y positivo = bola indo para +Y (Nakamura). Delacroix tem side=-1.
+  // Se (ball.vel.y * player.side) > 0 → bola indo para o lado do jogador → vindo para ele.
+  // Se (ball.vel.y * player.side) < 0 → bola indo para longe → NÃO é nearBounce.
+  const ballComingToward = (gs.ball.vel.y * player.side) > 0;
+  const isNearBounce     = alreadyBounced && distToBallY < 2.5 && ballComingToward;
+  const predY            = (player.atNet || isNearBounce) ? player.pos.y : baselineY;
+
+  const { landPoint, optimalHitPoint, crossPoint } = predictTrajectory(
+    gs.ball, predY, 2.8, airDens, gs.courtPhysics
+  );
+
+  // Modo desesperado: margem muito negativa → ir direto ao landPoint sem offset
+  const currentMargin = player._arrivalMargin ?? 0;
+  const isDesperate   = currentMargin < -0.30;
+
+  if (isDesperate && landPoint) {
+    return {
+      x: clamp(landPoint.x, -outerX + 0.2, outerX - 0.2),
+      y: clamp(landPoint.y + player.side * 0.2, -outerY, outerY),
+      t: landPoint.t,
+    };
+  }
+
+  if (optimalHitPoint) {
+    // Threshold além da quadra: pós-quique pode perseguir até outerY
+    const optHitThresh  = alreadyBounced ? outerY : COURT.halfL + 0.5;
+    const optBeyond     = player.side > 0
+      ? optimalHitPoint.y > optHitThresh
+      : optimalHitPoint.y < -optHitThresh;
+
+    if (optBeyond && landPoint) {
+      return {
+        x: clamp(landPoint.x, -outerX + 0.2, outerX - 0.2),
+        y: clamp(landPoint.y + player.side * 0.3, -outerY, outerY),
+        t: landPoint.t,
+      };
+    }
+
+    // Detectar bola lenta (slice morto, drop) → não recua tanto
+    const ballSpd = Math.sqrt(gs.ball.vel.x**2 + gs.ball.vel.y**2 + gs.ball.vel.z**2);
+    const isSlowBall = ballSpd < 8.0;
+
+    let hitY = optimalHitPoint.y;
+    if (!isNearBounce && !isSlowBall) {
+      hitY = hitY + player.side * depthOffset;
+    }
+
+    // Ruído perceptivo (preservado do sistema antigo)
+    const bounceVar   = gs.courtMods?.bounceVariance ?? 0;
+    // consistFrac derivado de controle — errorMult foi removido como mod
+    const _ctrlForNoise = (player.attrs?.controle ?? 60) / 100;
+    const consistFrac   = _ctrlForNoise * 0.9; // controle=60→0.54 | controle=90→0.81
+    const noiseScale  = ((1 - (player.stamina ?? 1)) * 0.18)
+                      + ((player.ctx?.rallyPressure ?? 0) * 0.45)
+                      + bounceVar * (1 - consistFrac) * 0.8;
+    let hitX = optimalHitPoint.x;
+    if (noiseScale > 0.04) {
+      const u1 = Math.max(1e-9, Math.random()), u2 = Math.random();
+      hitX += Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * noiseScale * 0.65;
+    }
+
+    return {
+      x: clamp(hitX, -outerX + 0.2, outerX - 0.2),
+      y: clamp(hitY, -outerY, outerY),
+      t: optimalHitPoint.t,
+    };
+  }
+
+  if (landPoint) {
+    const ballSpd3d  = Math.sqrt(gs.ball.vel.x**2 + gs.ball.vel.y**2 + gs.ball.vel.z**2);
+    const isSlowFb   = ballSpd3d < 8.0;
+    const isDeepBall = Math.abs(landPoint.y) > COURT.halfL * 0.78;
+    const prefDeep   = (player.styleData?.id === 'RETRIEVER' || player.styleData?.id === 'BIG_SERVER');
+    const prefFwd    = player.styleData?.id === 'SRV_VOL';
+    const behind     = isDeepBall
+      ? (prefDeep ? 1.2 : prefFwd ? 0.2 : 0.8)
+      : isSlowFb
+      ? (prefDeep ? 0.5 : 0.2)
+      : (prefDeep ? 1.8 : prefFwd ? 0.3 : 1.0);
+    return {
+      x: clamp(landPoint.x, -outerX + 0.2, outerX - 0.2),
+      y: clamp(landPoint.y + player.side * behind, -outerY, outerY),
+      t: landPoint.t,
+    };
+  }
+
+  if (crossPoint && crossPoint.z < 2.8) {
+    return {
+      x: clamp(crossPoint.x, -outerX + 0.2, outerX - 0.2),
+      y: player.pos.y,
+      t: crossPoint.t,
+    };
+  }
+
+  // Fallback: seguir a bola
+  return {
+    x: clamp(gs.ball.pos.x, -outerX + 0.3, outerX - 0.3),
+    y: player.pos.y,
+    t: null,
+  };
+}
+
+/**
+ * RECOVER target após bater a bola.
+ *
+ * BASE: bisector calculado UMA VEZ no momento do golpe (snapshot) → baseline.
+ *   CRÍTICO: NÃO recalcular frame-a-frame. Snapshot guardado em player._recoverTarget.
+ *
+ * TRANSITION: após o approach shot, avançar para a zona de volley (mid-court ofensivo).
+ *   O jogador não volta para a baseline — vai em direção à rede para o próximo volley.
+ *   Target Y = midCourtY (~40% da quadra da rede = posição ideal de volley de aproximação).
+ *
+ * NET: atNet já é true — target = posição de rede (gerenciado por basePos.y = netY).
+ */
+function computeRecoverTarget(player) {
+  const lastShotX  = player.ctx?._lastShotX ?? 0;
+  const bisectorX  = clamp(lastShotX * 0.20, -1.5, 1.5);
+  const courtMode  = player.ctx?.courtMode ?? 'BASE';
+
+  if (courtMode === 'TRANSITION') {
+    // Approach shot: avança para a zona ofensiva de volley
+    // midCourtY ~ 4.0–5.0m da rede = posição de intercepção ideal antes de confirmar NET
+    const approachTargetY = player.side * (COURT.halfL * 0.38); // ~4.5m da rede
+    // X: bisector de approach — cobrir o ângulo mais provável de retorno do adversário
+    const approachX = clamp(bisectorX, -2.0, 2.0);
+    return { x: approachX, y: approachTargetY };
+  }
+
+  if (courtMode === 'NET') {
+    // Jogador já consolidou rede — recovery mantém posição de volley, não recua à baseline
+    const netY = player.side * 2.8;
+    const netX = clamp(bisectorX, -2.0, 2.0);
+    return { x: netX, y: netY };
+  }
+
+  // BASE: retorna ao bisector da baseline
+  const baselineY = getStyleBaselineY(player);
+  // ── Coach POSITIONING_HINT: bias lateral também no recover ──
+  const biasX = player._positionBias ?? 0;
+  return { x: clamp(bisectorX + biasX, -2.0, 2.0), y: baselineY };
+}
+
+// ──────────────────────────────────────────────────────────────────
+// VELOCIDADES POR ESTADO
+// ──────────────────────────────────────────────────────────────────
+
+/** WAIT: velocidade por court mode.
+ *  BASE: suave — só reposicionamento lateral, sem urgência.
+ *  TRANSITION: moderada — jogador está avançando para posição de volley, não descansando.
+ */
+function getWaitSpeed(player, physMaxSpd) {
+  const courtMode = player.ctx?.courtMode ?? 'BASE';
+  if (courtMode === 'TRANSITION') return physMaxSpd * 0.70;
+  return physMaxSpd * 0.35;
+}
+
+/**
+ * MOVE: velocidade contínua baseada no tempo disponível.
+ * dist / (margin * 0.85) = chega com 15% de sobra.
+ * Sem margin: sprint máximo.
+ */
+function getMoveSpeed(player, target, arrivalMargin, physMaxSpd) {
+  const d = dist2(player.pos, target) || 0;
+  if (arrivalMargin <= 0) return physMaxSpd;
+  const needed = d / (arrivalMargin * 0.85);
+  return clamp(needed, physMaxSpd * MOVEMENT.urgencyWalk, physMaxSpd);
+}
+
+/**
+ * RECOVER: escalonada pela distância.
+ * Quanto mais adiantado estava (bola afastada), mais urgente o retorno.
+ * Faixa BASE: ~30% perto (< 0.5m) → ~78% longe (> 3.5m)
+ *
+ * TRANSITION: approach para a rede — sprint máximo.
+ * O jogador acabou de bater o approach shot e precisa chegar à posição de volley
+ * antes que o adversário devolva. Hesitar aqui é perder o ponto.
+ */
+function getRecoverSpeed(player, recoverTarget, physMaxSpd) {
+  const courtMode = player.ctx?.courtMode ?? 'BASE';
+
+  if (courtMode === 'TRANSITION') {
+    // Approach: corre para a rede em velocidade máxima
+    return physMaxSpd * 0.95;
+  }
+
+  const d = dist2(player.pos, recoverTarget) || 0;
+  if (d < 0.5) return physMaxSpd * 0.30;
+  const frac = clamp(0.30 + (d - 0.5) / 3.0 * 0.48, 0.30, 0.78);
+  return physMaxSpd * frac;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// SUAVIZAÇÃO DE TARGET
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Blend entre rawTarget e _stableTarget para evitar samba de predição.
+ * Alpha por ESTADO (não por timer) — mais limpo e previsível.
+ */
+function applyTargetSmoothing(player, rawTarget, state, arrivalMargin) {
+  if (!player._stableTarget) {
+    player._stableTarget = { ...rawTarget };
+    return rawTarget;
+  }
+
+  const courtMode = player.ctx?.courtMode ?? 'BASE';
+  const isApproach    = courtMode === 'TRANSITION';
+  const isNetApproach = courtMode === 'TRANSITION' || courtMode === 'NET';
+
+  const alpha =
+    state === 'RECOVER' ? (isNetApproach ? 0.85 : 0.60) :  // NET/APPROACH: snap rápido para posição de rede
+    state === 'HIT'     ? 0.05 :
+    state === 'WAIT'    ? (isNetApproach ? 0.60 : 0.25) :  // NET WAIT: mantém posição de rede firme
+    (arrivalMargin < 0.15 ? 0.90 : 0.50); // MOVE: urgente vs confortável
+
+  player._stableTarget.x += (rawTarget.x - player._stableTarget.x) * alpha;
+  player._stableTarget.y += (rawTarget.y - player._stableTarget.y) * alpha;
+  return { ...player._stableTarget };
+}
+
+// ──────────────────────────────────────────────────────────────────
+// CASOS ESPECIAIS (preservados do sistema antigo)
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Serve return: preservado INTACTO do ai.js.
+ * Timing específico de saque funciona bem — não alterar.
+ */
+function handleServeReturn(player, gs, dt) {
+  const returnY = player.side * (COURT.halfL + 1.5);
+  const outerY  = COURT.halfL + THRESHOLDS.outerPlayerY;
+  const outerX  = COURT.halfW + THRESHOLDS.outerPlayerX;
+
+  const ballDistFromNet = Math.abs(gs.ball.pos.y);
+  const ballOnServerFar = Math.sign(gs.ball.pos.y) !== player.side
+                       && ballDistFromNet > COURT.serviceLineY;
+
+  if (ballOnServerFar) {
+    // Split-step: congela levemente enquanto lê o saque
+    player.vel.x *= 0.55;
+    player.vel.y *= 0.55;
+    player.pos.x += player.vel.x * dt;
+    player.pos.y += player.vel.y * dt;
+    return;
+  }
+
+  // ── REACTION WINDOW — hesitação sutil baseada na velocidade do saque ───────
+  // Saque rápido = receiver sai mais devagar nos primeiros frames (hesitação de leitura).
+  // NÃO bloqueia predictTrajectory, NÃO move para lado errado.
+  // Apenas um multiplicador de velocidade de saída: 240km/h → 45% da vel normal
+  // nos primeiros 2-3 frames. Efeito: chega ~0.05-0.10m mais tarde — o suficiente
+  // para 1º saque wide/T de elite apertar o retorno sem criar aces artificiais.
+  //
+  //  240 km/h → 3 frames, speedMult inicial 0.45
+  //  210 km/h → 2 frames, speedMult inicial 0.60
+  //  185 km/h → 1 frame,  speedMult inicial 0.75
+  //  <165 km/h → sem hesitação
+  if ((player._readPauseFrames ?? 0) === 0 && !player._readDelayInit) {
+    const sKmh    = gs.ball._serveExitKmh ?? 0;
+    const retMult = player.mods?.returnMult ?? 0.82;
+    // Threshold 165km/h: 2º saque típico sem penalidade.
+    // Divisor 30: 240km/h → 2.5 → max 3 frames. Muito conservador.
+    const rawFrames = Math.max(0, (sKmh - 165) / 30);
+    const skillMult = clamp(1.25 - retMult * 0.25, 0.80, 1.10);
+    player._readPauseFrames = Math.round(rawFrames * skillMult);
+    player._readDelayInit   = true;
+  }
+
+  // Durante a hesitação: executa predictTrajectory normalmente,
+  // mas limita a velocidade de saída para 45-75% dependendo do frame restante.
+  let _reactionSpeedCap = 1.0;
+  if ((player._readPauseFrames ?? 0) > 0) {
+    player._readPauseFrames--;
+    // Mais frames restantes = mais hesitação; decai linearmente.
+    // frame 2: 45% | frame 1: 60% | frame 0 (último): 75%
+    const framesLeft = player._readPauseFrames;
+    _reactionSpeedCap = clamp(0.75 - framesLeft * 0.15, 0.45, 0.75);
+    if (player._readPauseFrames === 0) player._readDelayInit = false;
+  }
+
+  const airDens  = gs.environment?.airDensity ?? 1.2;
+  const { landPoint: serveLand, optimalHitPoint: serveOpt } = predictTrajectory(
+    gs.ball, returnY, 2.8, airDens, gs.courtPhysics
+  );
+
+  const serveLandAbsY   = serveLand ? Math.abs(serveLand.y) : COURT.halfL;
+  const serveIsShort    = serveLandAbsY < COURT.halfL * 0.72;
+  const serveIsVeryShort = serveLandAbsY < COURT.halfL * 0.50;
+  const nearNet         = player.side * 1.5;
+  const deepCap         = returnY;
+
+  let target = { x: player.pos.x, y: returnY };
+
+  if (serveOpt) {
+    target.x = clamp(serveOpt.x, -outerX + 0.2, outerX - 0.2);
+    target.y = player.side > 0
+      ? clamp(serveOpt.y, nearNet, deepCap)
+      : clamp(serveOpt.y, deepCap, nearNet);
+  } else if (serveIsVeryShort && serveLand) {
+    const rushY = serveLand.y + player.side * 0.5;
+    target.x = clamp(serveLand.x, -outerX + 0.2, outerX - 0.2);
+    target.y = player.side > 0 ? clamp(rushY, nearNet, deepCap) : clamp(rushY, deepCap, nearNet);
+  } else if (serveIsShort && serveLand) {
+    const shortY = serveLand.y + player.side * 1.0;
+    target.x = clamp(serveLand.x, -outerX + 0.2, outerX - 0.2);
+    target.y = player.side > 0 ? clamp(shortY, nearNet, deepCap) : clamp(shortY, deepCap, nearNet);
+  } else if (serveLand) {
+    target.x = clamp(serveLand.x, -outerX + 0.2, outerX - 0.2);
+    target.y = returnY;
+  }
+
+  const staminaFrac = player.stamina ?? 1.0;
+  const baseSpeed   = player.playerSpeed || PLAYER_CFG.speed;
+  const maxSpd2Base = baseSpeed * (STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor));
+  const dx2  = target.x - player.pos.x, dy2 = target.y - player.pos.y;
+  const dist2_ = Math.sqrt(dx2*dx2 + dy2*dy2) || 1e-9;
+  const serveRefT = serveOpt?.t ?? (serveLand?.t ?? 0.8);
+  const margin2   = serveRefT - dist2_ / (maxSpd2Base || 0.1);
+  const urgency2  = margin2 > 0.4 ? MOVEMENT.urgencyJog
+                  : margin2 > 0.0 ? MOVEMENT.urgencyRun
+                  :                 MOVEMENT.urgencySprint;
+  const maxSpd2 = maxSpd2Base * urgency2 * _reactionSpeedCap;
+  const dSpd2   = Math.min(maxSpd2, dist2_ / 0.4 * maxSpd2);
+  const dvx2    = (dist2_ > 0.02 ? (dx2/dist2_)*dSpd2 : 0) - player.vel.x;
+  const dvy2    = (dist2_ > 0.02 ? (dy2/dist2_)*dSpd2 : 0) - player.vel.y;
+  const dvMag2  = Math.sqrt(dvx2*dvx2 + dvy2*dvy2) || 1e-9;
+  const frac2   = Math.min(1, (PLAYER_CFG.maxAccel * dt) / dvMag2);
+  player.vel.x += dvx2 * frac2; player.vel.y += dvy2 * frac2;
+  const spd2 = Math.sqrt(player.vel.x**2 + player.vel.y**2);
+  if (spd2 > maxSpd2) {
+    player.vel.x = (player.vel.x/spd2)*maxSpd2;
+    player.vel.y = (player.vel.y/spd2)*maxSpd2;
+  }
+  player.pos.x += player.vel.x * dt;
+  player.pos.y += player.vel.y * dt;
+  player.pos.y = player.side > 0 ? clamp(player.pos.y, 0.5, outerY) : clamp(player.pos.y, -outerY, -0.5);
+  player.pos.x = clamp(player.pos.x, -outerX, outerX);
+}
+
+// ──────────────────────────────────────────────────────────────────
+// FÍSICA DE MOVIMENTO (extraída do ai.js — não alterada)
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Aplica aceleração, inertia, reversal, slide-brake e bounds.
+ * Exatamente a mesma física do ai.js — só recebe target e maxSpd diferentes.
+ */
+function applyMovementPhysics(player, target, maxSpd, dt, gs) {
+  const mods      = player.mods;
+  const outerY    = COURT.halfL + THRESHOLDS.outerPlayerY;
+  const outerX    = COURT.halfW + THRESHOLDS.outerPlayerX;
+  const staminaFrac = player.stamina ?? 1.0;
+  const baseSpeed   = player.playerSpeed || PLAYER_CFG.speed;
+
+  const ballComingToMe = gs.ball.inFlight &&
+    ((player.side > 0 && gs.ball.vel.y > 0) || (player.side < 0 && gs.ball.vel.y < 0));
+  const ballOnMyCourtSide = gs.ball.inFlight &&
+    (Math.sign(gs.ball.pos.y) === player.side || Math.abs(gs.ball.pos.y) < 0.5);
+  const isChasing = (ballComingToMe || ballOnMyCourtSide) && gs.ball.lastHitBy !== player.id;
+
+  const dx   = target.x - player.pos.x;
+  const dy   = target.y - player.pos.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1e-9;
+
+  // Penalidade direcional
+  let dirMult = 1.0;
+  if (dist > 0.15) {
+    const fwdDot = (-dy * player.side) / dist;
+    if (fwdDot < -0.25) {
+      dirMult = MOVEMENT.backwardSpeedMult;
+    } else if (Math.abs(fwdDot) < 0.45) {
+      const lateralMods = mods ? mods.decelMult : 1.0;
+      const latBase = MOVEMENT.lateralSpeedMult;
+      dirMult = latBase + (1.0 - latBase) * Math.min(1, (lateralMods - 0.72) / 0.56);
+    }
+  }
+
+  const physMaxSpd = baseSpeed * (STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor)) * dirMult;
+  const effectiveMaxSpd = Math.min(maxSpd, physMaxSpd);
+
+  const dSpd = Math.min(effectiveMaxSpd, (dist / 0.3) * effectiveMaxSpd);
+  const dvx  = (dist > 0.02 ? (dx / dist) * dSpd : 0) - player.vel.x;
+  const dvy  = (dist > 0.02 ? (dy / dist) * dSpd : 0) - player.vel.y;
+  const dvMag = Math.sqrt(dvx * dvx + dvy * dvy) || 1e-9;
+
+  const currSpd = Math.sqrt(player.vel.x ** 2 + player.vel.y ** 2);
+  const dot     = player.vel.x * dvx + player.vel.y * dvy;
+
+  const maxAccelBase = player.playerAccel || PLAYER_CFG.maxAccel;
+  const maxDecelBase = player.playerDecel || PLAYER_CFG.maxDecel;
+  const effAccelBase = maxAccelBase * (INERTIA.staminaAccelMin + staminaFrac * (1 - INERTIA.staminaAccelMin));
+
+  // Footwork state
+  const wasPlanted   = currSpd < 0.8;
+  const footingState = player.ctx._footingState ?? 'striding';
+  const footingTimer = player.ctx._footingTimer ?? 0;
+  let footingMult    = footingState === 'planted' ? 1.30 : footingState === 'offBalance' ? 0.80 : 1.0;
+
+  if (wasPlanted && !isChasing) {
+    player.ctx._footingState = 'planted';
+    player.ctx._footingTimer = 0.08;
+  } else if (footingState === 'planted' && footingTimer <= 0) {
+    player.ctx._footingState = 'striding';
+    player.ctx._footingTimer = 0;
+  } else if (footingState === 'offBalance') {
+    player.ctx._footingTimer = Math.max(0, footingTimer - dt);
+    if (player.ctx._footingTimer <= 0) player.ctx._footingState = 'striding';
+  } else if (footingState === 'planted') {
+    player.ctx._footingTimer = Math.max(0, footingTimer - dt);
+  }
+
+  if (player.ctx._postHitPause <= 0 && player._lastShotWhileRunning) {
+    player.ctx._footingState = 'offBalance';
+    player.ctx._footingTimer = 0.15;
+    player._lastShotWhileRunning = false;
+  }
+
+  const effAccel = effAccelBase * footingMult;
+
+  let accel;
+  if (dist < 0.15) {
+    if (currSpd < 1.2) {
+      player.vel.x *= 0.30;
+      player.vel.y *= 0.30;
+      player.pos.x += player.vel.x * dt;
+      player.pos.y += player.vel.y * dt;
+      return;
+    }
+    accel = PLAYER_CFG.friction;
+    player.ctx._reversalFrames = 0;
+  } else if (dot < 0) {
+    const targetDirDot = dist > 0.01
+      ? (player.vel.x * (dx / dist) + player.vel.y * (dy / dist)) / (currSpd || 1e-9)
+      : 0;
+    if (targetDirDot < INERTIA.reversal180Dot && currSpd > 1.0) {
+      // reversal180: explosividade alta = freia e muda direção mais rápido
+      const _expMult = mods ? mods.accelMult : 1.0; // accelMult já reflete explosividade
+      const physFrames = Math.round(INERTIA.reversal180Frames / (_expMult || 1.0));
+      player.ctx._reversalFrames = physFrames;
+    }
+    if (player.ctx._reversalFrames > 0) {
+      player.ctx._reversalFrames--;
+      const r180Mult = mods ? mods.accelMult : 1.0;
+      accel = effAccel * INERTIA.reversal180AccelMult * r180Mult;
+    } else if (currSpd > INERTIA.overrunThreshold) {
+      // overrun: explosividade alta = para mais rápido (decelMult já cobre)
+      const orMult = mods ? mods.decelMult : 1.0;
+      accel = maxDecelBase * INERTIA.overrunDecelMult * orMult;
+    } else {
+      accel = maxDecelBase;
+    }
+  } else {
+    const adaptiveBrakeRadius = Math.max(INERTIA.slideBrakeRadius, currSpd * 0.22);
+    const isBraking = isChasing && dist < adaptiveBrakeRadius && currSpd > INERTIA.slideBrakeSpeedMin;
+    if (isBraking) {
+      const brakeIntensity = 1.0 - (dist / adaptiveBrakeRadius);
+      const brakeMult      = 1.0 + (INERTIA.slideBrakeDecelMult - 1.0) * brakeIntensity;
+      const lateralMods    = mods ? mods.decelMult : 1.0;
+      accel = maxDecelBase * brakeMult * lateralMods;
+    } else {
+      accel = effAccel;
+    }
+    player.ctx._reversalFrames = Math.max(0, player.ctx._reversalFrames - 1);
+  }
+
+  const frac = Math.min(1, (accel * dt) / dvMag);
+  player.vel.x += dvx * frac;
+  player.vel.y += dvy * frac;
+  const spd = Math.sqrt(player.vel.x ** 2 + player.vel.y ** 2);
+  if (spd > effectiveMaxSpd) {
+    player.vel.x = (player.vel.x / spd) * effectiveMaxSpd;
+    player.vel.y = (player.vel.y / spd) * effectiveMaxSpd;
+  }
+  player.pos.x += player.vel.x * dt;
+  player.pos.y += player.vel.y * dt;
+
+  // Sprint stamina drain
+  if (gs.ball.inFlight) {
+    const sprintFrac = Math.max(0, (spd - STAMINA.sprintThreshold * effectiveMaxSpd) / (effectiveMaxSpd * (1 - STAMINA.sprintThreshold) || 1));
+    if (sprintFrac > 0) {
+      player.stamina = Math.max(0, player.stamina - STAMINA.sprintDecayRate * sprintFrac * dt);
+    }
+  }
+
+  // Bounds
+  player.pos.y = player.side > 0
+    ? clamp(player.pos.y,  0.5, outerY)
+    : clamp(player.pos.y, -outerY, -0.5);
+  player.pos.x = clamp(player.pos.x, -outerX, outerX);
+  if (Math.abs(player.pos.x) >= outerX - 0.01) player.vel.x = 0;
+  if (Math.abs(player.pos.y) >= outerY - 0.01) player.vel.y = 0;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// EXPORTAÇÃO PRINCIPAL
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * updatePlayerMovement(player, gs, dt)
+ *
+ * Substitui updatePlayer() do ai.js para a lógica de posicionamento.
+ * aiDecideShot() permanece em ai.js — não é afetado por essa refatoração.
+ *
+ * Casos especiais preservados:
+ *   - Lob recebido na rede → recua (antes de tudo)
+ *   - isServeFlight → handleServeReturn (lógica intacta)
+ *   - atNet / SRV_VOL T-formation → basePos.x preservado
+ *   - give-up logic → threshold estrito (>1s atrasado)
+ *   - _postHitPause → freeze de fadiga pós-golpe
+ */
+export function updatePlayerMovement(player, gs, dt) {
+  const style = player.styleData;
+  const mods  = player.mods;
+
+  // ── Auto-retreat do net quando lobado (preservado do ai.js) ───────────────
+  // lobZ: altura mínima que a bola precisa ter para disparar retreat.
+  // Bola normal topspin: 0.8-2.0m. Lob real: 3.5-6m.
+  // Threshold base 2.8m + bônus por lobCovMult: jogador melhor aguenta bola mais alta.
+  // ANTES (bugado): 2.2 - lobCovMult*0.85 → Nakamura lobZ=1.30m (bola normal dispara retreat)
+  // AGORA: 2.8 + lobCovMult*0.40 → Nakamura lobZ=3.22m (só lob real dispara retreat)
+  const lobZ = mods ? 2.8 + mods.lobCovMult * 0.40 : 2.8;
+  if (player.atNet
+      && gs.ball.lastHitBy !== player.id
+      && gs.ball.inFlight
+      && gs.ball.pos.z > lobZ
+      && gs.ball.vel.z > 0
+      && Math.sign(gs.ball.pos.y) !== player.side) {
+    const airDensLob = gs.environment?.airDensity ?? 1.2;
+    const { landPoint: lobLand } = predictTrajectory(gs.ball, player.pos.y, 2.8, airDensLob, gs.courtPhysics);
+    const netYLob = player.side * 2.8;
+    const lobLandsDeep = lobLand
+      ? (player.side > 0 ? lobLand.y > netYLob + 3.0 : lobLand.y < netYLob - 3.0)
+      : true;
+    if (lobLandsDeep) {
+      player.atNet = false;
+      player.ctx.courtMode = 'BASE';
+      player.ctx.transitionCooldown = 3;
+    }
+  }
+
+  const outerY = COURT.halfL + THRESHOLDS.outerPlayerY;
+  const outerX = COURT.halfW + THRESHOLDS.outerPlayerX;
+  const netY   = player.side * 2.8;
+
+  // ── isServeFlight: preservar bloco de retorno de saque intacto ───────────
+  const isServeFlight = gs.isFirstBounce && player.id === gs.receiver && gs.ball.inFlight;
+  if (isServeFlight) {
+    return handleServeReturn(player, gs, dt);
+  }
+
+  // ── Post-hit fatigue: freeze breve com stamina baixa ─────────────────────
+  if ((player.ctx._postHitPause ?? 0) > 0) {
+    player.ctx._postHitPause -= dt;
+    player.vel.x *= 0.75;
+    player.vel.y *= 0.75;
+    player.pos.x += player.vel.x * dt;
+    player.pos.y += player.vel.y * dt;
+    return;
+  }
+
+  // ── TRANSITION → NET: confirma rede quando o jogador chega à zona de volley ──────────
+  // Ativado quando o approach dispara (courtMode = TRANSITION, atNet = false).
+  // Uma vez que o jogador atinge a net zone (~40% do half-length), confirma NET + atNet.
+  if (player.ctx?.courtMode === 'TRANSITION' && !player.atNet) {
+    const netZoneY = player.side * (COURT.halfL * 0.42); // ~5.0m da rede
+    const reachedNetZone = player.side > 0
+      ? player.pos.y <= netZoneY
+      : player.pos.y >= netZoneY;
+    if (reachedNetZone) {
+      player.atNet = true;
+      player.ctx.courtMode = 'NET';
+    }
+  }
+
+  // ── basePos.y: fonte única de verdade (getStyleBaselineY) ────────────────
+  player.basePos.y = player.atNet ? netY : getStyleBaselineY(player);
+
+  // ── basePos.x: T-formation na rede (preservado do ai.js) ─────────────────
+  if (player.atNet && gs.players) {
+    const opp = gs.players.find(p => p.id !== player.id);
+    if (opp) {
+      const approachLandX = player.ctx._approachLandX ?? 0;
+      player.basePos.x = approachLandX !== 0
+        ? clamp(opp.pos.x * 0.45 + approachLandX * 0.25, -2.5, 2.5)
+        : clamp(opp.pos.x * 0.55, -2.5, 2.5);
+    }
+  }
+
+  // ── Invalidar predições pré-quique quando a bola quica ───────────────────
+  // Bug: no frame em que bounceCount sobe de 0 → 1, _hitTarget e _arrivalMargin
+  // ainda têm valores calculados PRÉ-quique (bola prevista chegando à linha de fundo).
+  // Esses valores desatualizados fazem inHitWindow disparar incorretamente →
+  // jogador entra em HIT e paralisa, mesmo com a bola a 5m de distância.
+  // Fix: detectar a subida de bounceCount e resetar as predições para forçar
+  // recálculo com a trajetória real pós-quique.
+  const currBounce = gs.ball.bounceCount ?? 0;
+  if (currBounce > (player._lastSeenBounce ?? 0)) {
+    player._lastSeenBounce = currBounce;
+    player._hitTarget      = null;
+    player._arrivalMargin  = undefined;
+    player._stableTarget   = null;  // força blend imediato para o novo alvo
+  }
+
+  // ── FSM ───────────────────────────────────────────────────────────────────
+  const state    = getMovementState(player, gs);
+  const prevState = player._prevMovState;
+  player._movState     = state;  // campo de debug — visível no modo dev
+  player._prevMovState = state;
+
+  // Snapshot do recover target na transição → RECOVER
+  if (state === 'RECOVER' && prevState !== 'RECOVER') {
+    player._recoverTarget = computeRecoverTarget(player);
+  }
+  if (state === 'WAIT') {
+    player._recoverTarget = null;
+  }
+
+  // ── Calcular target bruto por estado ─────────────────────────────────────
+  let rawTarget;
+
+  if (state === 'WAIT') {
+    rawTarget = computeWaitTarget(player, gs);
+
+  } else if (state === 'MOVE') {
+    const moveTarget = computeMoveTarget(player, gs);
+    player._hitTarget = moveTarget;
+    rawTarget = moveTarget;
+
+    // Atualizar arrivalMargin
+    if (moveTarget?.t != null) {
+      const staminaFrac = player.stamina ?? 1.0;
+      const baseSpeed   = player.playerSpeed || PLAYER_CFG.speed;
+      const effSpeed    = baseSpeed * (STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor));
+      const d = dist2(player.pos, moveTarget);
+      player._arrivalMargin = moveTarget.t - d / (effSpeed || 0.1);
+    } else {
+      player._arrivalMargin = undefined;
+    }
+
+    // Micro-ajuste de contato: quando perto da bola, blend X para a bola real
+    const ballComing3  = (player.side > 0 && gs.ball.vel.y > 0) || (player.side < 0 && gs.ball.vel.y < 0);
+    const useVolleyAdj = player.atNet && gs.ball.bounceCount === 0 && ballComing3;
+    if (gs.ball.bounceCount > 0 || useVolleyAdj) {
+      const dToBall   = Math.sqrt((player.pos.x - gs.ball.pos.x)**2 + (player.pos.y - gs.ball.pos.y)**2);
+      const reachRef  = player.reach ?? 0.85;
+      const blendWin  = useVolleyAdj ? reachRef * 3.5 : reachRef * 2.2;
+      const blendStr  = useVolleyAdj ? 0.80 : 0.65;
+      if (dToBall < blendWin) {
+        const blend = Math.max(0, 1 - dToBall / blendWin);
+        rawTarget.x = rawTarget.x * (1 - blend * blendStr) + gs.ball.pos.x * (blend * blendStr);
+      }
+    }
+
+  } else if (state === 'HIT') {
+    rawTarget = { x: player.pos.x, y: player.pos.y };
+
+  } else { // RECOVER
+    rawTarget = player._recoverTarget ?? computeRecoverTarget(player);
+  }
+
+  // ── Give-up: só para bolas verdadeiramente inalcançáveis (>1s atrasado) ──
+  if (state === 'MOVE') {
+    const ballSpd3d = Math.sqrt(gs.ball.vel.x**2 + gs.ball.vel.y**2 + gs.ball.vel.z**2);
+    const isSlowBall = ballSpd3d < 7.0 && gs.ball.bounceCount >= 1;
+    const giveUpThreshold = isSlowBall ? INERTIA.giveUpMargin - 1.00 : INERTIA.giveUpMargin;
+    const arrivalFGU = player._arrivalMargin ?? 0;
+    if (arrivalFGU < giveUpThreshold && gs.ball.inFlight) {
+      const comingToMe = (player.side > 0 && gs.ball.vel.y > 0) || (player.side < 0 && gs.ball.vel.y < 0);
+      const distToBall = Math.sqrt((player.pos.x - gs.ball.pos.x)**2 + (player.pos.y - gs.ball.pos.y)**2);
+      if (comingToMe && distToBall > (player.reach ?? 1.5) * 4.0) {
+        rawTarget.x = clamp(rawTarget.x, player.pos.x - 1.5, player.pos.x + 1.5);
+        rawTarget.y = player.basePos.y;
+      }
+    }
+  }
+
+  // ── Bisector X de recovery (aplicado em WAIT após bola ir para adversário) ─
+  // Só em BASE: durante TRANSITION/NET o jogador avança para a rede com X de approach.
+  if (state === 'WAIT' && gs.players) {
+    const ballOnOppSide = Math.sign(gs.ball.pos.y) !== player.side;
+    const cMode = player.ctx.courtMode ?? 'BASE';
+    if (ballOnOppSide && !player.atNet && cMode === 'BASE') {
+      const lastShotX  = player.ctx._lastShotX ?? 0;
+      const diagRecovX = clamp(lastShotX * 0.20, -1.2, 1.2);
+      player.basePos.x = diagRecovX;
+    }
+  }
+
+  // ── Suavização ────────────────────────────────────────────────────────────
+  const margin = player._arrivalMargin ?? 0.3;
+  const target = applyTargetSmoothing(player, rawTarget, state, margin);
+
+  // ── HIT: parado (planted) ─────────────────────────────────────────────────
+  if (state === 'HIT') {
+    player.vel.x *= 0.25;
+    player.vel.y *= 0.25;
+    player.pos.x += player.vel.x * dt;
+    player.pos.y += player.vel.y * dt;
+    return;
+  }
+
+  // ── Velocidade máxima por estado ──────────────────────────────────────────
+  const staminaFrac = player.stamina ?? 1.0;
+  const baseSpeed   = player.playerSpeed || PLAYER_CFG.speed;
+  const physMaxSpd  = baseSpeed * (STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor));
+
+  let maxSpd;
+  if (state === 'WAIT') {
+    maxSpd = getWaitSpeed(player, physMaxSpd);
+  } else if (state === 'MOVE') {
+    maxSpd = getMoveSpeed(player, target, margin, physMaxSpd);
+  } else { // RECOVER
+    const recBase = player._recoverTarget ?? target;
+    maxSpd = getRecoverSpeed(player, recBase, physMaxSpd);
+  }
+
+  // ── Física de movimento ───────────────────────────────────────────────────
+  applyMovementPhysics(player, target, maxSpd, dt, gs);
+}

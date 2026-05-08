@@ -1,0 +1,2305 @@
+// ============================================
+// DATA.JS - Todos os dados estáticos do jogo
+// ============================================
+
+export const TEAMS = [
+  // 🌎 AMÉRICA DO NORTE
+  { 
+    name: 'Marcus "The Wall" Williams', 
+    colors: ['#1e3a8a', '#dc2626', '#ffffff'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇺🇸 EUA',
+    physicalDesc: 'Altura: 1,85m | Peso: 82kg | Corpo atlético e forte',
+    playStyle: 'Equilibrado - Combina defesa sólida com contra-ataques precisos',
+    photoUrl: 'https://i.imgur.com/AGTHCNs.jpg',
+    iconUrl: 'https://i.imgur.com/t09gn3x.png',
+    fullBodyUrl: 'https://i.imgur.com/AGTHCNs.jpg',
+    attributes: {  attack: 8, defense: 8, stamina: 6, speed: 7, technique: 8, intelligence: 3, adaptability: 7, clutch: 8, launchPower: 9 },
+    tier: 'ELITE',
+    traits: ['ICE_IN_VEINS', 'BIG_STAGE_PLAYER', 'FINALS_SPECIALIST'],
+    favoriteArena: 'COLOSSEUM_CARNAGE'
+  },
+  { 
+    name: 'Alex "Frostbite" Tremblay', 
+    colors: ['#dc2626', '#ffffff', '#000000'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇨🇦 Canadá',
+    physicalDesc: 'Altura: 1,78m | Peso: 75kg | Magro e ágil',
+    playStyle: 'Momentum - Aproveita sequências de vitórias para dominar',
+    photoUrl: 'https://i.imgur.com/KieQSlN.jpg',
+    iconUrl: 'https://i.imgur.com/kJuD9G6.png',
+    fullBodyUrl: 'https://i.imgur.com/bK03xf4.png',
+    attributes: {  attack: 7, defense: 5, stamina: 6, speed: 8, technique: 5, intelligence: 5, adaptability: 4, clutch: 5, launchPower: 7 },
+    tier: 'PRO',
+    traits: ['MOMENTUM_SNOWBALL', 'FIRE_STARTER', 'FLOW_STATE']
+  },
+  
+  // 🌎 AMÉRICA DO SUL
+  { 
+    name: 'Sávio "Blast Boom" Luiz', 
+    colors: ['#16a34a', '#fbbf24', '#3b82f6'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇧🇷 Brasil',
+    physicalDesc: 'Altura: 1,72m | Peso: 68kg | Corpo compacto e explosivo',
+    playStyle: 'Glass Cannon - Ataques devastadores com defesa arriscada',
+    photoUrl: 'https://i.imgur.com/Mqu1dvL.jpg',
+    iconUrl: 'https://i.imgur.com/H9i0vag.png',
+    fullBodyUrl: 'https://i.imgur.com/NUb4BLg.png',
+    attributes: {  attack: 10, defense: 3, stamina: 5, speed: 9, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO',
+    traits: ['BURST_MASTER', 'ALL_OR_NOTHING', 'SPEED_DEMON']
+  },
+  { 
+    name: 'Diego "Táctico" Navarro', 
+    colors: ['#7dd3fc', '#ffffff', '#fbbf24'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇦🇷 Argentina',
+    physicalDesc: 'Altura: 1,80m | Peso: 77kg | Atlético e calculista',
+    playStyle: 'Caos Calculado - Combina estratégia com imprevisibilidade',
+    photoUrl: 'https://i.imgur.com/YvbSJZI.jpg',
+    iconUrl: 'https://i.imgur.com/I2t0x2x.png',
+    fullBodyUrl: 'https://i.imgur.com/6F6GreQ.png',
+    attributes: {  attack: 6, defense: 6, stamina: 6, speed: 7, technique: 5, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 6 },
+    tier: 'TOP'
+  },
+  
+  // 🌍 EUROPA
+  { 
+    name: 'Jean "Infinite Spin" Dubois', 
+    colors: ['#3b82f6', '#ffffff', '#dc2626'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇫🇷 França',
+    physicalDesc: 'Altura: 1,76m | Peso: 71kg | Esbelto e elegante',
+    playStyle: 'Spinner Eterno - Especialista em stamina e resistência',
+    photoUrl: 'https://i.imgur.com/tw3gooB.jpg',
+    iconUrl: 'https://i.imgur.com/cuOBqck.png',
+    fullBodyUrl: 'https://i.imgur.com/k2dTV1P.png',
+    attributes: {  attack: 4, defense: 6, stamina: 10, speed: 5, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 6 },
+    tier: 'TOP',
+    traits: ['STAMINA_GOD', 'ATTACK_COUNTER']
+  },
+  { 
+    name: 'Klaus "Precision" Müller', 
+    colors: ['#000000', '#dc2626', '#fbbf24'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇩🇪 Alemanha',
+    physicalDesc: 'Altura: 1,83m | Peso: 80kg | Forte e disciplinado',
+    playStyle: 'All-Rounder - Domina todos os aspectos do jogo',
+    photoUrl: 'https://i.imgur.com/XimV4aI.jpg',
+    iconUrl: 'https://i.imgur.com/LsZma12.png',
+    fullBodyUrl: 'https://i.imgur.com/zzq1Ihd.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'ELITE',
+    traits: ['TECHNICAL_GENIUS', 'ZEN_MASTER', 'BO5_GOD']
+  },
+  { 
+    name: 'Oliver "Wild Card" Ashford', 
+    colors: ['#dc2626', '#ffffff', '#1e3a8a'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇬🇧 Inglaterra',
+    physicalDesc: 'Altura: 1,75m | Peso: 73kg | Corpo médio, energia intensa',
+    playStyle: 'Alto Risco - Joga tudo ou nada em cada batalha',
+    photoUrl: 'https://via.placeholder.com/270x480/dc2626/ffffff?text=Oliver',
+    iconUrl: 'https://i.imgur.com/4YHF4ty.png',
+    fullBodyUrl: 'https://i.imgur.com/IOlviac.png',
+    attributes: {  attack: 8, defense: 4, stamina: 5, speed: 8, technique: 3, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 7 },
+    tier: 'PRO',
+    traits: ['GIANT_KILLER', 'ALL_OR_NOTHING', 'CHOKE_ARTIST']
+  },
+  { 
+    name: 'Leonardo "Harmony" Rossi', 
+    colors: ['#16a34a', '#ffffff', '#dc2626'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇮🇹 Itália',
+    physicalDesc: 'Altura: 1,77m | Peso: 74kg | Equilibrado e harmonioso',
+    playStyle: 'Sinergia - Busca a combinação perfeita de peças',
+    photoUrl: 'https://i.imgur.com/RDKMqTG.jpg',
+    iconUrl: 'https://i.imgur.com/vkzxqKm.png',
+    fullBodyUrl: 'https://i.imgur.com/gbTDN3S.png',
+    attributes: {  attack: 6, defense: 7, stamina: 6, speed: 6, technique: 6, intelligence: 7, adaptability: 5, clutch: 6, launchPower: 6 },
+    tier: 'TOP'
+  },
+  
+  // 🌏 ÁSIA
+  { 
+    name: 'Takeshi "Iron Tank" Yamamoto', 
+    colors: ['#dc2626', '#ffffff', '#000000'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇯🇵 Japão',
+    physicalDesc: 'Altura: 1,70m | Peso: 85kg | Baixo e extremamente forte',
+    playStyle: 'Fortaleza de Ferro - Defesa impenetrável',
+    photoUrl: 'https://i.imgur.com/ddgWEsH.jpg',
+    iconUrl: 'https://i.imgur.com/C0icPw9.png',
+    fullBodyUrl: 'https://i.imgur.com/mDMiWlK.png',
+    attributes: {  attack: 4, defense: 10, stamina: 9, speed: 3, technique: 9, intelligence: 5, adaptability: 8, clutch: 9, launchPower: 7 },
+    tier: 'ELITE',
+    traits: ['ARENA_SAVANT', 'MENTAL_FORTRESS', 'STAMINA_GOD'],
+    favoriteArena: 'VORTEX_COLISEUM'
+  },
+  { 
+    name: 'Chen "Dragon Wall" Wei', 
+    colors: ['#dc2626', '#fbbf24', '#000000'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇨🇳 China',
+    physicalDesc: 'Altura: 1,82m | Peso: 88kg | Imponente e robusto',
+    playStyle: 'Muralha do Dragão - Defesa absoluta com contra-ataques',
+    photoUrl: 'https://i.imgur.com/fP68Yk7.jpg',
+    iconUrl: 'https://i.imgur.com/ZFtJLdF.png',
+    fullBodyUrl: 'https://i.imgur.com/yelrkVs.png',
+    attributes: {  attack: 5, defense: 10, stamina: 8, speed: 4, technique: 8, intelligence: 3, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Park "E-Striker" Min-Jun', 
+    colors: ['#3b82f6', '#dc2626', '#ffffff'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇰🇷 Coreia do Sul',
+    physicalDesc: 'Altura: 1,73m | Peso: 70kg | Ágil e tech-savvy',
+    playStyle: 'E-Striker - Precisão eletrônica e timing perfeito',
+    photoUrl: 'https://i.imgur.com/fdZRpeT.jpg',
+    iconUrl: 'https://i.imgur.com/0eqCCM8.png',
+    fullBodyUrl: 'https://i.imgur.com/tDgwoxl.png',
+    attributes: {  attack: 9, defense: 4, stamina: 5, speed: 9, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Raj "Chakra" Patel', 
+    colors: ['#f97316', '#ffffff', '#16a34a'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇮🇳 Índia',
+    physicalDesc: 'Altura: 1,74m | Peso: 72kg | Flexível e centrado',
+    playStyle: 'Chakra - Energia e equilíbrio espiritual',
+    photoUrl: 'https://i.imgur.com/Hn61tI9.jpg',
+    iconUrl: 'https://i.imgur.com/GemnzoK.png',
+    fullBodyUrl: 'https://i.imgur.com/0GICIqK.png',
+    attributes: {  attack: 6, defense: 6, stamina: 7, speed: 6, technique: 5, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 6 },
+    tier: 'TOP'
+  },
+  
+  // 🌍 ÁFRICA
+  { 
+    name: 'Hassan "Pharaoh" Al-Rahman', 
+    colors: ['#fbbf24', '#3b82f6', '#ffffff'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇪🇬 Egito',
+    physicalDesc: 'Altura: 1,79m | Peso: 76kg | Elegante e misterioso',
+    playStyle: 'Faraó - Resistência lendária e rotação infinita',
+    photoUrl: 'https://i.imgur.com/a8KJFrz.jpg',
+    iconUrl: 'https://i.imgur.com/IRzQqJz.png',
+    fullBodyUrl: 'https://i.imgur.com/1aaUxTX.png',
+    iconUrl: 'https://i.imgur.com/PLiaSPc.png',
+    fullBodyUrl: 'https://i.imgur.com/pPWrHcD.png',
+    attributes: {  attack: 5, defense: 6, stamina: 9, speed: 6, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Thabo "Thunder" Nkosi', 
+    colors: ['#16a34a', '#fbbf24', '#000000'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇿🇦 África do Sul',
+    physicalDesc: 'Altura: 1,88m | Peso: 90kg | Poderoso e explosivo',
+    playStyle: 'Trovão - Ataques devastadores como raios',
+    photoUrl: 'https://i.imgur.com/Nm2Gr3N.jpg',
+    iconUrl: 'https://i.imgur.com/MHzndrD.png',
+    fullBodyUrl: 'https://i.imgur.com/iHuMPLG.png',
+    attributes: {  attack: 10, defense: 3, stamina: 6, speed: 8, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO'
+  },
+  
+  // 🌏 OCEANIA
+  { 
+    name: 'Jake "Outback" Morrison', 
+    colors: ['#16a34a', '#fbbf24', '#3b82f6'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇦🇺 Austrália',
+    physicalDesc: 'Altura: 1,81m | Peso: 78kg | Resistente e incansável',
+    playStyle: 'Outback - Aproveitando cada oportunidade',
+    photoUrl: 'https://i.imgur.com/hFkUhHf.jpg',
+    iconUrl: 'https://i.imgur.com/o2fG8tf.png',
+    fullBodyUrl: 'https://i.imgur.com/XyrvkXf.png',
+    attributes: {  attack: 7, defense: 6, stamina: 6, speed: 7, technique: 6, intelligence: 4, adaptability: 5, clutch: 5, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Liam "Storm" Fletcher', 
+    colors: ['#000000', '#ffffff', '#94a3b8'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇳🇿 Nova Zelândia',
+    physicalDesc: 'Altura: 1,76m | Peso: 74kg | Veloz como uma tempestade',
+    playStyle: 'Tempestade - Caos controlado e imprevisível',
+    photoUrl: 'https://i.imgur.com/LImgglr.jpg',
+    iconUrl: 'https://i.imgur.com/S4WckPT.png',
+    fullBodyUrl: 'https://i.imgur.com/mUHRwuM.png',
+    iconUrl: 'https://i.imgur.com/dXyjPcD.png',
+    fullBodyUrl: 'https://i.imgur.com/lyyMf7u.png',
+    attributes: {  attack: 6, defense: 5, stamina: 7, speed: 8, technique: 6, intelligence: 6, adaptability: 5, clutch: 6, launchPower: 7 },
+    tier: 'TOP'
+  },
+
+  // 🌎 AMÉRICA DO NORTE (EXPANSÃO)
+  { 
+    name: 'Carlos "El Matador" Hernández', 
+    colors: ['#16a34a', '#ffffff', '#dc2626'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇲🇽 México',
+    physicalDesc: 'Altura: 1,75m | Peso: 73kg | Explosivo e ágil',
+    playStyle: 'Matador - Ataques fulminantes e precisos',
+    photoUrl: 'https://i.imgur.com/placeholder1.jpg',
+    iconUrl: 'https://i.imgur.com/aE26aOB.png',
+    fullBodyUrl: 'https://i.imgur.com/IyxDDgj.png',
+    attributes: {  attack: 9, defense: 4, stamina: 6, speed: 8, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Dante "Ice Breaker" Moreau', 
+    colors: ['#3b82f6', '#ffffff', '#dc2626'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇨🇦 Canadá',
+    physicalDesc: 'Altura: 1,84m | Peso: 86kg | Forte como o gelo ártico',
+    playStyle: 'Quebra-Gelo - Defesa sólida e resistente',
+    photoUrl: 'https://i.imgur.com/placeholder2.jpg',
+    iconUrl: 'https://i.imgur.com/y5ghkz9.png',
+    fullBodyUrl: 'https://i.imgur.com/n3NfkoC.png',
+    attributes: {  attack: 5, defense: 9, stamina: 8, speed: 4, technique: 8, intelligence: 4, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Isaiah "Velocity" Jackson', 
+    colors: ['#1e3a8a', '#dc2626', '#ffffff'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇺🇸 EUA',
+    physicalDesc: 'Altura: 1,78m | Peso: 75kg | Rápido e imprevisível',
+    playStyle: 'Velocidade - Tudo ou nada em alta velocidade',
+    photoUrl: 'https://i.imgur.com/placeholder3.jpg',
+    iconUrl: 'https://i.imgur.com/VEphl6J.png',
+    fullBodyUrl: 'https://i.imgur.com/szyO6Hn.png',
+    attributes: {  attack: 8, defense: 4, stamina: 5, speed: 9, technique: 3, intelligence: 7, adaptability: 4, clutch: 5, launchPower: 6 },
+    tier: 'TOP'
+  },
+
+  // 🌎 AMÉRICA CENTRAL E CARIBE
+  { 
+    name: 'Miguel "Tsunami" Vargas', 
+    colors: ['#3b82f6', '#dc2626', '#ffffff'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇨🇷 Costa Rica',
+    physicalDesc: 'Altura: 1,77m | Peso: 74kg | Fluido como uma onda',
+    playStyle: 'Tsunami - Ondas de momentum imparáveis',
+    photoUrl: 'https://i.imgur.com/placeholder4.jpg',
+    iconUrl: 'https://i.imgur.com/ifRO6ua.png',
+    fullBodyUrl: 'https://i.imgur.com/LXjX0M1.png',
+    attributes: {  attack: 7, defense: 6, stamina: 7, speed: 7, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Roberto "Caribe" Sánchez', 
+    colors: ['#fbbf24', '#3b82f6', '#dc2626'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇨🇺 Cuba',
+    physicalDesc: 'Altura: 1,80m | Peso: 79kg | Técnico e calculista',
+    playStyle: 'Caribe - Harmonia tropical perfeita',
+    photoUrl: 'https://i.imgur.com/placeholder5.jpg',
+    iconUrl: 'https://i.imgur.com/q2k8IgY.png',
+    fullBodyUrl: 'https://i.imgur.com/zdgOna1.png',
+    attributes: {  attack: 6, defense: 7, stamina: 6, speed: 6, technique: 7, intelligence: 7, adaptability: 6, clutch: 7, launchPower: 6 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'André "Reggae" Williams', 
+    colors: ['#16a34a', '#fbbf24', '#000000'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇯🇲 Jamaica',
+    physicalDesc: 'Altura: 1,82m | Peso: 76kg | Relaxado e resistente',
+    playStyle: 'Reggae - Rotação infinita e ritmo constante',
+    photoUrl: 'https://i.imgur.com/placeholder6.jpg',
+    iconUrl: 'https://i.imgur.com/QMOCvGk.png',
+    fullBodyUrl: 'https://i.imgur.com/NYSVCwZ.png',
+    attributes: {  attack: 5, defense: 6, stamina: 9, speed: 6, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 6 },
+    tier: 'PRO'
+  },
+
+  // 🌎 AMÉRICA DO SUL (EXPANSÃO)
+  { 
+    name: 'Mateo "Condor" Flores', 
+    colors: ['#dc2626', '#ffffff', '#fbbf24'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇵🇪 Peru',
+    physicalDesc: 'Altura: 1,73m | Peso: 71kg | Equilibrado e versátil',
+    playStyle: 'Condor - Voa alto em todos os aspectos',
+    photoUrl: 'https://i.imgur.com/placeholder7.jpg',
+    iconUrl: 'https://i.imgur.com/mCoiP1T.png',
+    fullBodyUrl: 'https://i.imgur.com/31OIxAp.png',
+    iconUrl: 'https://i.imgur.com/gjwVJ0E.png',
+    fullBodyUrl: 'https://i.imgur.com/HU2Zvs2.png',
+    attributes: {  attack: 7, defense: 7, stamina: 6, speed: 7, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Gabriel "Pampas" Silva', 
+    colors: ['#7dd3fc', '#ffffff', '#fbbf24'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇦🇷 Argentina',
+    physicalDesc: 'Altura: 1,79m | Peso: 76kg | Estratégico e imprevisível',
+    playStyle: 'Pampas - Estratégia selvagem dos campos',
+    photoUrl: 'https://i.imgur.com/placeholder8.jpg',
+    iconUrl: 'https://i.imgur.com/R39onwL.png',
+    fullBodyUrl: 'https://i.imgur.com/6tNUfNW.png',
+    attributes: {  attack: 6, defense: 6, stamina: 6, speed: 7, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Rafael "Samba" Costa', 
+    colors: ['#16a34a', '#fbbf24', '#3b82f6'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇧🇷 Brasil',
+    physicalDesc: 'Altura: 1,74m | Peso: 70kg | Ritmado e explosivo',
+    playStyle: 'Samba - Ritmo acelerado e empolgante',
+    photoUrl: 'https://i.imgur.com/placeholder9.jpg',
+    iconUrl: 'https://i.imgur.com/rNh5h8N.png',
+    fullBodyUrl: 'https://i.imgur.com/gFcV87P.png',
+    attributes: {  attack: 8, defense: 5, stamina: 6, speed: 8, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Sebastián "Tango" Méndez', 
+    colors: ['#1e3a8a', '#ffffff', '#fbbf24'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇺🇾 Uruguai',
+    physicalDesc: 'Altura: 1,76m | Peso: 73kg | Elegante e preciso',
+    playStyle: 'Tango - Dança perfeita de sincronização',
+    photoUrl: 'https://i.imgur.com/placeholder10.jpg',
+    iconUrl: 'https://i.imgur.com/ztwJIpI.png',
+    fullBodyUrl: 'https://i.imgur.com/whFmfQw.png',
+    attributes: {  attack: 6, defense: 6, stamina: 7, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Antonio "Jaguar" Rojas', 
+    colors: ['#fbbf24', '#1e3a8a', '#dc2626'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇨🇴 Colômbia',
+    physicalDesc: 'Altura: 1,75m | Peso: 72kg | Feroz e letal',
+    playStyle: 'Jaguar - Ataques ferozes da selva',
+    photoUrl: 'https://i.imgur.com/placeholder11.jpg',
+    iconUrl: 'https://i.imgur.com/rnb9UPV.png',
+    fullBodyUrl: 'https://i.imgur.com/bRyMmiM.png',
+    attributes: {  attack: 9, defense: 3, stamina: 6, speed: 8, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Eduardo "Puma" Gutiérrez', 
+    colors: ['#dc2626', '#fbbf24', '#16a34a'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇨🇱 Chile',
+    physicalDesc: 'Altura: 1,77m | Peso: 75kg | Ousado e agressivo',
+    playStyle: 'Puma - Apostas arriscadas e letais',
+    photoUrl: 'https://i.imgur.com/placeholder12.jpg',
+    iconUrl: 'https://i.imgur.com/SuLP6TN.png',
+    fullBodyUrl: 'https://i.imgur.com/TzwYA3F.png',
+    attributes: {  attack: 8, defense: 4, stamina: 5, speed: 8, technique: 4, intelligence: 7, adaptability: 4, clutch: 5, launchPower: 7 },
+    tier: 'PRO'
+  },
+
+  // 🌍 EUROPA OCIDENTAL (EXPANSÃO)
+  { 
+    name: 'Pierre "Le Phantom" Dubois', 
+    colors: ['#3b82f6', '#ffffff', '#dc2626'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇫🇷 França',
+    physicalDesc: 'Altura: 1,78m | Peso: 74kg | Misterioso e imprevisível',
+    playStyle: 'Fantasma - Aparece onde menos se espera',
+    photoUrl: 'https://i.imgur.com/placeholder13.jpg',
+    iconUrl: 'https://i.imgur.com/yyqe5xF.png',
+    fullBodyUrl: 'https://i.imgur.com/IyS933q.png',
+    attributes: {  attack: 7, defense: 5, stamina: 6, speed: 8, technique: 5, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 8 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Hans "Blitz" Schmidt', 
+    colors: ['#000000', '#dc2626', '#fbbf24'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇩🇪 Alemanha',
+    physicalDesc: 'Altura: 1,86m | Peso: 83kg | Poderoso e devastador',
+    playStyle: 'Blitz - Guerra relâmpago ofensiva',
+    photoUrl: 'https://i.imgur.com/placeholder14.jpg',
+    iconUrl: 'https://i.imgur.com/xymweFd.png',
+    fullBodyUrl: 'https://i.imgur.com/2pxTuAy.png',
+    attributes: {  attack: 10, defense: 3, stamina: 5, speed: 7, technique: 4, intelligence: 6, adaptability: 4, clutch: 5, launchPower: 5 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'William "Lionheart" Sterling', 
+    colors: ['#dc2626', '#ffffff', '#1e3a8a'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇬🇧 Inglaterra',
+    physicalDesc: 'Altura: 1,81m | Peso: 79kg | Nobre e equilibrado',
+    playStyle: 'Coração de Leão - Excelência em tudo',
+    photoUrl: 'https://i.imgur.com/placeholder15.jpg',
+    iconUrl: 'https://i.imgur.com/toMdHT4.png',
+    fullBodyUrl: 'https://i.imgur.com/rhs2mPY.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'ELITE'
+  },
+  { 
+    name: 'Marco "Gladiator" Bianchi', 
+    colors: ['#16a34a', '#ffffff', '#dc2626'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇮🇹 Itália',
+    physicalDesc: 'Altura: 1,80m | Peso: 81kg | Forte como a Roma antiga',
+    playStyle: 'Gladiador - Defesa impenetrável',
+    photoUrl: 'https://i.imgur.com/placeholder16.jpg',
+    iconUrl: 'https://i.imgur.com/9MgYXGs.png',
+    fullBodyUrl: 'https://i.imgur.com/GQi8T6B.png',
+    attributes: {  attack: 5, defense: 9, stamina: 8, speed: 4, technique: 8, intelligence: 5, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Fernando "Torero" García', 
+    colors: ['#dc2626', '#fbbf24', '#000000'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇪🇸 Espanha',
+    physicalDesc: 'Altura: 1,76m | Peso: 73kg | Gracioso e letal',
+    playStyle: 'Toureiro - Aproveita cada abertura',
+    photoUrl: 'https://i.imgur.com/placeholder17.jpg',
+    iconUrl: 'https://i.imgur.com/LPiFJRx.png',
+    fullBodyUrl: 'https://i.imgur.com/N1pJUYx.png',
+    attributes: {  attack: 7, defense: 6, stamina: 6, speed: 7, technique: 6, intelligence: 5, adaptability: 5, clutch: 5, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'João "Navegador" Carvalho', 
+    colors: ['#16a34a', '#dc2626', '#fbbf24'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇵🇹 Portugal',
+    physicalDesc: 'Altura: 1,75m | Peso: 72kg | Explorador e adaptável',
+    playStyle: 'Navegador - Descobre combinações perfeitas',
+    photoUrl: 'https://i.imgur.com/placeholder18.jpg',
+    iconUrl: 'https://i.imgur.com/VQ8XkXT.png',
+    fullBodyUrl: 'https://i.imgur.com/Ryhe8Bg.png',
+    attributes: {  attack: 6, defense: 6, stamina: 7, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+
+  // 🌍 EUROPA DO NORTE
+  { 
+    name: 'Erik "Viking" Andersson', 
+    colors: ['#3b82f6', '#fbbf24', '#ffffff'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇸🇪 Suécia',
+    physicalDesc: 'Altura: 1,87m | Peso: 88kg | Imponente e inabalável',
+    playStyle: 'Viking - Resistência nórdica absoluta',
+    photoUrl: 'https://i.imgur.com/placeholder19.jpg',
+    iconUrl: 'https://i.imgur.com/JD7Dppr.png',
+    fullBodyUrl: 'https://i.imgur.com/7719hnV.png',
+    attributes: {  attack: 4, defense: 10, stamina: 9, speed: 3, technique: 9, intelligence: 4, adaptability: 8, clutch: 9, launchPower: 7 },
+    tier: 'ELITE'
+  },
+  { 
+    name: 'Lars "Fjord" Hansen', 
+    colors: ['#dc2626', '#ffffff', '#1e3a8a'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇳🇴 Noruega',
+    physicalDesc: 'Altura: 1,83m | Peso: 79kg | Resistente como os fiordes',
+    playStyle: 'Fiorde - Stamina interminável',
+    photoUrl: 'https://i.imgur.com/placeholder20.jpg',
+    iconUrl: 'https://i.imgur.com/0J4WgdA.png',
+    fullBodyUrl: 'https://i.imgur.com/8pTn2g6.png',
+    attributes: {  attack: 4, defense: 6, stamina: 10, speed: 5, technique: 8, intelligence: 5, adaptability: 7, clutch: 8, launchPower: 8 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Mikkel "Aurora" Jørgensen', 
+    colors: ['#16a34a', '#ffffff', '#dc2626'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇩🇰 Dinamarca',
+    physicalDesc: 'Altura: 1,79m | Peso: 76kg | Brilhante e imprevisível',
+    playStyle: 'Aurora - Caos luminoso do norte',
+    photoUrl: 'https://i.imgur.com/placeholder21.jpg',
+    iconUrl: 'https://i.imgur.com/hYSMkrh.png',
+    fullBodyUrl: 'https://i.imgur.com/kyK8gKJ.png',
+    attributes: {  attack: 6, defense: 6, stamina: 6, speed: 7, technique: 5, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 6 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Aleksi "Sauna" Virtanen', 
+    colors: ['#3b82f6', '#ffffff', '#000000'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇫🇮 Finlândia',
+    physicalDesc: 'Altura: 1,80m | Peso: 77kg | Equilibrado e resiliente',
+    playStyle: 'Sauna - Aquece até dominar completamente',
+    photoUrl: 'https://i.imgur.com/placeholder22.jpg',
+    iconUrl: 'https://i.imgur.com/vqqmwQH.png',
+    fullBodyUrl: 'https://i.imgur.com/t47GUAm.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'TOP'
+  },
+
+  // 🌍 EUROPA DO LESTE
+  { 
+    name: 'Dmitri "Red Storm" Volkov', 
+    colors: ['#dc2626', '#ffffff', '#1e3a8a'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇷🇺 Rússia',
+    physicalDesc: 'Altura: 1,84m | Peso: 82kg | Poder bruto devastador',
+    playStyle: 'Tempestade Vermelha - Ataque implacável',
+    photoUrl: 'https://i.imgur.com/placeholder23.jpg',
+    iconUrl: 'https://i.imgur.com/yTrC3gJ.png',
+    fullBodyUrl: 'https://i.imgur.com/DO8Xozk.png',
+    attributes: {  attack: 10, defense: 3, stamina: 6, speed: 7, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Krzysztof "Eagle" Nowak', 
+    colors: ['#dc2626', '#ffffff', '#000000'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇵🇱 Polônia',
+    physicalDesc: 'Altura: 1,81m | Peso: 78kg | Ousado e corajoso',
+    playStyle: 'Águia - Mergulha sem medo',
+    photoUrl: 'https://i.imgur.com/placeholder24.jpg',
+    iconUrl: 'https://i.imgur.com/dPrE0IP.png',
+    fullBodyUrl: 'https://i.imgur.com/QEy3Atj.png',
+    attributes: {  attack: 8, defense: 4, stamina: 5, speed: 8, technique: 3, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Ján "Tatra" Kovács', 
+    colors: ['#3b82f6', '#dc2626', '#ffffff'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇸🇰 Eslováquia',
+    physicalDesc: 'Altura: 1,82m | Peso: 80kg | Sólido como montanhas',
+    playStyle: 'Tatra - Defesa das montanhas',
+    photoUrl: 'https://i.imgur.com/placeholder25.jpg',
+    iconUrl: 'https://i.imgur.com/AHdm1lK.png',
+    fullBodyUrl: 'https://i.imgur.com/Kg8Hsjr.png',
+    attributes: {  attack: 5, defense: 9, stamina: 8, speed: 4, technique: 8, intelligence: 4, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Viktor "Cossack" Petrov', 
+    colors: ['#fbbf24', '#3b82f6', '#ffffff'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇺🇦 Ucrânia',
+    physicalDesc: 'Altura: 1,78m | Peso: 75kg | Veloz e incansável',
+    playStyle: 'Cossaco - Cavalga o momentum',
+    photoUrl: 'https://i.imgur.com/placeholder26.jpg',
+    iconUrl: 'https://i.imgur.com/7Q6iufX.png',
+    fullBodyUrl: 'https://i.imgur.com/0kydVYI.png',
+    attributes: {  attack: 7, defense: 5, stamina: 7, speed: 8, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 7 },
+    tier: 'PRO'
+  },
+
+  // 🌍 EUROPA BALCÃS E MEDITERRÂNEO
+  { 
+    name: 'Nikola "Balkan Beast" Jovanović', 
+    colors: ['#dc2626', '#3b82f6', '#ffffff'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇷🇸 Sérvia',
+    physicalDesc: 'Altura: 1,85m | Peso: 84kg | Completo e dominante',
+    playStyle: 'Fera dos Balcãs - Excelência total',
+    photoUrl: 'https://i.imgur.com/placeholder27.jpg',
+    iconUrl: 'https://i.imgur.com/umV1HWm.png',
+    fullBodyUrl: 'https://i.imgur.com/Wz18o8u.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'ELITE'
+  },
+  { 
+    name: 'Andreas "Spartan" Papadopoulos', 
+    colors: ['#3b82f6', '#ffffff', '#000000'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇬🇷 Grécia',
+    physicalDesc: 'Altura: 1,79m | Peso: 77kg | Guerreiro e resiliente',
+    playStyle: 'Espartano - Defesa lendária',
+    photoUrl: 'https://i.imgur.com/placeholder28.jpg',
+    iconUrl: 'https://i.imgur.com/613Bvul.png',
+    fullBodyUrl: 'https://i.imgur.com/D2fY1oi.png',
+    attributes: {  attack: 5, defense: 10, stamina: 8, speed: 4, technique: 8, intelligence: 5, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Mehmet "Sultan" Yılmaz', 
+    colors: ['#dc2626', '#ffffff', '#000000'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇹🇷 Turquia',
+    physicalDesc: 'Altura: 1,80m | Peso: 78kg | Estratégico e harmonioso',
+    playStyle: 'Sultão - Combinações imperiais',
+    photoUrl: 'https://i.imgur.com/placeholder29.jpg',
+    iconUrl: 'https://i.imgur.com/J1Won9a.png',
+    fullBodyUrl: 'https://i.imgur.com/HJbqocl.png',
+    attributes: {  attack: 6, defense: 7, stamina: 6, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+
+  // 🌏 ÁSIA ORIENTAL (EXPANSÃO)
+  { 
+    name: 'Hiroshi "Shadow Blade" Nakamura', 
+    colors: ['#dc2626', '#000000', '#ffffff'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇯🇵 Japão',
+    physicalDesc: 'Altura: 1,72m | Peso: 70kg | Silencioso e letal',
+    playStyle: 'Lâmina das Sombras - Estratégia ninja',
+    photoUrl: 'https://i.imgur.com/placeholder30.jpg',
+    iconUrl: 'https://i.imgur.com/O1xwjVC.png',
+    fullBodyUrl: 'https://i.imgur.com/Tq3kqnU.png',
+    attributes: {  attack: 7, defense: 5, stamina: 6, speed: 8, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 9 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Li "Phoenix" Chang', 
+    colors: ['#dc2626', '#fbbf24', '#000000'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇨🇳 China',
+    physicalDesc: 'Altura: 1,77m | Peso: 74kg | Renasce a cada vitória',
+    playStyle: 'Fênix - Cresce com momentum',
+    photoUrl: 'https://i.imgur.com/placeholder31.jpg',
+    iconUrl: 'https://i.imgur.com/S4WckPT.png',
+    fullBodyUrl: 'https://i.imgur.com/mUHRwuM.png',
+    attributes: {  attack: 7, defense: 6, stamina: 6, speed: 7, technique: 5, intelligence: 5, adaptability: 4, clutch: 5, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Kim "Tiger Claw" Dae-Jung', 
+    colors: ['#3b82f6', '#dc2626', '#ffffff'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇰🇷 Coreia do Sul',
+    physicalDesc: 'Altura: 1,74m | Peso: 71kg | Garras afiadas letais',
+    playStyle: 'Garra de Tigre - Ataques selvagens',
+    photoUrl: 'https://i.imgur.com/placeholder32.jpg',
+    iconUrl: 'https://i.imgur.com/MHjJodY.png',
+    fullBodyUrl: 'https://i.imgur.com/xrmNcoy.png',
+    attributes: {  attack: 10, defense: 3, stamina: 5, speed: 9, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Wang "Terracotta" Jian', 
+    colors: ['#f97316', '#000000', '#fbbf24'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇨🇳 China',
+    physicalDesc: 'Altura: 1,75m | Peso: 73kg | Eterno como guerreiro de terracota',
+    playStyle: 'Terracota - Resistência milenar',
+    photoUrl: 'https://i.imgur.com/placeholder33.jpg',
+    iconUrl: 'https://i.imgur.com/cNJlZBG.png',
+    fullBodyUrl: 'https://i.imgur.com/xmrLw40.png',
+    attributes: {  attack: 4, defense: 7, stamina: 10, speed: 5, technique: 8, intelligence: 4, adaptability: 7, clutch: 8, launchPower: 8 },
+    tier: 'PRO'
+  },
+
+  // 🌏 SUDESTE ASIÁTICO
+  { 
+    name: 'Somchai "Golden Temple" Suwan', 
+    colors: ['#fbbf24', '#dc2626', '#3b82f6'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇹🇭 Tailândia',
+    physicalDesc: 'Altura: 1,71m | Peso: 68kg | Harmonioso e espiritual',
+    playStyle: 'Templo Dourado - Sinergia sagrada',
+    photoUrl: 'https://i.imgur.com/placeholder34.jpg',
+    iconUrl: 'https://i.imgur.com/9qugSKf.png',
+    fullBodyUrl: 'https://i.imgur.com/wOqlozz.png',
+    attributes: {  attack: 6, defense: 6, stamina: 7, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Nguyen "Dragon Fist" Minh', 
+    colors: ['#dc2626', '#fbbf24', '#16a34a'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇻🇳 Vietnã',
+    physicalDesc: 'Altura: 1,73m | Peso: 70kg | Rápido e corajoso',
+    playStyle: 'Punho do Dragão - Apostas ousadas',
+    photoUrl: 'https://i.imgur.com/placeholder35.jpg',
+    iconUrl: 'https://i.imgur.com/i2TgEmn.png',
+    fullBodyUrl: 'https://i.imgur.com/UBgtp7N.png',
+    attributes: {  attack: 8, defense: 4, stamina: 5, speed: 8, technique: 4, intelligence: 7, adaptability: 4, clutch: 5, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Arif "Archipelago" Rahman', 
+    colors: ['#dc2626', '#ffffff', '#000000'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇮🇩 Indonésia',
+    physicalDesc: 'Altura: 1,76m | Peso: 74kg | Versátil como mil ilhas',
+    playStyle: 'Arquipélago - Múltiplas estratégias',
+    photoUrl: 'https://i.imgur.com/placeholder36.jpg',
+    iconUrl: 'https://i.imgur.com/zwujlVS.png',
+    fullBodyUrl: 'https://i.imgur.com/zareMpD.png',
+    attributes: {  attack: 7, defense: 7, stamina: 6, speed: 6, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Rizal "Typhoon" Santos', 
+    colors: ['#3b82f6', '#dc2626', '#fbbf24'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇵🇭 Filipinas',
+    physicalDesc: 'Altura: 1,70m | Peso: 67kg | Tempestuoso e arrasador',
+    playStyle: 'Tufão - Força devastadora crescente',
+    photoUrl: 'https://i.imgur.com/placeholder37.jpg',
+    iconUrl: 'https://i.imgur.com/9rrjR1k.png',
+    fullBodyUrl: 'https://i.imgur.com/HUszlDH.png',
+    attributes: {  attack: 7, defense: 5, stamina: 6, speed: 8, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 7 },
+    tier: 'PRO'
+  },
+
+  // 🌏 ÁSIA CENTRAL E DO SUL (EXPANSÃO)
+  { 
+    name: 'Amir "Silk Road" Kazemi', 
+    colors: ['#16a34a', '#ffffff', '#dc2626'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇮🇷 Irã',
+    physicalDesc: 'Altura: 1,78m | Peso: 75kg | Estrategista das rotas antigas',
+    playStyle: 'Rota da Seda - Conexões perfeitas',
+    photoUrl: 'https://i.imgur.com/placeholder38.jpg',
+    iconUrl: 'https://i.imgur.com/SVIzRN3.png',
+    fullBodyUrl: 'https://i.imgur.com/6WjIM39.png',
+    attributes: {  attack: 6, defense: 7, stamina: 6, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Arjun "Maharaja" Singh', 
+    colors: ['#f97316', '#ffffff', '#16a34a'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇮🇳 Índia',
+    physicalDesc: 'Altura: 1,77m | Peso: 76kg | Real e completo',
+    playStyle: 'Maharaja - Domínio total imperial',
+    photoUrl: 'https://i.imgur.com/placeholder39.jpg',
+    iconUrl: 'https://i.imgur.com/T52d9he.png',
+    fullBodyUrl: 'https://i.imgur.com/CH8bPOd.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 6, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'ELITE'
+  },
+  { 
+    name: 'Hassan "Crescent" Malik', 
+    colors: ['#16a34a', '#ffffff', '#000000'], 
+    mentality: 'CALCULATED_CHAOS', 
+    country: '🇵🇰 Paquistão',
+    physicalDesc: 'Altura: 1,75m | Peso: 72kg | Estrategista imprevisível',
+    playStyle: 'Crescente - Caos sob a lua',
+    photoUrl: 'https://i.imgur.com/placeholder40.jpg',
+    iconUrl: 'https://i.imgur.com/IRzQqJz.png',
+    fullBodyUrl: 'https://i.imgur.com/1aaUxTX.png',
+    iconUrl: 'https://i.imgur.com/PLiaSPc.png',
+    fullBodyUrl: 'https://i.imgur.com/pPWrHcD.png',
+    attributes: {  attack: 6, defense: 6, stamina: 6, speed: 7, technique: 5, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 6 },
+    tier: 'TOP'
+  },
+
+  // 🌍 ÁFRICA (EXPANSÃO)
+  { 
+    name: 'Kwame "Black Panther" Mensah', 
+    colors: ['#000000', '#fbbf24', '#16a34a'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇬🇭 Gana',
+    physicalDesc: 'Altura: 1,79m | Peso: 77kg | Felino e devastador',
+    playStyle: 'Pantera Negra - Ataques ferozes',
+    photoUrl: 'https://i.imgur.com/placeholder41.jpg',
+    iconUrl: 'https://i.imgur.com/Q3zXBxx.png',
+    fullBodyUrl: 'https://i.imgur.com/UBrw0j1.png',
+    attributes: {  attack: 9, defense: 3, stamina: 6, speed: 9, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 5 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Amara "Nile Storm" Okafor', 
+    colors: ['#16a34a', '#ffffff', '#000000'], 
+    mentality: 'MOMENTUM_MASTER', 
+    country: '🇳🇬 Nigéria',
+    physicalDesc: 'Altura: 1,81m | Peso: 78kg | Poderosa como o rio Nilo',
+    playStyle: 'Tempestade do Nilo - Momentum avassalador',
+    photoUrl: 'https://i.imgur.com/placeholder42.jpg',
+    iconUrl: 'https://i.imgur.com/Aac6Ahv.png',
+    fullBodyUrl: 'https://i.imgur.com/j0D1Hi9.png',
+    attributes: {  attack: 7, defense: 6, stamina: 7, speed: 7, technique: 5, intelligence: 4, adaptability: 4, clutch: 4, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Jabari "Serengeti" Kimathi', 
+    colors: ['#fbbf24', '#dc2626', '#16a34a'], 
+    mentality: 'ETERNAL_SPINNER', 
+    country: '🇰🇪 Quênia',
+    physicalDesc: 'Altura: 1,83m | Peso: 76kg | Resistente como a savana',
+    playStyle: 'Serengeti - Resistência infinita',
+    photoUrl: 'https://i.imgur.com/placeholder43.jpg',
+    iconUrl: 'https://i.imgur.com/C9DkMlD.png',
+    fullBodyUrl: 'https://i.imgur.com/yPzkXOo.png',
+    attributes: {  attack: 5, defense: 6, stamina: 9, speed: 6, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 6 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Zuberi "Atlas Lion" Idrissi', 
+    colors: ['#dc2626', '#16a34a', '#fbbf24'], 
+    mentality: 'IRON_FORTRESS', 
+    country: '🇲🇦 Marrocos',
+    physicalDesc: 'Altura: 1,78m | Peso: 79kg | Forte como as montanhas Atlas',
+    playStyle: 'Leão do Atlas - Defesa majestosa',
+    photoUrl: 'https://i.imgur.com/placeholder44.jpg',
+    iconUrl: 'https://i.imgur.com/WovoYOA.png',
+    fullBodyUrl: 'https://i.imgur.com/VVTXhti.png',
+    attributes: {  attack: 5, defense: 9, stamina: 8, speed: 4, technique: 8, intelligence: 5, adaptability: 7, clutch: 8, launchPower: 7 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Kofi "Sahara" Diallo', 
+    colors: ['#fbbf24', '#16a34a', '#dc2626'], 
+    mentality: 'ALL_ROUNDER', 
+    country: '🇸🇳 Senegal',
+    physicalDesc: 'Altura: 1,80m | Peso: 77kg | Resistente como o deserto',
+    playStyle: 'Sahara - Adaptação total',
+    photoUrl: 'https://i.imgur.com/placeholder45.jpg',
+    iconUrl: 'https://i.imgur.com/ySpTTYt.png',
+    fullBodyUrl: 'https://i.imgur.com/oQ4iguG.png',
+    attributes: {  attack: 7, defense: 7, stamina: 7, speed: 6, technique: 7, intelligence: 5, adaptability: 6, clutch: 6, launchPower: 7 },
+    tier: 'TOP'
+  },
+
+  // 🌏 OCEANIA (EXPANSÃO)
+  { 
+    name: 'Tane "Haka Warrior" Parata', 
+    colors: ['#000000', '#ffffff', '#dc2626'], 
+    mentality: 'HIGH_RISK_GAMBLER', 
+    country: '🇳🇿 Nova Zelândia',
+    physicalDesc: 'Altura: 1,85m | Peso: 90kg | Guerreiro Maori intimidador',
+    playStyle: 'Guerreiro Haka - Tudo ou nada',
+    photoUrl: 'https://i.imgur.com/placeholder46.jpg',
+    iconUrl: 'https://i.imgur.com/lc8gO6y.png',
+    fullBodyUrl: 'https://i.imgur.com/blCsqmu.png',
+    attributes: {  attack: 9, defense: 4, stamina: 5, speed: 7, technique: 3, intelligence: 8, adaptability: 4, clutch: 8, launchPower: 4 },
+    tier: 'PRO'
+  },
+  { 
+    name: 'Koa "Reef Guardian" Kealoha', 
+    colors: ['#3b82f6', '#16a34a', '#fbbf24'], 
+    mentality: 'SYNERGY_SEEKER', 
+    country: '🇺🇸 Havaí',
+    physicalDesc: 'Altura: 1,76m | Peso: 73kg | Fluido como o oceano',
+    playStyle: 'Guardião do Recife - Harmonia aquática',
+    photoUrl: 'https://i.imgur.com/placeholder47.jpg',
+    iconUrl: 'https://i.imgur.com/FRZU3m4.png',
+    fullBodyUrl: 'https://i.imgur.com/jwGna4o.png',
+    attributes: {  attack: 6, defense: 6, stamina: 7, speed: 6, technique: 6, intelligence: 8, adaptability: 5, clutch: 8, launchPower: 7 },
+    tier: 'TOP'
+  },
+  { 
+    name: 'Mateo "Island Thunder" Rabuka', 
+    colors: ['#3b82f6', '#ffffff', '#000000'], 
+    mentality: 'GLASS_CANNON', 
+    country: '🇫🇯 Fiji',
+    physicalDesc: 'Altura: 1,82m | Peso: 85kg | Explosivo como trovão tropical',
+    playStyle: 'Trovão das Ilhas - Poder devastador',
+    photoUrl: 'https://i.imgur.com/placeholder48.jpg',
+    iconUrl: 'https://i.imgur.com/mCoiP1T.png',
+    fullBodyUrl: 'https://i.imgur.com/31OIxAp.png',
+    iconUrl: 'https://i.imgur.com/gjwVJ0E.png',
+    fullBodyUrl: 'https://i.imgur.com/HU2Zvs2.png',
+    attributes: {  attack: 10, defense: 3, stamina: 6, speed: 7, technique: 4, intelligence: 5, adaptability: 4, clutch: 4, launchPower: 6 },
+    tier: 'PRO'
+  }
+];
+
+// ============================================
+// UNIVERSE MODE - MANAGER
+// ============================================
+
+// ============================================
+// CALENDAR CONFIG - REFORMULADO "AS TRÊS ERAS"
+// ============================================
+const CALENDAR_CONFIG = {
+  // ============================================
+  // 🌀 BEYBLADE PRO CIRCUIT - CALENDÁRIO 2026
+  // Sistema baseado em escolhas estratégicas e arena mastery
+  // ============================================
+  
+  // Metadados das Temporadas
+  seasons: {
+    SPRING: { id: 'SPRING', name: '🌸 Primavera', months: [1, 2, 3], theme: 'Renascimento e Velocidade' },
+    SUMMER: { id: 'SUMMER', name: '☀️ Verão', months: [4, 5, 6], theme: 'Caos e Glória' },
+    AUTUMN: { id: 'AUTUMN', name: '🍂 Outono', months: [7, 8, 9], theme: 'Resistência e Gravidade' },
+    WINTER: { id: 'WINTER', name: '❄️ Inverno', months: [10, 11, 12], theme: 'Consagração e Legado' }
+  },
+  
+  // Alias para compatibilidade
+  eras: {
+    ASCENSION: { id: 'ASCENSION', name: '🌸 Primavera', months: [1, 2, 3], theme: 'Renascimento e Velocidade' },
+    BATTLE: { id: 'BATTLE', name: '☀️ Verão', months: [4, 5, 6, 7, 8, 9], theme: 'Competição Intensa' },
+    GLORY: { id: 'GLORY', name: '❄️ Inverno', months: [10, 11, 12], theme: 'Consagração e Legado' }
+  },
+  
+  // Sistema de Tiers
+  tiers: {
+    PREMIER_CHAMPIONSHIP: {
+      name: 'Premier Championship',
+      points: { 1: 2000, 2: 1200, 3: 720, 5: 360, 9: 180, 17: 90, 33: 45 },
+      participants: 64,
+      format: 'MD5'
+    },
+    ELITE_MASTERS: {
+      name: 'Elite Masters',
+      points: { 1: 1000, 2: 600, 3: 360, 5: 180, 9: 90, 17: 45 },
+      participants: 32,
+      format: 'MD3'
+    },
+    RISING_STAR: {
+      name: 'Rising Star Series',
+      points: { 1: 500, 2: 300, 3: 180, 5: 90, 9: 45, 17: 20 },
+      participants: 32,
+      format: 'MD3'
+    },
+    REGIONAL_CIRCUIT: {
+      name: 'Regional Circuit',
+      points: { 1: 250, 2: 150, 3: 90, 5: 45, 9: 20 },
+      participants: 32,
+      format: 'MD3'
+    }
+  },
+  
+  // Sistema de Rotação de Arenas - Premier Championships
+  premierArenas: [
+    'BB-10 Competitive',
+    'Killer Sides',
+    'Prismatic Nexus',
+    'Pangea Platform',
+    'Colosseum Carnage',
+    'Pinball Inferno',
+    'Vortex Coliseum',
+    'Domination Zones',
+    'Tidal Surge',
+    'Storm Track'
+  ],
+  
+  months: [
+    // ========================================
+    // 🌸 JANEIRO - Primavera
+    // ========================================
+    { 
+      id: 1, 
+      name: 'Janeiro', 
+      shortName: 'JAN',
+      season: 'SPRING',
+      theme: 'Abertura Explosiva',
+      tournaments: [
+        { 
+          id: 'PC_GENESIS',
+          name: '🎆 GENESIS PREMIER CHAMPIONSHIP', 
+          type: 'PREMIER_CHAMPIONSHIP', 
+          tier: 'PREMIER_CHAMPIONSHIP', 
+          arena: 'ALL', 
+          matchFormat: 'MD5', 
+          arenaRotation: 'random', 
+          participants: 64,
+          description: 'O maior evento para começar o ano - O nascimento de lendas',
+          wildCards: 8,
+          qualification: 'TOP_56_BBP_PLUS_8_WILDCARDS',
+          narrativeWeight: 'MAXIMUM'
+        },
+        { 
+          id: 'RS_NEW_YEAR',
+          name: '⚡ New Year Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'BB-10 Competitive', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Primeira chance de pontuar no ano novo',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'RC_ROOKIE',
+          name: '🎯 Rookie Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Prismatic Nexus', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 16,
+          description: 'Torneio focado em novatos e rankings baixos',
+          qualification: 'RANKS_49_64',
+          narrativeWeight: 'LOW'
+        }
+      ]
+    },
+    
+    // ========================================
+    // 🌸 FEVEREIRO - Primavera
+    // ========================================
+    { 
+      id: 2, 
+      name: 'Fevereiro', 
+      shortName: 'FEV',
+      season: 'SPRING',
+      theme: 'The Elite Masters Begin',
+      tournaments: [
+        { 
+          id: 'EM_PRISMATIC',
+          name: '💎 PRISMATIC NEXUS ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Prismatic Nexus', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Maestria octogonal - Mobilidade e reflexos',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_VORTEX',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'EM_VORTEX',
+          name: '🌀 VORTEX COLISEUM ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Vortex Coliseum', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'O vórtex infinito - Stamina testada ao extremo',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_PRISMATIC',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'RC_WINTER',
+          name: '🎯 Winter Regional Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Storm Track', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 24,
+          description: 'Tempestade de inverno para todos',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // 🌸 MARÇO - Primavera
+    // ========================================
+    { 
+      id: 3, 
+      name: 'Março', 
+      shortName: 'MAR',
+      season: 'SPRING',
+      theme: 'Continental Pride',
+      tournaments: [
+        { 
+          id: 'CONTINENTAL_WAR',
+          name: '🎪 CONTINENTAL WAR - Team Championship', 
+          type: 'TEAM_EVENT', 
+          tier: 'SPECIAL', 
+          arena: 'BB-10 Competitive', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 48,
+          description: 'Orgulho continental - As 6 regiões do mundo',
+          format: 'team_tournament',
+          teamSize: 6,
+          numberOfTeams: 8,
+          points: 400,
+          narrativeWeight: 'HIGH'
+        },
+        { 
+          id: 'RS_SPRING',
+          name: '⚡ Spring Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'Colosseum Carnage', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'O coliseu gladiatorial abre suas portas',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'RC_CONTINENTAL',
+          name: '🎯 Continental Qualifiers', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'VARIOUS', 
+          matchFormat: 'MD3', 
+          arenaRotation: 'regional', 
+          participants: 16,
+          description: 'Qualificação regional simultânea',
+          qualification: 'REGIONAL',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ☀️ ABRIL - Verão
+    // ========================================
+    { 
+      id: 4, 
+      name: 'Abril', 
+      shortName: 'ABR',
+      season: 'SUMMER',
+      theme: 'Vernal Championship',
+      tournaments: [
+        { 
+          id: 'PC_VERNAL',
+          name: '🌸 VERNAL PREMIER CHAMPIONSHIP', 
+          type: 'PREMIER_CHAMPIONSHIP', 
+          tier: 'PREMIER_CHAMPIONSHIP', 
+          arena: 'ALL', 
+          matchFormat: 'MD5', 
+          arenaRotation: 'random', 
+          participants: 64,
+          description: 'Premier da Primavera - Resistência testada',
+          wildCards: 8,
+          qualification: 'TOP_56_BBP_PLUS_8_WILDCARDS',
+          narrativeWeight: 'MAXIMUM'
+        },
+        { 
+          id: 'RC_SPRING',
+          name: '🎯 Spring Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Pangea Platform', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Tectônicas em movimento',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ☀️ MAIO - Verão
+    // ========================================
+    { 
+      id: 5, 
+      name: 'Maio', 
+      shortName: 'MAI',
+      season: 'SUMMER',
+      theme: 'The Storm Arrives',
+      tournaments: [
+        { 
+          id: 'EM_STORM',
+          name: '⛈️ STORM TRACK ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Storm Track', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Tempestade total - Ventos, raios e caos',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_KILLER',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'EM_KILLER',
+          name: '⚔️ KILLER SIDES ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Killer Sides', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Arena técnica definitiva - Velocidade é sobrevivência',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_STORM',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'RS_MEDITERRANEAN',
+          name: '⚡ Mediterranean Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'Tidal Surge', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Ondas do mediterrâneo',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ☀️ JUNHO - Verão
+    // ========================================
+    { 
+      id: 6, 
+      name: 'Junho', 
+      shortName: 'JUN',
+      season: 'SUMMER',
+      theme: 'Mid-Season Break',
+      tournaments: [
+        { 
+          id: 'MID_SEASON_INV',
+          name: '🌴 MID-SEASON INVITATIONAL', 
+          type: 'INVITATIONAL', 
+          tier: 'SPECIAL', 
+          arena: 'CHOICE', 
+          matchFormat: 'MD3', 
+          arenaRotation: 'choice', 
+          participants: 16,
+          description: 'Show de meio de ano - Sem pressão, pura exibição',
+          qualification: 'TOP_8_PLUS_8_INVITED',
+          noBBPPoints: true,
+          narrativeWeight: 'HIGH'
+        },
+        { 
+          id: 'RS_PRE_ZENITH',
+          name: '⚡ Pre-Zenith Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'Pinball Inferno', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Pinball caótico antes do Zenith',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'QUALIFIER_MID',
+          name: '🎯 Last Chance Qualifier - Mid Season', 
+          type: 'QUALIFIER', 
+          tier: 'SPECIAL', 
+          arena: 'Domination Zones', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 24,
+          description: 'Domine as zonas e suba no ranking',
+          qualification: 'RANKS_33_56',
+          points: 300,
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // 🍂 JULHO - Outono
+    // ========================================
+    { 
+      id: 7, 
+      name: 'Julho', 
+      shortName: 'JUL',
+      season: 'AUTUMN',
+      theme: 'Zenith Championship',
+      tournaments: [
+        { 
+          id: 'PC_ZENITH',
+          name: '🏆 ZENITH PREMIER CHAMPIONSHIP', 
+          type: 'PREMIER_CHAMPIONSHIP', 
+          tier: 'PREMIER_CHAMPIONSHIP', 
+          arena: 'ALL', 
+          matchFormat: 'MD5', 
+          arenaRotation: 'random', 
+          participants: 64,
+          description: 'O mais prestigioso - Tradição e glória no auge do ano',
+          wildCards: 8,
+          qualification: 'TOP_56_BBP_PLUS_8_WILDCARDS',
+          narrativeWeight: 'MAXIMUM'
+        },
+        { 
+          id: 'RC_SUMMER',
+          name: '🎯 Summer Classic Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'BB-10 Competitive', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'A clássica de verão',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // 🍂 AGOSTO - Outono
+    // ========================================
+    { 
+      id: 8, 
+      name: 'Agosto', 
+      shortName: 'AGO',
+      season: 'AUTUMN',
+      theme: 'Summer Showdown',
+      tournaments: [
+        { 
+          id: 'EM_TIDAL',
+          name: '🌊 TIDAL SURGE ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Tidal Surge', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Ondas titânicas - Timing é tudo',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_CARNAGE',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'EM_CARNAGE',
+          name: '🏛️ CARNAGE COLOSSEUM ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Colosseum Carnage', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Coliseu gladiatorial - Força bruta e destruição',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_TIDAL',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'RS_SUMMER_SLAM',
+          name: '⚡ Summer Slam Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'Vortex Coliseum', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Vórtex de verão',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'ALL_STAR_WEEK',
+          name: '⭐ ALL-STAR SKILLS COMPETITION', 
+          type: 'ALL_STAR', 
+          tier: 'SPECIAL', 
+          arena: 'VARIOUS', 
+          matchFormat: 'SKILLS', 
+          arenaRotation: 'various', 
+          participants: 24,
+          description: 'Celebração - Fastest Launch, Precision, Longest Spin, 1v1 Exhibition',
+          noBBPPoints: true,
+          events: ['fastest_launch', 'precision_target', 'longest_spin', 'exhibition_1v1'],
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // 🍂 SETEMBRO - Outono
+    // ========================================
+    { 
+      id: 9, 
+      name: 'Setembro', 
+      shortName: 'SET',
+      season: 'AUTUMN',
+      theme: 'The Fall Elite Masters Double',
+      tournaments: [
+        { 
+          id: 'EM_DOMINATION',
+          name: '🎯 DOMINATION ZONES ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Domination Zones', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Controle territorial - Domine ou morra',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_PINBALL',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'EM_PINBALL',
+          name: '🎰 PINBALL INFERNO ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Pinball Inferno', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Inferno pinball - Caos total com física de pinball',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_DOMINATION',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'RC_AUTUMN',
+          name: '🎯 Autumn Classic Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Killer Sides', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 24,
+          description: 'Outono técnico',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ❄️ OUTUBRO - Inverno
+    // ========================================
+    { 
+      id: 10, 
+      name: 'Outubro', 
+      shortName: 'OUT',
+      season: 'WINTER',
+      theme: 'The Final Elite Masters Rush',
+      tournaments: [
+        { 
+          id: 'EM_PANGEA',
+          name: '🌍 PANGEA PLATFORM ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'Pangea Platform', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Placas tectônicas - Terremotos e fissuras',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_BB10',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'EM_BB10',
+          name: '🏟️ BB-10 COMPETITIVE ELITE MASTERS', 
+          type: 'ELITE_MASTERS', 
+          tier: 'ELITE_MASTERS', 
+          arena: 'BB-10 Competitive', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'The Classic Masters - Fundação do esporte',
+          qualification: 'AUTO_TOP_32_BBP',
+          concurrentWith: 'EM_PANGEA',
+          mustChoose: true,
+          arenaExclusive: true,
+          narrativeWeight: 'HIGH',
+          arenaPickSystem: {
+            enabled: true,
+            factors: {
+              winrate: 0.40,
+              styleCompatibility: 0.30,
+              avoidRepetition: 0.15,
+              competitiveSpread: 0.10,
+              rankingStrategy: 0.05
+            }
+          }
+        },
+        { 
+          id: 'RS_HALLOWEEN',
+          name: '⚡ Halloween Havoc Rising Star', 
+          type: 'RISING_STAR', 
+          tier: 'RISING_STAR', 
+          arena: 'Pinball Inferno', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Terror de Halloween no pinball',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'RC_LAST_CHANCE',
+          name: '🎯 Last Chance Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Storm Track', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 32,
+          description: 'Última chance antes do Apex',
+          qualification: 'RANKS_41_72',
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ❄️ NOVEMBRO - Inverno
+    // ========================================
+    { 
+      id: 11, 
+      name: 'Novembro', 
+      shortName: 'NOV',
+      season: 'WINTER',
+      theme: 'Apex & Finals Race',
+      tournaments: [
+        { 
+          id: 'PC_APEX',
+          name: '🗽 APEX PREMIER CHAMPIONSHIP', 
+          type: 'PREMIER_CHAMPIONSHIP', 
+          tier: 'PREMIER_CHAMPIONSHIP', 
+          arena: 'ALL', 
+          matchFormat: 'MD5', 
+          arenaRotation: 'random', 
+          participants: 64,
+          description: 'Último Premier - Tudo ou nada',
+          wildCards: 8,
+          qualification: 'TOP_56_BBP_PLUS_8_WILDCARDS',
+          narrativeWeight: 'MAXIMUM'
+        },
+        { 
+          id: 'CHAMPIONSHIP_CHASE',
+          name: '⚡ CHAMPIONSHIP CHASE TOURNAMENT', 
+          type: 'FINALS_QUALIFIER', 
+          tier: 'CHAMPIONSHIP', 
+          arena: 'CHOICE', 
+          matchFormat: 'MD3', 
+          arenaRotation: 'choice', 
+          participants: 24,
+          description: 'Corrida final - Ranks 9-32 lutam por 4 vagas no Grand Finals',
+          qualification: 'RANKS_9_TO_32_BBP',
+          qualifySlots: 4,
+          points: 800,
+          narrativeWeight: 'MAXIMUM'
+        },
+        { 
+          id: 'RC_PRE_FINALS',
+          name: '🎯 Pre-Finals Warm-up Circuit', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Domination Zones', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 16,
+          description: 'Aquecimento antes das finais',
+          qualification: 'OPEN_ENTRY',
+          narrativeWeight: 'LOW'
+        }
+      ]
+    },
+    
+    // ========================================
+    // ❄️ DEZEMBRO - Inverno
+    // ========================================
+    { 
+      id: 12, 
+      name: 'Dezembro', 
+      shortName: 'DEZ',
+      season: 'WINTER',
+      theme: 'The Grand Finale',
+      tournaments: [
+        { 
+          id: 'GRAND_FINALS',
+          name: '🏆 GRAND FINALS - ULTIMATE CHAMPIONSHIP', 
+          type: 'GRAND_FINALS', 
+          tier: 'CHAMPIONSHIP', 
+          arena: 'CHOICE', 
+          matchFormat: 'MD5', 
+          arenaRotation: 'choice', 
+          participants: 8,
+          description: 'O MAIOR EVENTO DO ANO - Coroa de Campeão Mundial',
+          qualification: 'TOP_4_BBP_PLUS_4_FROM_CHASE',
+          format: 'double_elimination',
+          points: 1500,
+          pointsMultiplier: 2.0,
+          specialRules: {
+            doubleElimination: true,
+            arenaChoice: true,
+            winnerPicksArena: true,
+            prizeMultiplier: 5.0,
+            legacyEvent: true,
+            hallOfFameEntry: true,
+            worldChampionTitle: true
+          },
+          narrativeWeight: 'LEGENDARY'
+        },
+        { 
+          id: 'CHAMPIONS_EXHIBITION',
+          name: '🎪 Champions Exhibition', 
+          type: 'EXHIBITION', 
+          tier: 'SPECIAL', 
+          arena: 'ALL', 
+          matchFormat: 'MD3', 
+          arenaRotation: 'showcase', 
+          participants: 16,
+          description: 'Celebração de fim de ano com os campeões',
+          qualification: 'CHAMPIONS_ONLY',
+          noBBPPoints: true,
+          narrativeWeight: 'MEDIUM'
+        },
+        { 
+          id: 'NEW_GEN_SHOWCASE',
+          name: '🎯 New Generation Showcase', 
+          type: 'REGIONAL_CIRCUIT', 
+          tier: 'REGIONAL_CIRCUIT', 
+          arena: 'Prismatic Nexus', 
+          matchFormat: 'MD3', 
+          arenaRotation: null, 
+          participants: 16,
+          description: 'Vitrine para a nova geração',
+          qualification: 'ROOKIES_ONLY',
+          points: 250,
+          narrativeWeight: 'MEDIUM'
+        }
+      ]
+    }
+  ]
+};
+
+// ============================================
+// POINTS CONFIG - SISTEMA REBALANCEADO
+// ============================================
+const POINTS_CONFIG = {
+  // Premier Championship (64 players, 6 rounds) - Maior evento
+  PREMIER_CHAMPIONSHIP: { 
+    R64: 45,
+    R32: 90,
+    R16: 180,
+    QF: 360,
+    SF: 720,
+    F_LOSER: 1200,
+    F_WINNER: 2000
+  },
+  
+  // Compatibilidade - Grand Slam aponta para Premier
+  GRAND_SLAM: { 
+    R64: 45,
+    R32: 90,
+    R16: 180,
+    QF: 360,
+    SF: 720,
+    F_LOSER: 1200,
+    F_WINNER: 2000
+  },
+  
+  // Elite Masters (32 players) - Masters de arena específica
+  ELITE_MASTERS: {
+    R32: 45,
+    R16: 90,
+    QF: 180,
+    SF: 360,
+    F_LOSER: 600,
+    F_WINNER: 1000
+  },
+  
+  // Compatibilidade - Masters aponta para Elite Masters
+  MASTERS: {
+    R32: 45,
+    R16: 90,
+    QF: 180,
+    SF: 360,
+    F_LOSER: 600,
+    F_WINNER: 1000
+  },
+  
+  // Major Masters (32 players) - Compatibilidade
+  MAJOR_MASTERS: {
+    R32: 45,
+    R16: 90,
+    QF: 180,
+    SF: 360,
+    F_LOSER: 600,
+    F_WINNER: 1000
+  },
+  
+  // Masters Plus (16-32 players) - Eventos especiais
+  ATP_500_PLUS: {
+    R16: 50,
+    QF: 100,
+    SF: 175,
+    F_LOSER: 250,
+    F_WINNER: 350
+  },
+  
+  // Rising Star Series (32 players) - Challengers rebranded
+  RISING_STAR: {
+    R32: 20,
+    R16: 45,
+    QF: 90,
+    SF: 180,
+    F_LOSER: 300,
+    F_WINNER: 500
+  },
+  
+  // Regional Circuit (16-32 players) - Torneios regionais
+  REGIONAL_CIRCUIT: {
+    R32: 10,
+    R16: 20,
+    QF: 45,
+    SF: 90,
+    F_LOSER: 150,
+    F_WINNER: 250
+  },
+  
+  // Standard Masters (16 players, 4 rounds) - Valor aumentado
+  ATP_500: {
+    R16: 0,         // Auto avança
+    QF: 75,         // ↑ de 50
+    SF: 125,        // ↑ de 100
+    F_LOSER: 175,   // ↑ de 150
+    F_WINNER: 250   // ↑ de 200
+  },
+  
+  // Challengers Plus (24 players) - Novo formato
+  ATP_250_PLUS: {
+    R24: 25,
+    R16: 50,
+    QF: 75,
+    SF: 125,
+    F_LOSER: 175,
+    F_WINNER: 250
+  },
+  
+  // Challengers (16 players, 4 rounds) - Mais valioso
+  ATP_250: {
+    R16: 0,         // Auto avança
+    QF: 50,         // ↑ de 25
+    SF: 75,         // ↑ de 50
+    F_LOSER: 100,   // ↑ de 75
+    F_WINNER: 150   // ↑ de 100
+  },
+  
+  // Prospects (32 players, 5 rounds) - MUITO mais valioso
+  ATP_100: {
+    R32: 10,        // ↑ de 5
+    R16: 20,        // ↑ de 10
+    QF: 30,         // ↑ de 15
+    SF: 50,         // ↑ de 25
+    F_LOSER: 75,    // ↑ de 25
+    F_WINNER: 100   // ↑ de 20 (5x mais!)
+  },
+  
+  // Swiss Tournament (64 players, 7 rounds + knockout)
+  SWISS_TOURNAMENT: {
+    WIN: 10,        // Por vitória na fase suíça
+    TOP_16: 50,     // Bonus por avançar
+    QF: 100,
+    SF: 175,
+    F_LOSER: 250,
+    F_WINNER: 350
+  },
+  
+  // Battle Royale / Accumulative
+  BATTLE_ROYALE: {
+    WIN: 5,         // Por cada vitória
+    TOP_8: 25,      // Bonus por avançar
+    QF: 50,
+    SF: 100,
+    F_LOSER: 150,
+    F_WINNER: 200
+  },
+  
+  // Team Events (pontos individuais)
+  TEAM_EVENT: {
+    MATCH_WIN: 15,  // Por vitória individual
+    TEAM_WIN: 25,   // Bonus se time vencer
+    FINALIST: 50,
+    CHAMPION: 100
+  },
+  
+  // Special Events
+  INVITATIONAL: {
+    R16: 25,
+    QF: 50,
+    SF: 100,
+    F_LOSER: 150,
+    F_WINNER: 200
+  },
+  
+  WILD_CARD: {
+    R16: 10,
+    QF: 25,
+    SF: 50,
+    F_LOSER: 75,
+    F_WINNER: 100
+  },
+  
+  QUALIFIER: {
+    R32: 5,
+    R16: 10,
+    QF: 15,
+    SF: 25,
+    QUALIFY: 50     // Bonus por se qualificar
+  },
+  
+  // Mid-Season Finals
+  MID_SEASON_FINALS: {
+    QF: 150,
+    SF: 250,
+    F_LOSER: 400,
+    F_WINNER: 600
+  },
+  
+  // Grand Finals Qualifier
+  GRAND_FINALS_QUALIFIER: {
+    R16: 50,
+    QF: 100,
+    SF: 200,
+    F_LOSER: 300,
+    F_WINNER: 500,  // + vaga nas Finals
+    QUALIFY_BONUS: 200
+  },
+  
+  // Grand Finals (valores dobrados)
+  GRAND_FINALS: {
+    PARTICIPATION: 200,  // Só por estar lá
+    FIRST_WIN: 100,      // Primeira vitória
+    QF: 400,
+    SF: 700,
+    F_LOSER: 1000,
+    F_WINNER: 1600       // 2x o Grand Slam winner
+  },
+  
+  // Regional e Legacy Events
+  REGIONAL: {
+    MATCH_WIN: 25,
+    FINALIST: 100,
+    CHAMPION: 150
+  },
+  
+  LEGACY: {
+    R16: 15,
+    QF: 30,
+    SF: 50,
+    F_LOSER: 75,
+    F_WINNER: 100
+  },
+  
+  // Grudge Matches (com multiplier)
+  GRUDGE_MATCH: {
+    WIN: 50,
+    SERIES_WIN: 100  // Se vencer melhor de 3
+  },
+  
+  // ===== 🔧 CORREÇÃO: CONFIGURAÇÕES FALTANTES =====
+  
+  // Major Masters (ATP 500+)
+  MAJOR_MASTERS: {
+    R32: 50,
+    R16: 100,
+    QF: 200,
+    SF: 350,
+    F_LOSER: 500,
+    F_WINNER: 700
+  },
+  
+  // ATP 500 Plus (Masters aprimorado)
+  ATP_500_PLUS: {
+    R32: 45,
+    R16: 90,
+    QF: 180,
+    SF: 320,
+    F_LOSER: 450,
+    F_WINNER: 650
+  },
+  
+  // ATP 250 Plus (Challengers aprimorado)
+  ATP_250_PLUS: {
+    R32: 30,
+    R16: 60,
+    QF: 120,
+    SF: 200,
+    F_LOSER: 300,
+    F_WINNER: 450
+  },
+  
+  // ALL_STAR (eventos sem pontos BBP oficiais, mas dão pontos de participação)
+  ALL_STAR: {
+    PARTICIPATION: 10,
+    MATCH_WIN: 5,
+    QF: 10,
+    SF: 15,
+    F_LOSER: 20,
+    F_WINNER: 25
+  }
+};
+
+// ============================================
+// ARENA_CONFIG - CONFIGURAÇÃO CENTRALIZADA DE ARENAS
+// ============================================
+// ✨ SINGLE SOURCE OF TRUTH para todas as arenas do jogo
+// Inclui: preferências, modificadores de stats E specs físicas
+// Para adicionar uma nova arena, copie um bloco e modifique os valores!
+// ============================================
+
+const ARENA_CONFIG = {
+  // ===== BB-10 STADIUM (ARENA CLÁSSICA) =====
+  'BB-10 Competitive': {
+    // Identificação
+    code: 'BB10_COMPETITIVE',  // Código interno usado pelo engine
+    name: 'BB-10 Competitive Stadium',
+    description: 'Arena competitiva clássica - Balanceada e justa, sem gimmicks',
+    
+    // Preferências de Deck
+    favoredTypes: ['Attack', 'Balance'],
+    disfavoredTypes: ['Defense'],
+    preferredStats: ['atk', 'speed', 'bal'],
+    
+    // Modificadores de Stats (BattleEngine)
+    statModifiers: {},  // Arena neutra, sem modificadores
+    
+    // Especificações Físicas (SimulationEngine)
+    physicsSpecs: {
+      radius: 221,
+      surfaceFriction: 0.65,
+      gravityModifier: 1.0,
+      wallElasticity: 0.75,
+      features: { tornadoRidge: true, pockets: true, pocketCount: 2, pocketSizeMultiplier: 0.7 }
+    }
+  },
+
+  // ===== PRISMATIC NEXUS =====
+  'Prismatic Nexus': {
+    code: 'NEXUS',
+    name: 'Prismatic Nexus Arena',
+    description: 'Portais e inclinação favorecem mobilidade e adaptação',
+    
+    favoredTypes: ['Attack', 'Balance'],
+    disfavoredTypes: ['Stamina'],
+    preferredStats: ['atk', 'bal', 'speed'],
+    
+    statModifiers: { 
+      atk: 2, 
+      bal: 2, 
+      speed: 1 
+    },
+    
+    physicsSpecs: {
+      radius: 215,
+      centerRadius: 80,
+      portalZones: [
+        { x: 150, y: 0, radius: 40 },
+        { x: -150, y: 0, radius: 40 },
+        { x: 0, y: 150, radius: 40 },
+        { x: 0, y: -150, radius: 40 }
+      ],
+      surfaceFriction: 0.55,
+      gravityModifier: 0.95,
+      wallElasticity: 0.88,
+      features: { portals: true, energyFields: true }
+    }
+  },
+
+  // ===== COLOSSEUM CARNAGE (ARENA GLADIATORIAL) =====
+  'Colosseum Carnage': {
+    code: 'COLOSSEUM_CARNAGE',
+    name: 'Colosseum Carnage Arena',
+    description: 'Arena gladiatorial - Portões liberam obstáculos móveis que esmagam tudo no caminho',
+    
+    favoredTypes: ['Attack', 'Defense'],
+    disfavoredTypes: ['Stamina'],
+    preferredStats: ['atk', 'def', 'technique'],
+    
+    statModifiers: { 
+      atk: 5, 
+      def: 3, 
+      technique: 2,
+      sta: -3 
+    },
+    
+    physicsSpecs: {
+      radius: 200,
+      surfaceFriction: 0.60,
+      gravityModifier: 1.0,
+      wallElasticity: 0.85,
+      features: { 
+        movingObstacles: true, 
+        gateSystem: true, 
+        crushZones: true,
+        obstacleCount: 3,
+        gateInterval: 15.0  // Portões abrem a cada 15s
+      }
+    }
+  },
+
+  // ===== IRON CRUCIBLE (CALDEIRÃO DEFENSIVO) =====
+  'Volcanic Rage': {
+    code: 'VOLCANIC_RAGE',
+    name: 'Volcanic Rage Stadium',
+    description: 'Tigela profunda com fricção variável - centro de alta fricção ancora tanks, bordas escorregadias repelem atacantes',
+    
+    favoredTypes: ['Defense', 'Stamina'],
+    disfavoredTypes: ['Attack'],
+    preferredStats: ['def', 'weight', 'sta'],
+    
+    statModifiers: { 
+      def: 5, 
+      weight: 5, 
+      sta: 2,
+      speed: -4 
+    },
+    
+    physicsSpecs: {
+      radius: 228,
+      surfaceFriction: 'VARIABLE',  // Centro alto, bordas baixo
+      frictionMap: {
+        center: 0.95,    // Alta fricção no centro
+        mid: 0.70,       // Fricção normal no meio
+        outer: 0.35      // Baixa fricção nas bordas
+      },
+      gravityModifier: 1.25,  // Gravity trap para beys pesados
+      wallElasticity: 0.65,
+      features: { 
+        bowl: true, 
+        frictionGradient: true,
+        depthGradient: 0.8,
+        heavyWeightMeta: true 
+      }
+    }
+  },
+
+  // ===== VORTEX COLISEUM =====
+  'Vortex Coliseum': {
+    code: 'VORTEX_COLISEUM',
+    name: 'Vortex Coliseum',
+    description: 'Vórtex central e órbitas favorecem resistência e momentum',
+    
+    favoredTypes: ['Stamina', 'Balance'],
+    disfavoredTypes: ['Defense'],
+    preferredStats: ['sta', 'bal', 'spin'],
+    
+    statModifiers: { 
+      sta: 3, 
+      bal: 2, 
+      spin: 3 
+    },
+    
+    physicsSpecs: {
+      radius: 234,
+      vortexStrength: 0.8,
+      rotationSpeed: 0.5,
+      surfaceFriction: 0.60,
+      gravityModifier: 1.05,
+      wallElasticity: 0.80,
+      features: { vortex: true, rotating: true }
+    }
+  },
+
+  // ===== PINBALL INFERNO 2.0 (REDESIGN COMPLETO) =====
+  'Storm Track': {
+    code: 'STORM_TRACK',
+    name: 'Storm Track Arena',
+    description: 'Arena meteorológica com zonas de vento variável, raios aleatórios e correntes de ar - velocidade e adaptação são essenciais',
+    
+    favoredTypes: ['Attack', 'Balance'],
+    disfavoredTypes: ['Defense'],
+    preferredStats: ['atk', 'speed', 'technique', 'bal'],
+    
+    statModifiers: { 
+      atk: 4, 
+      speed: 4, 
+      technique: 3,
+      def: -3 
+    },
+    
+    physicsSpecs: {
+      radius: 227,
+      surfaceFriction: 0.45,
+      gravityModifier: 1.0,
+      wallElasticity: 0.95,
+      features: { 
+        windZones: true,
+        lightning: true,
+        airCurrents: true,
+        weatherSystem: true,
+        dynamicEnvironment: true
+      },
+      windZones: {
+        tornado: { count: 2, strength: 1.5, radius: 25, color: '#4a90e2' },  // Azul
+        gust: { count: 3, strength: 1.2, radius: 30, color: '#87ceeb' },     // Azul claro
+        calm: { count: 2, strength: 0.8, radius: 35, color: '#90ee90' }      // Verde claro
+      },
+      lightning: { 
+        frequency: 'random', 
+        timing: [0.8, 1.5, 2.2],  // Tempos variáveis
+        shockEffect: true 
+      }
+    }
+  },
+
+  // ===== PANGEA PLATFORM (PLACAS TECTÔNICAS) =====
+  'Pangea Platform': {
+    code: 'PANGEA_PLATFORM',
+    name: 'Pangea Platform Stadium',
+    description: 'Placas tectônicas móveis criam fissuras e colisões - peso e balance dominam o caos geológico',
+    
+    favoredTypes: ['Balance', 'Defense'],
+    disfavoredTypes: ['Attack', 'Stamina'],
+    preferredStats: ['bal', 'weight', 'technique'],
+    
+    statModifiers: { 
+      bal: 4, 
+      weight: 3, 
+      technique: 2,
+      speed: -1 
+    },
+    
+    physicsSpecs: {
+      radius: 221,
+      surfaceFriction: 0.68,
+      gravityModifier: 1.0,
+      wallElasticity: 0.80,
+      features: { 
+        movingPlates: true, 
+        faultLines: true, 
+        seismic: true,
+        plateCount: 6,
+        plateSpeed: 0.3,  // Velocidade de movimento das placas
+        quakeInterval: 12.0  // Terremoto a cada 12s
+      }
+    }
+  },
+
+  // ===== KILLER SIDES =====
+  'Killer Sides': {
+    code: 'KILLER_SIDES',
+    name: 'Killer Sides Arena',
+    description: 'Grip tracks laterais capturam beys lentos e os disparam ao centro em alta velocidade - velocidade é fuga, lentidão é projétil mortal!',
+    
+    favoredTypes: ['Attack', 'Balance'],
+    disfavoredTypes: ['Defense', 'Stamina'],
+    preferredStats: ['speed', 'atk', 'technique'],
+    
+    statModifiers: { 
+      atk: 3, 
+      speed: 3, 
+      technique: 2 
+    },
+    
+    physicsSpecs: {
+      radius: 221,
+      centerSafeZone: 90,
+      surfaceFriction: 0.68,
+      gravityModifier: 1.0,
+      wallElasticity: 0.72,
+      features: { killZones: true, strategy: true }
+    }
+  }
+};
+
+// ============================================
+// ARENA_PREFERENCES - Mantido para compatibilidade
+// ============================================
+// Cria aliases para nomes do calendário ('BB-10 Competitive') e códigos internos ('BB10_COMPETITIVE')
+const ARENA_PREFERENCES = {};
+
+Object.entries(ARENA_CONFIG).forEach(([key, config]) => {
+  // Adiciona pela chave original (nome do calendário)
+  ARENA_PREFERENCES[key] = {
+    name: config.name,
+    favoredTypes: config.favoredTypes,
+    disfavoredTypes: config.disfavoredTypes,
+    preferredStats: config.preferredStats,
+    description: config.description
+  };
+  
+  // Adiciona também pelo código interno para compatibilidade
+  ARENA_PREFERENCES[config.code] = ARENA_PREFERENCES[key];
+});
+
+
+// Exports
+export { 
+  CALENDAR_CONFIG as CALENDAR_STRUCTURE, 
+  POINTS_CONFIG, 
+  ARENA_PREFERENCES,
+  ARENA_CONFIG  // ✨ Nova configuração centralizada de arenas
+};

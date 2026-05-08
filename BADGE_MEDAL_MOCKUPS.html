@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Badge Medal Mockups</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800;900&family=Barlow+Condensed:wght@600;800;900&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg: #06090b;
+      --panel: #0b1114;
+      --ink: #f2eee7;
+      --dim: rgba(242,238,231,.58);
+      --faint: rgba(242,238,231,.26);
+      --line: rgba(242,238,231,.095);
+      --cyan: #55d7d7;
+      --bronze: #c47a3a;
+      --silver: #c7d0da;
+      --gold: #e9c34c;
+      --legend: #ef6044;
+      --mythic: #b46cff;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        radial-gradient(circle at 18% 10%, rgba(85,215,215,.14), transparent 28%),
+        radial-gradient(circle at 86% 12%, rgba(233,195,76,.10), transparent 24%),
+        linear-gradient(180deg, #081014, #050708 70%);
+      background-size: 34px 34px, 34px 34px, auto, auto, auto;
+      font-family: Barlow, sans-serif;
+    }
+
+    .page {
+      width: min(1440px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: end;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+    }
+
+    .kicker {
+      font-family: "Space Mono", monospace;
+      font-size: 10px;
+      letter-spacing: .34em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    h1 {
+      margin: 10px 0 0;
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 58px;
+      line-height: .92;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      max-width: 760px;
+      margin-top: 12px;
+      color: var(--dim);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .tier-strip {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .tier-pill {
+      border: 1px solid color-mix(in srgb, var(--tier), transparent 56%);
+      color: var(--tier);
+      background: color-mix(in srgb, var(--tier), transparent 91%);
+      font-family: "Space Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      padding: 8px 10px;
+    }
+
+    .option {
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.012)),
+        rgba(5,8,10,.78);
+      margin-top: 18px;
+      overflow: hidden;
+    }
+
+    .option-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: baseline;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.018);
+    }
+
+    .option-title {
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .option-note {
+      font-family: "Space Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+
+    .showcase {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 18px;
+      padding: 26px;
+    }
+
+    .honor {
+      --tier: var(--bronze);
+      position: relative;
+      min-height: 238px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      text-align: center;
+      padding: 8px 10px 0;
+    }
+
+    .honor.silver { --tier: var(--silver); }
+    .honor.gold { --tier: var(--gold); }
+    .honor.legend { --tier: var(--legend); }
+    .honor.mythic { --tier: var(--mythic); }
+
+    .tier-name {
+      margin-top: 14px;
+      font-family: "Space Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .24em;
+      text-transform: uppercase;
+      color: var(--tier);
+    }
+
+    .badge-name {
+      margin-top: 8px;
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 23px;
+      font-weight: 900;
+      line-height: .96;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .badge-line {
+      width: 44px;
+      height: 1px;
+      margin: 11px auto 0;
+      background: linear-gradient(90deg, transparent, var(--tier), transparent);
+    }
+
+    .req {
+      margin-top: 10px;
+      max-width: 150px;
+      font-size: 12px;
+      line-height: 1.3;
+      color: var(--dim);
+    }
+
+    /* OPTION A */
+    .medal-a {
+      width: 116px;
+      height: 116px;
+      border-radius: 50%;
+      position: relative;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 34% 24%, rgba(255,255,255,.42), transparent 18%),
+        radial-gradient(circle at center, color-mix(in srgb, var(--tier), white 10%) 0 42%, color-mix(in srgb, var(--tier), black 26%) 43% 60%, #111 62%);
+      border: 2px solid color-mix(in srgb, var(--tier), white 24%);
+      box-shadow:
+        0 0 0 8px color-mix(in srgb, var(--tier), transparent 88%),
+        0 22px 50px rgba(0,0,0,.42),
+        0 0 38px color-mix(in srgb, var(--tier), transparent 66%),
+        inset 0 0 0 8px rgba(0,0,0,.16),
+        inset 0 0 0 13px rgba(255,255,255,.09);
+    }
+
+    .medal-a::before, .medal-a::after {
+      content: "";
+      position: absolute;
+      top: -36px;
+      width: 28px;
+      height: 52px;
+      background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(0,0,0,.18)), var(--tier);
+      clip-path: polygon(0 0, 100% 0, 78% 100%, 18% 100%);
+      z-index: -1;
+      opacity: .82;
+    }
+
+    .medal-a::before { left: 27px; transform: rotate(-13deg); }
+    .medal-a::after { right: 27px; transform: rotate(13deg); }
+
+    .medal-a span {
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 48px;
+      font-weight: 900;
+      color: rgba(0,0,0,.58);
+      text-shadow: 0 1px 0 rgba(255,255,255,.28);
+    }
+
+    /* OPTION B */
+    .medal-b {
+      width: 118px;
+      height: 138px;
+      position: relative;
+      display: grid;
+      place-items: center;
+      clip-path: polygon(50% 0, 88% 14%, 100% 52%, 78% 100%, 22% 100%, 0 52%, 12% 14%);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.32), transparent 24%),
+        linear-gradient(135deg, color-mix(in srgb, var(--tier), white 18%), color-mix(in srgb, var(--tier), black 18%));
+      box-shadow: 0 24px 52px rgba(0,0,0,.38), 0 0 34px color-mix(in srgb, var(--tier), transparent 66%);
+    }
+
+    .medal-b::before {
+      content: "";
+      position: absolute;
+      inset: 9px;
+      clip-path: inherit;
+      border: 1px solid rgba(255,255,255,.34);
+      background: radial-gradient(circle at center, rgba(0,0,0,.12), transparent 54%);
+    }
+
+    .medal-b span {
+      position: relative;
+      font-family: "Space Mono", monospace;
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      color: rgba(0,0,0,.56);
+    }
+
+    /* OPTION C */
+    .medal-c-wrap {
+      width: 124px;
+      height: 124px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background:
+        conic-gradient(from -25deg, transparent 0 10%, color-mix(in srgb, var(--tier), transparent 25%) 11% 18%, transparent 19% 31%, color-mix(in srgb, var(--tier), transparent 20%) 32% 40%, transparent 41% 100%);
+      filter: drop-shadow(0 18px 32px rgba(0,0,0,.42));
+    }
+
+    .medal-c {
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 35% 24%, rgba(255,255,255,.40), transparent 18%),
+        linear-gradient(145deg, color-mix(in srgb, var(--tier), white 20%), color-mix(in srgb, var(--tier), black 28%));
+      border: 1px solid color-mix(in srgb, var(--tier), white 34%);
+      box-shadow: inset 0 0 0 8px rgba(0,0,0,.12), 0 0 32px color-mix(in srgb, var(--tier), transparent 62%);
+    }
+
+    .medal-c span {
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 32px;
+      font-weight: 900;
+      color: rgba(0,0,0,.54);
+    }
+
+    /* OPTION D */
+    .medal-d {
+      width: 132px;
+      height: 156px;
+      position: relative;
+      display: grid;
+      place-items: center;
+    }
+
+    .medal-d::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      width: 74px;
+      height: 50px;
+      background:
+        linear-gradient(90deg, color-mix(in srgb, var(--tier), black 18%), var(--tier), color-mix(in srgb, var(--tier), black 18%));
+      clip-path: polygon(10% 0, 90% 0, 78% 100%, 22% 100%);
+      opacity: .9;
+    }
+
+    .shield {
+      position: absolute;
+      bottom: 0;
+      width: 118px;
+      height: 118px;
+      display: grid;
+      place-items: center;
+      clip-path: polygon(50% 0, 95% 20%, 85% 76%, 50% 100%, 15% 76%, 5% 20%);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.28), transparent 20%),
+        linear-gradient(135deg, color-mix(in srgb, var(--tier), white 14%), color-mix(in srgb, var(--tier), black 22%));
+      border: 1px solid color-mix(in srgb, var(--tier), white 30%);
+      box-shadow: 0 24px 50px rgba(0,0,0,.40), 0 0 34px color-mix(in srgb, var(--tier), transparent 66%);
+    }
+
+    .shield span {
+      font-family: "Space Mono", monospace;
+      font-size: 15px;
+      font-weight: 900;
+      color: rgba(0,0,0,.56);
+      letter-spacing: .14em;
+    }
+
+    /* OPTION E */
+    .medal-e {
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      position: relative;
+      display: grid;
+      place-items: center;
+      background:
+        repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--tier), white 8%) 0 8deg, color-mix(in srgb, var(--tier), black 18%) 8deg 16deg);
+      box-shadow: 0 24px 50px rgba(0,0,0,.42), 0 0 36px color-mix(in srgb, var(--tier), transparent 62%);
+    }
+
+    .medal-e::before {
+      content: "";
+      position: absolute;
+      inset: 17px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 25%, rgba(255,255,255,.32), transparent 20%),
+        linear-gradient(145deg, color-mix(in srgb, var(--tier), white 20%), color-mix(in srgb, var(--tier), black 20%));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), inset 0 0 0 8px rgba(0,0,0,.11);
+    }
+
+    .medal-e span {
+      position: relative;
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 24px;
+      font-weight: 900;
+      color: rgba(0,0,0,.57);
+    }
+
+    .compact-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 14px;
+      padding: 26px;
+      background: rgba(0,0,0,.16);
+      border-top: 1px solid var(--line);
+    }
+
+    .mini {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 12px;
+      align-items: center;
+      min-height: 74px;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--tier), transparent 68%);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--tier), transparent 92%), rgba(255,255,255,.015));
+    }
+
+    .mini-medal {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 34% 24%, rgba(255,255,255,.36), transparent 19%),
+        linear-gradient(145deg, color-mix(in srgb, var(--tier), white 16%), color-mix(in srgb, var(--tier), black 22%));
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 20px color-mix(in srgb, var(--tier), transparent 70%);
+      border: 1px solid color-mix(in srgb, var(--tier), white 26%);
+      font-family: "Space Mono", monospace;
+      font-size: 11px;
+      font-weight: 900;
+      color: rgba(0,0,0,.55);
+    }
+
+    .mini-name {
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 17px;
+      font-weight: 900;
+      line-height: .98;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .mini-tier {
+      margin-top: 4px;
+      font-family: "Space Mono", monospace;
+      font-size: 8px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--tier);
+    }
+
+    @keyframes cod-pulse {
+      0%, 100% { filter: drop-shadow(0 0 18px color-mix(in srgb, var(--tier), transparent 64%)); transform: translateY(0) scale(1); }
+      50% { filter: drop-shadow(0 0 42px color-mix(in srgb, var(--tier), transparent 36%)); transform: translateY(-2px) scale(1.025); }
+    }
+
+    @keyframes cod-scan {
+      from { transform: translateX(-160%) skewX(-18deg); }
+      to { transform: translateX(180%) skewX(-18deg); }
+    }
+
+    .cod-board {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(190px, 1fr));
+      gap: 18px;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        rgba(0,0,0,.18);
+      background-size: 28px 28px;
+    }
+
+    .cod-card {
+      --tier: var(--bronze);
+      position: relative;
+      min-height: 282px;
+      padding: 18px 16px 16px;
+      border: 1px solid color-mix(in srgb, var(--tier), transparent 64%);
+      background:
+        radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--tier), transparent 82%), transparent 46%),
+        linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .cod-card.silver { --tier: var(--silver); }
+    .cod-card.gold { --tier: var(--gold); }
+    .cod-card.legend { --tier: var(--legend); }
+    .cod-card.mythic { --tier: var(--mythic); }
+
+    .cod-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+      width: 38%;
+      opacity: .18;
+      animation: cod-scan 4.2s linear infinite;
+      pointer-events: none;
+    }
+
+    .cod-rank {
+      font-family: "Space Mono", monospace;
+      font-size: 8px;
+      letter-spacing: .26em;
+      text-transform: uppercase;
+      color: var(--tier);
+      margin-bottom: 14px;
+    }
+
+    .cod-badge {
+      position: relative;
+      width: 142px;
+      height: 164px;
+      display: grid;
+      place-items: center;
+      isolation: isolate;
+    }
+
+    .cod-badge.simple {
+      height: 138px;
+    }
+
+    .cod-core {
+      position: absolute;
+      inset: 18px 20px 10px;
+      clip-path: polygon(50% 0, 91% 17%, 100% 56%, 73% 100%, 27% 100%, 0 56%, 9% 17%);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.30), transparent 23%),
+        linear-gradient(135deg, color-mix(in srgb, var(--tier), white 14%), color-mix(in srgb, var(--tier), black 26%));
+      border: 1px solid color-mix(in srgb, var(--tier), white 26%);
+      box-shadow:
+        inset 0 0 0 7px rgba(0,0,0,.15),
+        inset 0 0 0 8px rgba(255,255,255,.08),
+        0 20px 44px rgba(0,0,0,.44),
+        0 0 30px color-mix(in srgb, var(--tier), transparent 68%);
+      z-index: 2;
+    }
+
+    .cod-wing {
+      position: absolute;
+      top: 52px;
+      width: 56px;
+      height: 52px;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--tier), white 5%), color-mix(in srgb, var(--tier), black 36%));
+      clip-path: polygon(0 34%, 100% 0, 76% 48%, 100% 100%, 0 66%);
+      opacity: .9;
+      z-index: 1;
+    }
+
+    .cod-wing.left { left: -4px; transform: scaleX(-1); }
+    .cod-wing.right { right: -4px; }
+
+    .cod-crown {
+      position: absolute;
+      top: 0;
+      width: 78px;
+      height: 42px;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--tier), white 12%), color-mix(in srgb, var(--tier), black 24%));
+      clip-path: polygon(0 100%, 14% 18%, 32% 60%, 50% 0, 68% 60%, 86% 18%, 100% 100%);
+      z-index: 3;
+      box-shadow: 0 0 24px color-mix(in srgb, var(--tier), transparent 70%);
+    }
+
+    .cod-name-inside {
+      position: relative;
+      z-index: 4;
+      width: 86px;
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 22px;
+      line-height: .9;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: rgba(0,0,0,.66);
+      text-shadow: 0 1px 0 rgba(255,255,255,.22);
+    }
+
+    .cod-badge.epic {
+      animation: cod-pulse 2.3s ease-in-out infinite;
+    }
+
+    .cod-badge.epic .cod-core {
+      inset: 28px 18px 6px;
+      clip-path: polygon(50% 0, 87% 12%, 100% 45%, 88% 74%, 50% 100%, 12% 74%, 0 45%, 13% 12%);
+    }
+
+    .cod-badge.epic::after {
+      content: "";
+      position: absolute;
+      inset: 31px 25px 15px;
+      clip-path: polygon(50% 0, 84% 15%, 94% 48%, 74% 84%, 50% 100%, 26% 84%, 6% 48%, 16% 15%);
+      border: 1px solid rgba(255,255,255,.34);
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .cod-name-out {
+      margin-top: 14px;
+      font-family: "Barlow Condensed", sans-serif;
+      font-size: 26px;
+      font-weight: 900;
+      line-height: .95;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .cod-sub {
+      margin-top: 8px;
+      max-width: 160px;
+      font-size: 12px;
+      line-height: 1.32;
+      color: var(--dim);
+    }
+
+    @media (max-width: 980px) {
+      header { grid-template-columns: 1fr; }
+      .tier-strip { justify-content: flex-start; }
+      .showcase, .compact-grid, .cod-board { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      h1 { font-size: 44px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <div class="kicker">História Viva Tennis / Badges</div>
+        <h1>Medalhas de Honra</h1>
+        <div class="sub">Exploração visual para a aba de conquistas. Aqui a badge vira uma medalha desbloqueada: tier em destaque, nome embaixo, requisito discreto e sensação de prêmio raro.</div>
+      </div>
+      <div class="tier-strip">
+        <span class="tier-pill" style="--tier:var(--bronze)">Bronze</span>
+        <span class="tier-pill" style="--tier:var(--silver)">Prata</span>
+        <span class="tier-pill" style="--tier:var(--gold)">Ouro</span>
+        <span class="tier-pill" style="--tier:var(--legend)">Lendário</span>
+        <span class="tier-pill" style="--tier:var(--mythic)">Mítico</span>
+      </div>
+    </header>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção A: Medalha Olímpica Editorial</div>
+        <div class="option-note">mais prêmio, mais cerimônia</div>
+      </div>
+      <div class="showcase">
+        <article class="honor bronze"><div class="medal-a"><span>T</span></div><div class="tier-name">Bronze</div><div class="badge-name">Colecionador de Troféus</div><div class="badge-line"></div><div class="req">5 títulos</div></article>
+        <article class="honor silver"><div class="medal-a"><span>F</span></div><div class="tier-name">Prata</div><div class="badge-name">Final Boss</div><div class="badge-line"></div><div class="req">2 ATP Finals</div></article>
+        <article class="honor gold"><div class="medal-a"><span>GS</span></div><div class="tier-name">Ouro</div><div class="badge-name">Imortal em Slams</div><div class="badge-line"></div><div class="req">6 Grand Slams</div></article>
+        <article class="honor legend"><div class="medal-a"><span>M</span></div><div class="tier-name">Lendário</div><div class="badge-name">Lenda dos Masters</div><div class="badge-line"></div><div class="req">18 Masters 1000</div></article>
+        <article class="honor mythic"><div class="medal-a"><span>#1</span></div><div class="tier-name">Mítico</div><div class="badge-name">Dono do Trono</div><div class="badge-line"></div><div class="req">10 anos como #1</div></article>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção B: Placa de Hall da Fama</div>
+        <div class="option-note">mais museu, mais legado</div>
+      </div>
+      <div class="showcase">
+        <article class="honor bronze"><div class="medal-b"><span>CL</span></div><div class="tier-name">Bronze</div><div class="badge-name">Rei do Saibro</div><div class="badge-line"></div><div class="req">3 títulos no saibro</div></article>
+        <article class="honor silver"><div class="medal-b"><span>GR</span></div><div class="tier-name">Prata</div><div class="badge-name">Lorde da Grama</div><div class="badge-line"></div><div class="req">5 títulos na grama</div></article>
+        <article class="honor gold"><div class="medal-b"><span>HD</span></div><div class="tier-name">Ouro</div><div class="badge-name">Imperador do Hard</div><div class="badge-line"></div><div class="req">25 títulos no hard</div></article>
+        <article class="honor legend"><div class="medal-b"><span>IN</span></div><div class="tier-name">Lendário</div><div class="badge-name">Assassino Indoor</div><div class="badge-line"></div><div class="req">16 títulos indoor</div></article>
+        <article class="honor mythic"><div class="medal-b"><span>L</span></div><div class="tier-name">Mítico</div><div class="badge-name">Lenda de Aurelia</div><div class="badge-line"></div><div class="req">12 títulos no torneio</div></article>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção C: Roseta de Campeão</div>
+        <div class="option-note">mais badge clássica, menos card</div>
+      </div>
+      <div class="showcase">
+        <article class="honor bronze"><div class="medal-c-wrap"><div class="medal-c"><span>W</span></div></div><div class="tier-name">Bronze</div><div class="badge-name">Máquina de Vitórias</div><div class="badge-line"></div><div class="req">50 vitórias</div></article>
+        <article class="honor silver"><div class="medal-c-wrap"><div class="medal-c"><span>10</span></div></div><div class="tier-name">Prata</div><div class="badge-name">Carrasco do Top 10</div><div class="badge-line"></div><div class="req">10 vitórias vs Top 10</div></article>
+        <article class="honor gold"><div class="medal-c-wrap"><div class="medal-c"><span>60</span></div></div><div class="tier-name">Ouro</div><div class="badge-name">Artista do Bagel</div><div class="badge-line"></div><div class="req">25 bagels aplicados</div></article>
+        <article class="honor legend"><div class="medal-c-wrap"><div class="medal-c"><span>+</span></div></div><div class="tier-name">Lendário</div><div class="badge-name">Escalada Selvagem</div><div class="badge-line"></div><div class="req">180 posições ganhas</div></article>
+        <article class="honor mythic"><div class="medal-c-wrap"><div class="medal-c"><span>R</span></div></div><div class="tier-name">Mítico</div><div class="badge-name">Morador do Top 10</div><div class="badge-line"></div><div class="req">15 anos no Top 10</div></article>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção D: Ordem do Circuito</div>
+        <div class="option-note">mais brasão, mais RPG esportivo</div>
+      </div>
+      <div class="showcase">
+        <article class="honor bronze"><div class="medal-d"><div class="shield"><span>BR</span></div></div><div class="tier-name">Bronze</div><div class="badge-name">Colecionador de Troféus</div><div class="badge-line"></div><div class="req">5 títulos</div></article>
+        <article class="honor silver"><div class="medal-d"><div class="shield"><span>PR</span></div></div><div class="tier-name">Prata</div><div class="badge-name">Final Boss</div><div class="badge-line"></div><div class="req">2 ATP Finals</div></article>
+        <article class="honor gold"><div class="medal-d"><div class="shield"><span>OU</span></div></div><div class="tier-name">Ouro</div><div class="badge-name">Imortal em Slams</div><div class="badge-line"></div><div class="req">6 Grand Slams</div></article>
+        <article class="honor legend"><div class="medal-d"><div class="shield"><span>LE</span></div></div><div class="tier-name">Lendário</div><div class="badge-name">Lenda dos Masters</div><div class="badge-line"></div><div class="req">18 Masters 1000</div></article>
+        <article class="honor mythic"><div class="medal-d"><div class="shield"><span>MI</span></div></div><div class="tier-name">Mítico</div><div class="badge-name">Lenda de Octane</div><div class="badge-line"></div><div class="req">12 títulos no torneio</div></article>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção E: Selo Premium Compacto</div>
+        <div class="option-note">mais limpo para usar em grid grande</div>
+      </div>
+      <div class="showcase">
+        <article class="honor bronze"><div class="medal-e"><span>T</span></div><div class="tier-name">Bronze</div><div class="badge-name">Colecionador de Troféus</div><div class="badge-line"></div><div class="req">5 títulos</div></article>
+        <article class="honor silver"><div class="medal-e"><span>F</span></div><div class="tier-name">Prata</div><div class="badge-name">Final Boss</div><div class="badge-line"></div><div class="req">2 ATP Finals</div></article>
+        <article class="honor gold"><div class="medal-e"><span>GS</span></div><div class="tier-name">Ouro</div><div class="badge-name">Imortal em Slams</div><div class="badge-line"></div><div class="req">6 Grand Slams</div></article>
+        <article class="honor legend"><div class="medal-e"><span>M</span></div><div class="tier-name">Lendário</div><div class="badge-name">Lenda dos Masters</div><div class="badge-line"></div><div class="req">18 Masters 1000</div></article>
+        <article class="honor mythic"><div class="medal-e"><span>#1</span></div><div class="tier-name">Mítico</div><div class="badge-name">Dono do Trono</div><div class="badge-line"></div><div class="req">10 anos como #1</div></article>
+      </div>
+      <div class="compact-grid">
+        <div class="mini bronze"><div class="mini-medal">T</div><div><div class="mini-name">Troféus</div><div class="mini-tier">Bronze</div></div></div>
+        <div class="mini silver"><div class="mini-medal">F</div><div><div class="mini-name">Final Boss</div><div class="mini-tier">Prata</div></div></div>
+        <div class="mini gold"><div class="mini-medal">GS</div><div><div class="mini-name">Slams</div><div class="mini-tier">Ouro</div></div></div>
+        <div class="mini legend"><div class="mini-medal">M</div><div><div class="mini-name">Masters</div><div class="mini-tier">Lendário</div></div></div>
+        <div class="mini mythic"><div class="mini-medal">#1</div><div><div class="mini-name">Trono</div><div class="mini-tier">Mítico</div></div></div>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção F: Badge Militar Simples</div>
+        <div class="option-note">nome dentro, leitura imediata</div>
+      </div>
+      <div class="cod-board">
+        <article class="cod-card bronze">
+          <div class="cod-rank">Bronze</div>
+          <div class="cod-badge simple">
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">1 ATP Finals</div>
+        </article>
+        <article class="cod-card silver">
+          <div class="cod-rank">Prata</div>
+          <div class="cod-badge simple">
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">2 ATP Finals</div>
+        </article>
+        <article class="cod-card gold">
+          <div class="cod-rank">Ouro</div>
+          <div class="cod-badge simple">
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">4 ATP Finals</div>
+        </article>
+        <article class="cod-card mythic">
+          <div class="cod-rank">Mítico</div>
+          <div class="cod-badge simple">
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">8 ATP Finals</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div class="option-title">Opção G: Badge Épica Ornamentada</div>
+        <div class="option-note">pulsante, rara, final de campanha</div>
+      </div>
+      <div class="cod-board">
+        <article class="cod-card bronze">
+          <div class="cod-rank">Bronze</div>
+          <div class="cod-badge epic">
+            <div class="cod-wing left"></div>
+            <div class="cod-wing right"></div>
+            <div class="cod-crown"></div>
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">desbloqueou a ordem</div>
+        </article>
+        <article class="cod-card gold">
+          <div class="cod-rank">Ouro</div>
+          <div class="cod-badge epic">
+            <div class="cod-wing left"></div>
+            <div class="cod-wing right"></div>
+            <div class="cod-crown"></div>
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">tier de respeito histórico</div>
+        </article>
+        <article class="cod-card legend">
+          <div class="cod-rank">Lendário</div>
+          <div class="cod-badge epic">
+            <div class="cod-wing left"></div>
+            <div class="cod-wing right"></div>
+            <div class="cod-crown"></div>
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">parece conquista de carreira lendária</div>
+        </article>
+        <article class="cod-card mythic">
+          <div class="cod-rank">Mítico</div>
+          <div class="cod-badge epic">
+            <div class="cod-wing left"></div>
+            <div class="cod-wing right"></div>
+            <div class="cod-crown"></div>
+            <div class="cod-core"></div>
+            <div class="cod-name-inside">Final Boss</div>
+          </div>
+          <div class="cod-name-out">Final Boss</div>
+          <div class="cod-sub">efeito de troféu impossível</div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

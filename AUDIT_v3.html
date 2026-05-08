@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tennix ME · Auditoria v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Departure+Mono&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:    #0a0b0e;
+  --paper:  #f4f1eb;
+  --tint:   #e8e3d8;
+  --rule:   #c8c1b4;
+  --muted:  #7a7265;
+  --A:      #1a6b3c;
+  --B:      #1a4a8a;
+  --C:      #7a4a00;
+  --D:      #8a1a1a;
+  --red:    #c0392b;
+  --orange: #b05a00;
+  --green:  #1a6b3c;
+  --blue:   #1a4a8a;
+  --mono:   'Departure Mono', monospace;
+  --serif:  'Instrument Serif', Georgia, serif;
+  --sans:   'DM Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.75;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 56px 36px 120px;
+}
+
+/* ── MASTHEAD ─────────────────────────────────────── */
+.masthead {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 24px;
+  margin-bottom: 48px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 24px;
+}
+.kicker {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+h1 {
+  font-family: var(--serif);
+  font-size: 72px;
+  line-height: 0.92;
+  font-weight: 400;
+  letter-spacing: -.01em;
+}
+h1 em { font-style: italic; }
+.masthead-meta { text-align: right; }
+.edition-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 6px 14px;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.masthead-meta p {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* ── GRADE PANEL ──────────────────────────────────── */
+.grade-panel {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--rule);
+  margin-bottom: 48px;
+}
+.grade-cell {
+  padding: 20px 18px 16px;
+  border-right: 1px solid var(--rule);
+  position: relative;
+}
+.grade-cell:last-child { border-right: none; }
+.grade-cell::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 4px;
+}
+.grade-cell.grade-A::after  { background: var(--A); }
+.grade-cell.grade-B::after  { background: var(--B); }
+.grade-cell.grade-C::after  { background: var(--C); }
+.gc-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.gc-grade {
+  font-family: var(--serif);
+  font-size: 58px;
+  line-height: 1;
+  font-weight: 400;
+  margin-bottom: 2px;
+}
+.gc-grade.A { color: var(--A); }
+.gc-grade.B { color: var(--B); }
+.gc-grade.C { color: var(--C); }
+.gc-delta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.gc-delta .up   { color: var(--green); font-weight: 700; }
+.gc-delta .eq   { color: var(--muted); }
+
+/* ── SECTION ──────────────────────────────────────── */
+.section { margin-bottom: 56px; }
+.sec-rule {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+  margin-bottom: 28px;
+}
+.sec-num {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .1em;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+h2 {
+  font-family: var(--serif);
+  font-size: 36px;
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1;
+}
+
+/* ── FINDING CARDS ────────────────────────────────── */
+.finding {
+  border: 1px solid var(--rule);
+  margin-bottom: 18px;
+  background: white;
+}
+.finding-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--tint);
+  background: var(--paper);
+}
+.pill {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 9px 2px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 1px solid;
+  margin-top: 1px;
+}
+.pill.fixed   { border-color: var(--green); color: var(--green); background: #f0faf4; }
+.pill.new-bug { border-color: var(--red);   color: var(--red);   background: #fdf3f2; }
+.pill.fixed-now { border-color: var(--A);   color: var(--A);     background: #f0faf4; }
+.pill.ok      { border-color: var(--blue);  color: var(--blue);  background: #f0f4fa; }
+.pill.low     { border-color: var(--muted); color: var(--muted); background: var(--paper); }
+
+.finding-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.finding-file  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.finding-body  { padding: 16px 20px; }
+.finding-body p { color: #444; margin-bottom: 10px; font-size: 13px; }
+.finding-body p:last-child { margin-bottom: 0; }
+
+/* ── CALLOUTS ─────────────────────────────────────── */
+.note {
+  border-left: 3px solid;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: #444;
+}
+.note.green  { border-color: var(--green);  background: #f0faf4; }
+.note.red    { border-color: var(--red);    background: #fdf3f2; }
+.note.blue   { border-color: var(--blue);   background: #f0f4fa; }
+.note.amber  { border-color: var(--orange); background: #fdf6ec; }
+.note strong { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.note.green  strong { color: var(--green); }
+.note.red    strong { color: var(--red); }
+.note.blue   strong { color: var(--blue); }
+.note.amber  strong { color: var(--orange); }
+
+/* ── CODE ─────────────────────────────────────────── */
+.code-wrap { margin: 14px 0; }
+.code-cap {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-bottom: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.code-cap::before { content: ''; display: block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.code-cap.was  { background: #fdf3f2; color: var(--red);   border: 1px solid #eac9c6; }
+.code-cap.now  { background: #f0faf4; color: var(--A);     border: 1px solid #b8dfc8; }
+.code-cap.info { background: #f0f4fa; color: var(--blue);  border: 1px solid #b8cce0; }
+pre {
+  background: #13151a;
+  color: #c8d0dc;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.8;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid #2a2e38;
+  border-top: none;
+  margin-bottom: 0;
+}
+.r { color: #f07070; }
+.g { color: #70e090; }
+.y { color: #f0c870; }
+.c { color: #70cce8; }
+.p { color: #c89ae8; }
+.d { color: #404860; }
+.o { color: #f0a870; }
+
+/* ── ATTR AUDIT TABLE ─────────────────────────────── */
+.attr-audit {
+  border: 1px solid var(--rule);
+  background: white;
+  margin-top: 8px;
+}
+.attr-row {
+  display: grid;
+  grid-template-columns: 160px 180px 1fr 80px;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--tint);
+  font-size: 12px;
+  gap: 8px;
+}
+.attr-row:last-child { border-bottom: none; }
+.attr-row.header {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+}
+.attr-row.header .status { color: var(--paper); }
+.attr-name  { font-family: var(--mono); font-size: 11px; color: #333; font-weight: 600; }
+.attr-maps  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.attr-desc  { font-size: 12px; color: #555; }
+.status {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 8px;
+  text-align: center;
+  letter-spacing: .05em;
+}
+.status.live    { background: #f0faf4; color: var(--green); border: 1px solid #b8dfc8; }
+.status.fixed   { background: #f0f4fa; color: var(--blue);  border: 1px solid #b8cce0; }
+
+/* ── PROGRESS BAR ─────────────────────────────────── */
+.progress-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin-bottom: 48px;
+}
+.prog-cell {
+  background: white;
+  padding: 14px 16px;
+}
+.prog-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.prog-track {
+  height: 6px;
+  background: var(--tint);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.prog-fill { height: 100%; border-radius: 2px; }
+.prog-fill.A { background: var(--A); }
+.prog-fill.B { background: var(--B); }
+.prog-fill.C { background: var(--C); }
+.prog-text {
+  font-family: var(--mono);
+  font-size: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+}
+
+/* ── SOLID TABLE ──────────────────────────────────── */
+.solid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.solid-item {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 9px 16px;
+  background: white;
+  border: 1px solid var(--tint);
+  font-size: 13px;
+}
+.solid-item .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--green);
+  flex-shrink: 0;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.solid-item .desc { color: #444; line-height: 1.5; }
+
+/* ── SUMMARY TABLE ────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 8px 14px;
+}
+td { padding: 9px 14px; border-bottom: 1px solid var(--tint); color: #444; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td code { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.crit { color: var(--red);    font-weight: 700; font-family: var(--mono); font-size: 10px; }
+.high { color: var(--orange); font-weight: 600; font-family: var(--mono); font-size: 10px; }
+.low  { color: var(--muted);                    font-family: var(--mono); font-size: 10px; }
+
+/* ── FOOTER ───────────────────────────────────────── */
+footer {
+  margin-top: 64px;
+  padding-top: 16px;
+  border-top: 2px solid var(--ink);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+@media (max-width: 700px) {
+  h1 { font-size: 48px; }
+  .masthead { grid-template-columns: 1fr; }
+  .grade-panel { grid-template-columns: repeat(2, 1fr); }
+  .attr-row { grid-template-columns: 1fr 1fr; }
+  .attr-row .attr-desc { display: none; }
+  .progress-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- MASTHEAD -->
+<div class="masthead">
+  <div>
+    <div class="kicker">Tennix Match Engine · Auditoria Técnica · Patch v1.2</div>
+    <h1>Audit<em>oria</em><br>v3</h1>
+  </div>
+  <div class="masthead-meta">
+    <div class="edition-badge">PATCH v1.2 · FEVEREIRO 2026</div>
+    <p>4 patches ativos · 27/27 atributos vivos</p>
+    <p>src/ai.js · src/game.js · src/players.js</p>
+    <p>src/constants.js · src/styles.js</p>
+  </div>
+</div>
+
+<!-- GRADE PANEL -->
+<div class="grade-panel">
+  <div class="grade-cell grade-A">
+    <div class="gc-label">Física</div>
+    <div class="gc-grade A">A−</div>
+    <div class="gc-delta"><span class="eq">→ inalterada desde v1</span></div>
+  </div>
+  <div class="grade-cell grade-A">
+    <div class="gc-label">Movimento</div>
+    <div class="gc-grade A">A−</div>
+    <div class="gc-delta"><span class="up">↑↑ era D · bugs críticos resolvidos</span></div>
+  </div>
+  <div class="grade-cell grade-B">
+    <div class="gc-label">Comportamento</div>
+    <div class="gc-grade B">B+</div>
+    <div class="gc-delta"><span class="up">↑ underPressure sticky corrigido</span></div>
+  </div>
+  <div class="grade-cell grade-B">
+    <div class="gc-label">Atributos</div>
+    <div class="gc-grade B">B+</div>
+    <div class="gc-delta"><span class="up">↑ 27/27 ativos · era C+</span></div>
+  </div>
+</div>
+
+<!-- PROGRESS BARS -->
+<div class="progress-grid">
+  <div class="prog-cell">
+    <div class="prog-label">Física</div>
+    <div class="prog-track"><div class="prog-fill A" style="width:90%"></div></div>
+    <div class="prog-text"><span>A−</span><span>90%</span></div>
+  </div>
+  <div class="prog-cell">
+    <div class="prog-label">Movimento</div>
+    <div class="prog-track"><div class="prog-fill A" style="width:88%"></div></div>
+    <div class="prog-text"><span>A−</span><span>88%</span></div>
+  </div>
+  <div class="prog-cell">
+    <div class="prog-label">Comportamento</div>
+    <div class="prog-track"><div class="prog-fill B" style="width:82%"></div></div>
+    <div class="prog-text"><span>B+</span><span>82%</span></div>
+  </div>
+  <div class="prog-cell">
+    <div class="prog-label">Atributos</div>
+    <div class="prog-track"><div class="prog-fill B" style="width:80%"></div></div>
+    <div class="prog-text"><span>B+</span><span>80%</span></div>
+  </div>
+</div>
+
+<!-- SECTION: CONFIRMAÇÕES v2 -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">01</span>
+    <h2>Confirmações do Patch v1.2</h2>
+  </div>
+  <div class="note blue">
+    <strong>Todos os 8 itens do Patch v1.1 e os 5 itens do Patch v1.2 estão ativos e verificados.</strong> Esta seção confirma o estado atual antes de listar os novos achados desta rodada.
+  </div>
+
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed">CONFIRMADO v1.1</div>
+      <div>
+        <div class="finding-title">target.y dinâmico + predY adaptativo — jogadores se movem em Y</div>
+        <div class="finding-file">ai.js → updatePlayer()</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p>Clamp corrigido (v1.2): <code>side &gt; 0</code> usa <code>[basePos.y − maxForward, basePos.y + maxBack]</code>. Verificado via simulação: drop shot em y=2, jogador avança para y=8.985 (2.5m da baseline). Correto.</p>
+      <p>yFrac fallback também corrigido com <code>yMin/yMax</code> por side. CTR_PUNCHER/RETRIEVER override igualmente corrigido.</p>
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed">CONFIRMADO v1.2</div>
+      <div>
+        <div class="finding-title">3 atributos mortos ligados: srv1Prec, varSaque, coberturaLob</div>
+        <div class="finding-file">players.js → computePlayerMods() · game.js → tickServing() · ai.js → updatePlayer()</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p><strong>srv1Prec:</strong> <code>serveScatter</code> agora aplicado em <code>tickServing()</code>: <code>tX += (Math.random() − 0.5) * sScatter * 0.8</code>. SERVOLEY (prec=86): ±0.216m de desvio. RAIVOSINHO (prec=66): ±0.264m.</p>
+      <p><strong>varSaque:</strong> <code>serveVarMult</code> ajusta thresholds T/Wide/Body. SERVOLEY (var=90): ~33%T/32%Wide/35%Body. Jogadores de baixa variação ficam T-heavy.</p>
+      <p><strong>coberturaLob:</strong> <code>lobCovMult</code> define <code>lobZ</code> threshold de recuo de rede. COUTERZITUS (cob=88): reage a z=1.32m. PANCADÃO (cob=54): z=1.46m. Diferença perceptível em jogo rápido.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION: NOVOS ACHADOS v3 -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">02</span>
+    <h2>Novos Achados — Auditoria v3</h2>
+  </div>
+
+  <!-- Bug 1: errorRallyMin fallback -->
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed-now">CORRIGIDO AGORA</div>
+      <div>
+        <div class="finding-title">THRESHOLDS.errorRallyMin = 1 — fix de patience só valia para jogadores nomeados</div>
+        <div class="finding-file">src/constants.js linha 23 · src/game.js tryHit()</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p>O fix #6 do patch v1.1 atualizou <code>computePlayerMods()</code> para retornar <code>patienceRallyMin = Math.round(2 + ...)</code>. Mas em <code>tryHit()</code>, o fallback para jogadores genéricos (sem atributos nomeados) ainda lia <code>THRESHOLDS.errorRallyMin</code>, que permanecia em <strong>1</strong>. Resultado: qualquer partida sem jogadores nomeados continuava errando no rally 2.</p>
+      <div class="code-wrap">
+        <div class="code-cap was">Antes — constants.js</div>
+        <pre>reachStretch: <span class="y">0.75</span>, <span class="r">errorRallyMin: 1,</span> netZone: <span class="y">1.8</span>,</pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-cap now">Depois — constants.js</div>
+        <pre>reachStretch: <span class="y">0.75</span>, <span class="g">errorRallyMin: 2,</span> netZone: <span class="y">1.8</span>,</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 2: underPressure sticky -->
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed-now">CORRIGIDO AGORA</div>
+      <div>
+        <div class="finding-title">underPressure sticky — ficava true o rally inteiro após um único momento de pressão</div>
+        <div class="finding-file">src/game.js → tryHit() · comportamento CTR_PUNCHER e RETRIEVER</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p><code>underPressure</code> era setado <code>true</code> quando <code>ball.pos.z &lt; 0.45</code> (bola baixa) ou <code>diff &gt; 0.65</code> (esticado para pegar). Só resetava em <code>resetCtx()</code> — entre pontos. Numa troca de 10 bolas, um único momento defensivo no rally 3 mantinha o jogador em modo defensivo até o ponto acabar.</p>
+      <p><strong>Impacto real:</strong> CTR_PUNCHER com <code>underPressure=true</code> dispara SLICE 40% das vezes ao invés de TOPSPIN 55%. Se o CTR_PUNCHER se recupera e está em posição ideal, ainda joga como se estivesse defendendo. Idêntico para RETRIEVER (SLICE 50% quando em pressão).</p>
+      <div class="code-wrap">
+        <div class="code-cap was">Antes — game.js tryHit()</div>
+        <pre>  <span class="p">const</span> diff = Math.min(<span class="y">1</span>, d / effectiveReach);
+  <span class="r">if (ball.pos.z &lt; THRESHOLDS.pressureBallZ || diff &gt; THRESHOLDS.pressureReach)</span>
+<span class="r">    player.ctx.underPressure = true;</span>
+  <span class="d">// Nunca volta para false no meio do rally</span></pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-cap now">Depois — game.js tryHit()</div>
+        <pre>  <span class="p">const</span> diff = Math.min(<span class="y">1</span>, d / effectiveReach);
+  <span class="g">if (ball.pos.z &lt; THRESHOLDS.pressureBallZ || diff &gt; THRESHOLDS.pressureReach)</span>
+<span class="g">    player.ctx.underPressure = true;</span>
+  <span class="g">// Recupera: se a bola está alta e o jogador não está esticado, sai do modo defensivo</span>
+<span class="g">  else if (diff &lt; 0.45 &amp;&amp; ball.pos.z &gt;= 0.55)</span>
+<span class="g">    player.ctx.underPressure = false;</span></pre>
+      </div>
+      <div class="note green">
+        <strong>Resultado:</strong> CTR_PUNCHER e RETRIEVER agora respondem taticamente ao momento atual do rally, não ao pior momento já vivido. Uma defesa difícil no rally 3 não mais contamina todos os shots do rally 5 ao 12.
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 3: SRV_VOL dead code -->
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed-now">CORRIGIDO AGORA</div>
+      <div>
+        <div class="finding-title">SRV_VOL rushNetAfterServe — guarda <code>lobsReceived &lt; 2</code> era dead code</div>
+        <div class="finding-file">src/game.js → tickServing() linha final</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p><code>lobsReceived</code> é resetado para 0 em <code>resetCtx()</code> entre pontos. No momento do saque, <code>lobsReceived</code> é sempre 0. A condição <code>sv.ctx.lobsReceived &lt; 2</code> era sempre <code>true</code>, tornando a guarda completamente inerte. SRV_VOL subia à rede em todo saque incondicionalmente, mesmo que o design pretendesse suprimir isso após receber muitos lobs no ponto anterior.</p>
+      <p>A intenção correta da supressão de rede está implementada no <code>netSuppressed</code> dentro do rally (após receber 2 lobs no ponto em andamento). A linha no serve era redundante e confusa.</p>
+      <div class="code-wrap">
+        <div class="code-cap was">Antes</div>
+        <pre><span class="r">if (sStyle.rushNetAfterServe &amp;&amp; sv.ctx.lobsReceived &lt; 2) sv.atNet = true;</span>
+<span class="d">// lobsReceived = 0 sempre aqui → condição always true → dead code</span></pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-cap now">Depois</div>
+        <pre><span class="g">if (sStyle.rushNetAfterServe) sv.atNet = true;</span>
+<span class="d">// Supressão de rede acontece corretamente durante o rally via netSuppressed</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 4: tickPreServe receiver baseline -->
+  <div class="finding">
+    <div class="finding-head">
+      <div class="pill fixed-now">CORRIGIDO AGORA</div>
+      <div>
+        <div class="finding-title">tickPreServe — receiver retornava a y fixo, ignorando baselineOffset do estilo</div>
+        <div class="finding-file">src/game.js → tickPreServe()</div>
+      </div>
+    </div>
+    <div class="finding-body">
+      <p>O receiver interpolava sua posição pré-saque para <code>side * (COURT.halfL − 0.5)</code> = fixo para todos os estilos. RETRIEVER (offset=0.2m) deveria começar em y=11.685m; CTR_PUNCHER (offset=0.3m) em y=11.585m. Ambos ficavam em 11.385m — ligeiramente adiantados da posição de retorno correta.</p>
+      <div class="code-wrap">
+        <div class="code-cap was">Antes</div>
+        <pre><span class="r">rv.pos.y += (rv.side * (COURT.halfL - 0.5) - rv.pos.y) * 0.08;</span></pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-cap now">Depois</div>
+        <pre><span class="p">const</span> rvBaseY = rv.side * (COURT.halfL - rv.styleData.baselineOffset);
+<span class="g">rv.pos.y += (rvBaseY - rv.pos.y) * 0.08;</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION: FÍSICA -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">03</span>
+    <h2>Física — A−</h2>
+  </div>
+  <div class="note green">
+    <strong>Status:</strong> Sem alterações desde v1. Motor sólido. A única razão para não ser A é que o impacto da stamina no jogo, embora funcional, é linear — não há diferença qualitativa entre 30% de stamina e 10% de stamina além de escala contínua de velocidade/erro.
+  </div>
+  <div class="solid-list">
+    <div class="solid-item">
+      <span class="tag">✓ FÍSICA</span>
+      <span class="desc">Magnus effect, drag aerodinâmico, bounce com topspin/backspin separados, sidespin lateral — todos corretos e interativos.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ PREDIÇÃO</span>
+      <span class="desc"><code>predictTrajectory()</code> usa os mesmos coeficientes que o motor real. Predições de trajetória são matematicamente fiéis ao comportamento real da bola.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ STAMINA</span>
+      <span class="desc">decay=0.032 + recovery=0.18 funcional. Jogador a 0 stamina: velocidade 78%, reach 83%, +2.2% taxa de erro. Recuperação total em ~6 pontos.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ QUALIDADE</span>
+      <span class="desc">Posicionamento: distQuality×0.30 + timingQuality×0.45 + moveQuality×0.25. Ponderação bem calibrada. Timing domina, como deveria.</span>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION: MOVIMENTO -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">04</span>
+    <h2>Movimento — A−</h2>
+  </div>
+  <div class="note green">
+    <strong>Meta atingida.</strong> Jogadores agora se movem corretamente em X e Y, avançam para bolas curtas, recuam para bolas profundas, retornam à base após bater. predY adaptativo funciona para drop shots. O clamp foi corrigido para os dois players (side ±1).
+  </div>
+  <div class="solid-list">
+    <div class="solid-item">
+      <span class="tag">✓ INTERCEPTAÇÃO Y</span>
+      <span class="desc">maxForward=2.5m em direção à rede. Drop shot a 2m da rede: player avança até 8.99m (2.5m da baseline de 11.49m). Verificado numericamente.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ DROP SHOT</span>
+      <span class="desc">predY adaptativo: bola curta (&lt;4.5m da rede) usa 0.25×halfL ao invés de 0.55×halfL. crossPoint agora detectado corretamente para bolas curtas.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ OFFSET DINÂMICO</span>
+      <span class="desc">dynamicOffset por momentum: pressão → recua 0.6m; confiança → avança 0.3m. Fórmula: baselineOffset + clamp((0.5−mom)×1.2, −0.3, 0.6).</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">↑ BASELINE</span>
+      <span class="desc">AGG_BASELINER 1.5m→0.4m · ALL_COURT 1.2m→0.5m · BIG_SERVER 1.0m→0.3m. Jogadores jogam da linha de base, não do meio da quadra.</span>
+    </div>
+  </div>
+  <div class="note amber">
+    <strong>Nota:</strong> Observação ainda válida do v2 — após rebater a bola, o jogador retorna a basePos.y imediatamente. Não há recuperação de posição lateral (centralizar em X após atingir bola lateral). O playerBasePos.x é fixado em 0 (centro da quadra) que é correto, mas a transição poderia ter um leve delay proporcional à qualidade do shot para parecer mais natural. Classificado como refinamento futuro, não bug.
+  </div>
+</div>
+
+<!-- SECTION: COMPORTAMENTO -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">05</span>
+    <h2>Comportamento — B+</h2>
+  </div>
+  <div class="note blue">
+    <strong>underPressure corrigido nesta rodada.</strong> CTR_PUNCHER e RETRIEVER agora respondem ao momento atual do rally. Os demais sistemas de comportamento permanecem funcionais.
+  </div>
+  <div class="solid-list">
+    <div class="solid-item">
+      <span class="tag">✓ MOMENTUM</span>
+      <span class="desc">Sistema de momentum com memória tática. Pesos de shot, agressividade e agresDecFactor todos modulados por momentum. Implementação sólida.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ PACIÊNCIA</span>
+      <span class="desc">patienceRallyMin range 2–7. RAIVOSINHO (paciência=40): min 4 balls antes de errar. COUTERZITUS (paciência=82): min 6. Agora válido também para genéricos (errorRallyMin=2).</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ UNDERPRESS</span>
+      <span class="desc">underPressure agora reseta quando diff &lt; 0.45 e ball.z ≥ 0.55. Pressão é situacional, não permanente.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ NET CAP</span>
+      <span class="desc">Caps por estilo: RETRIEVER max 6%, CTR_PUNCHER max 14%. Baselines não viram serve-volleyers com instintoRede alto.</span>
+    </div>
+    <div class="solid-item">
+      <span class="tag">✓ SCATTER</span>
+      <span class="desc">Scatter em X e Y sob pressão. quality=0 → ±2.2m horizontal + ±18% de profundidade. Erros defensivos soam realistas.</span>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION: ATRIBUTOS -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">06</span>
+    <h2>Atributos — B+ · 27/27 ativos</h2>
+  </div>
+
+  <div class="note green">
+    <strong>Todos os 27 atributos estão conectados ao motor.</strong> Esta é a primeira versão do ME onde nenhum atributo é decorativo. Abaixo, o mapa completo de atributo → efeito.
+  </div>
+
+  <div class="attr-audit">
+    <div class="attr-row header">
+      <span>Atributo</span>
+      <span>Mod gerado</span>
+      <span>Efeito no motor</span>
+      <span class="status">Status</span>
+    </div>
+    <!-- CORPO -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">CORPO</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">velocidade</span><span class="attr-maps">speedMult ×0.72–1.22</span><span class="attr-desc">Velocidade máxima de corrida. Afeta movimentação em X e Y.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">explosividade</span><span class="attr-maps">accelMult ×0.72–1.28</span><span class="attr-desc">Aceleração inicial (playerAccel). Resposta explosiva ao primeiro passo.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">agilidadeLateral</span><span class="attr-maps">decelMult ×0.72–1.28</span><span class="attr-desc">Desaceleração / mudança de direção (playerDecel). Parar rápido em bolas laterais.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">resistencia</span><span class="attr-maps">staminaDecayMult ×0.5–1.5</span><span class="attr-desc">Inversamente proporcional ao decay de stamina. Alta resistência = cansa mais devagar.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">alcance</span><span class="attr-maps">reachBonus ±0.14m</span><span class="attr-desc">Raio de alcance para bater a bola. Attr 100 = +0.14m; attr 0 = −0.14m.</span><span class="status live">LIVE</span></div>
+    <!-- GOLPES -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">GOLPES</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">fhPotencia</span><span class="attr-maps">powerMult (avg com BH)</span><span class="attr-desc">Multiplicador de potência em todos os shots de rally. Médio com bhPotencia.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">bhPotencia</span><span class="attr-maps">powerMult (avg com FH)</span><span class="attr-desc">Idem. As duas asas são fundidas em powerMult — limitação de design, não bug.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">consistencia</span><span class="attr-maps">errorMult ×0.45–1.45</span><span class="attr-desc">Multiplica errorBase e errorDiff do estilo. Alta consistência = muito menos erros.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">topspin</span><span class="attr-maps">topspinMult ×0.70–1.35</span><span class="attr-desc">Spin em TOPSPIN e LOB_ATK. Alta topspin → mais efeito, bounce mais agressivo.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">slice</span><span class="attr-maps">sliceMult ×0.70–1.35</span><span class="attr-desc">Spin em SLICE e DROP. Alta slice → bola rasteira, skid mais pronunciado.</span><span class="status live">LIVE</span></div>
+    <!-- SAQUE -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">SAQUE</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">srv1Vel</span><span class="attr-maps">serveMult1 ×0.82–1.28</span><span class="attr-desc">Velocidade do 1º saque. PANCADÃO (98): ~1.27× → 180–224km/h.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">srv1Prec</span><span class="attr-maps">serveScatter 0.4–1.0</span><span class="attr-desc">Desvio do tX do saque. Alta precisão = serve chega mais perto do alvo T/Wide/Body. <em>Corrigido no v1.2.</em></span><span class="status fixed">FIXED v1.2</span></div>
+    <div class="attr-row"><span class="attr-name">srv2Efeito</span><span class="attr-maps">serveMult2 ×0.84–1.20</span><span class="attr-desc">Velocidade do 2º saque (kick/slice). Alto efeito = 2º saque mais pesado.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">varSaque</span><span class="attr-maps">serveVarMult 0.5–1.0</span><span class="attr-desc">Distribui probabilidade entre T/Wide/Body. Alta variação = adversário não consegue antecipar. <em>Corrigido no v1.2.</em></span><span class="status fixed">FIXED v1.2</span></div>
+    <!-- ESPECIAIS -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">ESPECIAIS</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">dropShot</span><span class="attr-maps">dropMult ×0.70–1.35</span><span class="attr-desc">Potência/precisão do drop shot. Mults baixos = drop mais alto e fácil de defender.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">lobDef</span><span class="attr-maps">lobDefMult ×0.70–1.35</span><span class="attr-desc">Qualidade do lob defensivo. Alto = lob sobe mais, mais difícil de smash.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">lobAtk</span><span class="attr-maps">lobAtkMult ×0.70–1.35</span><span class="attr-desc">Qualidade do lob atacante (com topspin). Alto = lob mais agressivo e mais profundo.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">smash</span><span class="attr-maps">smashMult ×0.70–1.35</span><span class="attr-desc">Potência do smash. Alto = finalização mais limpa.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">passing</span><span class="attr-maps">passMult ×0.70–1.35</span><span class="attr-desc">Potência do passing shot. Alto = bola de linha mais dura e difícil de interceptar.</span><span class="status live">LIVE</span></div>
+    <!-- REDE -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">REDE</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">volley</span><span class="attr-maps">volleyMult ×0.70–1.35</span><span class="attr-desc">Potência do voleio. Alto = bola mais pesada na rede.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">instintoRede</span><span class="attr-maps">netApproachMult × cap</span><span class="attr-desc">Frequência de subida à rede, com cap por estilo (RETRIEVER max 6%, SRV_VOL max 92%).</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">reflexo</span><span class="attr-maps">reach +0..+0.12m na rede</span><span class="attr-desc">Bônus de alcance na rede: <code>(reflexo−70)/100 × 0.12</code>. Reflexo 70+ é vantagem real.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">coberturaLob</span><span class="attr-maps">lobCovMult → lobZ</span><span class="attr-desc">Quão cedo o jogador detecta e recua de um lob. Alta cobertura = reage antes. <em>Corrigido no v1.2.</em></span><span class="status fixed">FIXED v1.2</span></div>
+    <!-- MENTAL -->
+    <div class="attr-row" style="background:#f8f6f2">
+      <span class="attr-name" style="color:#888;font-size:10px;letter-spacing:.1em">MENTAL</span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="attr-row"><span class="attr-name">pressao</span><span class="attr-maps">pressaoFactor × 0.012</span><span class="attr-desc">Escudo contra penalidade de erro por baixo momentum. Alta pressão = resiste melhor quando está perdendo.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">clutch</span><span class="attr-maps">clutchFactor × 0.015</span><span class="attr-desc">Reduz erro em pontos close score (deuce/ad). Ativo quando placar está empatado 40–40 ou Ad.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">recuperacao</span><span class="attr-maps">recupFactor → ganho de momentum</span><span class="attr-desc">Velocidade de recuperação de momentum após vencer um ponto. Alto = volta a jogar bem mais rápido.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">paciencia</span><span class="attr-maps">patienceRallyMin 2–7</span><span class="attr-desc">Mínimo de rally balls antes de poder errar. RAIVOSINHO (40): min 4. COUTERZITUS (82): min 6.</span><span class="status live">LIVE</span></div>
+    <div class="attr-row"><span class="attr-name">agresDecisoria</span><span class="attr-maps">agresDecFactor 0–1</span><span class="attr-desc">Bônus de agressividade quando momentum &gt; 0.65. Alto = vira o jogo quando está "on fire".</span><span class="status live">LIVE</span></div>
+  </div>
+</div>
+
+<!-- SECTION: WHAT'S LEFT -->
+<div class="section">
+  <div class="sec-rule">
+    <span class="sec-num">07</span>
+    <h2>O que ainda pode melhorar</h2>
+  </div>
+  <div class="note amber">
+    <strong>Estes não são bugs — são refinamentos.</strong> O motor está funcional e B+ em todas as áreas. O abaixo é o mapa do caminho para A em comportamento e atributos.
+  </div>
+  <div style="border:1px solid var(--rule);background:white;">
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Arquivo</th>
+          <th>Impacto</th>
+          <th>Prioridade</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>fhPotencia vs bhPotencia separados</strong> — atualmente média fundida em powerMult. Asa fraca vs forte sem diferença.</td>
+          <td><code>players.js · ai.js</code></td>
+          <td>Identidade tática de jogadores</td>
+          <td class="high">MÉDIO</td>
+        </tr>
+        <tr>
+          <td><strong>Recuperação de posição com delay</strong> — após hit, player volta ao centro imediatamente. Um delay proporcional à qualidade do shot seria mais realista.</td>
+          <td><code>ai.js</code></td>
+          <td>Fluidez visual do movimento</td>
+          <td class="low">BAIXO</td>
+        </tr>
+        <tr>
+          <td><strong>srv1Prec afeta tY também</strong> — atualmente só afeta desvio lateral. Precisão real também inclui profundidade do saque.</td>
+          <td><code>game.js</code></td>
+          <td>Realismo do saque</td>
+          <td class="low">BAIXO</td>
+        </tr>
+        <tr>
+          <td><strong>Stamina qualitativa</strong> — impacto linear agora. Poderiam existir limites qualitativos (ex: abaixo de 20% → proibido de subir à rede).</td>
+          <td><code>game.js · ai.js</code></td>
+          <td>Narrativa de cansaço</td>
+          <td class="low">BAIXO</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  <span>Tennix ME · Auditoria v3 · Patch v1.2</span>
+  <span>4 bugs corrigidos · 27/27 atributos ativos · Física A− · Movimento A− · Comportamento B+ · Atributos B+</span>
+</footer>
+</body>
+</html>

@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tennix ME — Re-Auditoria v2.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #08090c;
+    --s1: #0e1016;
+    --s2: #13161e;
+    --border: #1c2030;
+    --red:    #f43f3f;
+    --orange: #ff7a2f;
+    --yellow: #f5c518;
+    --green:  #22d46a;
+    --cyan:   #18c8e0;
+    --purple: #a855f7;
+    --blue:   #3b82f6;
+    --text:   #dde0ea;
+    --mid:    #8892a4;
+    --dim:    #444c5e;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+    --display: 'Syne', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.7;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 28px 100px;
+  }
+
+  /* ═══ MASTHEAD ═══════════════════════════════════ */
+  .masthead {
+    margin-bottom: 56px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-size: 64px;
+    font-weight: 800;
+    line-height: .95;
+    letter-spacing: -.01em;
+    margin-bottom: 16px;
+  }
+  h1 em { font-style: normal; color: var(--yellow); }
+  .lead { font-size: 15px; color: var(--mid); max-width: 620px; font-weight: 300; }
+
+  /* ═══ GRADE SCOREBOARD ═══════════════════════════ */
+  .scoreboard {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin: 40px 0;
+  }
+  .grade-card {
+    background: var(--s1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 16px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .grade-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .grade-card.A-plus::after  { background: var(--green); }
+  .grade-card.A-minus::after { background: var(--cyan); }
+  .grade-card.B-plus::after  { background: var(--blue); }
+  .grade-card.C-plus::after  { background: var(--orange); }
+  .grade-card.C-minus::after { background: var(--red); }
+
+  .gc-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 8px;
+  }
+  .gc-grade {
+    font-family: var(--display);
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .gc-delta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--mid);
+  }
+  .gc-delta .up   { color: var(--green); }
+  .gc-delta .down { color: var(--red); }
+  .gc-delta .same { color: var(--dim); }
+
+  /* ═══ SECTION HEADERS ════════════════════════════ */
+  .section { margin-bottom: 60px; }
+  .sec-hdr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: .1em;
+    flex-shrink: 0;
+  }
+  h2 {
+    font-family: var(--display);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: .02em;
+  }
+
+  /* ═══ CARDS ══════════════════════════════════════ */
+  .card {
+    background: var(--s1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .badge {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 3px;
+    letter-spacing: .08em;
+    margin-top: 2px;
+  }
+  .badge.fixed   { background: rgba(34,212,106,.12);  color: var(--green);  border: 1px solid rgba(34,212,106,.25); }
+  .badge.bug-new { background: rgba(244,63,63,.18);   color: var(--red);    border: 1px solid rgba(244,63,63,.35); }
+  .badge.dead    { background: rgba(255,122,47,.14);  color: var(--orange); border: 1px solid rgba(255,122,47,.3); }
+  .badge.partial { background: rgba(245,197,24,.12);  color: var(--yellow); border: 1px solid rgba(245,197,24,.25); }
+  .badge.ok      { background: rgba(24,200,224,.10);  color: var(--cyan);   border: 1px solid rgba(24,200,224,.2); }
+
+  .card-title { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .card-file  { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .card-body  { padding: 18px 22px; }
+  .card-body p { color: var(--mid); margin-bottom: 12px; font-size: 13px; }
+  .card-body p:last-child { margin-bottom: 0; }
+
+  /* ═══ CALLOUT BOXES ══════════════════════════════ */
+  .callout {
+    border-left: 3px solid;
+    padding: 12px 16px;
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    font-size: 13px;
+    color: var(--mid);
+  }
+  .callout strong { font-family: var(--mono); font-size: 11px; font-weight: 600; }
+  .callout.red    { border-color: var(--red);    background: rgba(244,63,63,.06); }
+  .callout.red    strong { color: var(--red); }
+  .callout.orange { border-color: var(--orange); background: rgba(255,122,47,.06); }
+  .callout.orange strong { color: var(--orange); }
+  .callout.yellow { border-color: var(--yellow); background: rgba(245,197,24,.06); }
+  .callout.yellow strong { color: var(--yellow); }
+  .callout.green  { border-color: var(--green);  background: rgba(34,212,106,.06); }
+  .callout.green  strong { color: var(--green); }
+  .callout.cyan   { border-color: var(--cyan);   background: rgba(24,200,224,.06); }
+  .callout.cyan   strong { color: var(--cyan); }
+
+  /* ═══ CODE BLOCKS ════════════════════════════════ */
+  .code-wrap { margin: 14px 0; }
+  .code-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 3px 3px 0 0;
+  }
+  .code-label .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .code-label.err  { background: rgba(244,63,63,.12);  color: var(--red); }
+  .code-label.fix  { background: rgba(34,212,106,.10); color: var(--green); }
+  .code-label.note { background: rgba(245,197,24,.08); color: var(--yellow); }
+  .code-label.info { background: rgba(24,200,224,.08); color: var(--cyan); }
+
+  pre {
+    background: #090b10;
+    border: 1px solid #1a1e2a;
+    border-top: none;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.75;
+    color: #b8c0d0;
+    border-radius: 0 0 3px 3px;
+    margin-bottom: 0;
+  }
+  .r  { color: #f47070; }
+  .g  { color: #6bef9e; }
+  .y  { color: #ffd066; }
+  .c  { color: #7dd8f0; }
+  .p  { color: #c792ea; }
+  .d  { color: #3d4560; }
+  .o  { color: #ffab70; }
+  .w  { color: #b8c0d0; }
+
+  /* ═══ ATTR TABLE ═════════════════════════════════ */
+  .attr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .attr-section {
+    background: var(--s1);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .attr-section-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    background: var(--s2);
+    border-bottom: 1px solid var(--border);
+  }
+  .attr-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    gap: 8px;
+  }
+  .attr-row:last-child { border-bottom: none; }
+  .attr-name { color: var(--mid); font-family: var(--mono); font-size: 11px; }
+  .attr-maps { color: var(--dim); font-size: 11px; flex: 1; padding: 0 8px; }
+  .attr-status {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .attr-status.live  { background: rgba(34,212,106,.12); color: var(--green);  border: 1px solid rgba(34,212,106,.2); }
+  .attr-status.dead  { background: rgba(244,63,63,.14);  color: var(--red);    border: 1px solid rgba(244,63,63,.25); }
+  .attr-status.part  { background: rgba(245,197,24,.12); color: var(--yellow); border: 1px solid rgba(245,197,24,.2); }
+
+  /* ═══ PRIORITY TABLE ══════════════════════════════ */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-align: left;
+    padding: 8px 14px;
+    background: var(--s2);
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--mid); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .p-crit { color: var(--red); font-weight: 700; }
+  .p-high { color: var(--orange); font-weight: 600; }
+  .p-med  { color: var(--cyan); }
+  .p-low  { color: var(--dim); }
+  td code { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+  /* ═══ GOOD LIST ══════════════════════════════════ */
+  .good-list { display: flex; flex-direction: column; gap: 8px; }
+  .good-item {
+    background: var(--s1);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--green);
+    border-radius: 0 4px 4px 0;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--mid);
+  }
+  .good-item strong { color: var(--green); font-family: var(--mono); font-size: 11px; margin-right: 6px; }
+
+  /* ═══ FOOTER ═════════════════════════════════════ */
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @media (max-width: 720px) {
+    h1 { font-size: 44px; }
+    .scoreboard { grid-template-columns: repeat(3,1fr); }
+    .attr-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════ HEADER -->
+<div class="masthead">
+  <div class="kicker">Tennix ME · Re-Auditoria v2.0 · pós-patch v1.1 · 2026</div>
+  <h1>RE<em>AUDIT</em></h1>
+  <p class="lead">Análise completa após o patch v1.1. Motor de física, movimento, comportamento e — pela primeira vez — auditoria completa dos atributos de jogador.</p>
+</div>
+
+<!-- ══════════════════════════════════ SCOREBOARD -->
+<div class="section">
+  <div class="scoreboard">
+    <div class="grade-card A-minus">
+      <div class="gc-label">Física</div>
+      <div class="gc-grade" style="color:var(--cyan)">A−</div>
+      <div class="gc-delta"><span class="same">→</span> sem mudança</div>
+    </div>
+    <div class="grade-card C-plus">
+      <div class="gc-label">Movimento</div>
+      <div class="gc-grade" style="color:var(--orange)">C+</div>
+      <div class="gc-delta"><span class="up">↑</span> era D (bug total)</div>
+    </div>
+    <div class="grade-card B-plus">
+      <div class="gc-label">Comportamento</div>
+      <div class="gc-grade" style="color:var(--blue)">B+</div>
+      <div class="gc-delta"><span class="up">↑</span> era C+</div>
+    </div>
+    <div class="grade-card C-plus">
+      <div class="gc-label">Atributos</div>
+      <div class="gc-grade" style="color:var(--orange)">C+</div>
+      <div class="gc-delta"><span class="same">→</span> 3 attrs mortos</div>
+    </div>
+    <div class="grade-card C-minus">
+      <div class="gc-label">Movimento (meta)</div>
+      <div class="gc-grade" style="color:var(--red)">🎯</div>
+      <div class="gc-delta"><span class="down">↓</span> precisa B+</div>
+    </div>
+  </div>
+  <div class="callout yellow">
+    <strong>RESULTADO GERAL:</strong> Física chegou ao nível exigido. Comportamento chegou ao B+. Mas o fix de Movimento (#1) introduziu um bug de coordenada — o clamp está invertido, jogador ainda avança apenas 0.8m em vez de 2.5m. Precisa de correção. Atributos têm 3 mortos que precisam ser ligados.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ FÍSICA -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">01</span>
+    <h2 style="color:var(--cyan)">FÍSICA — A−</h2>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="badge ok">APROVADO</div>
+      <div>
+        <div class="card-title">Motor de física sólido — sem pendências</div>
+        <div class="card-file">src/physics.js · src/constants.js</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <p>Magnus effect, drag aerodinâmico, bounce com topspin/backspin, sidespin lateral, substep adaptativo em alta velocidade — tudo implementado corretamente e inalterado pelo patch. O <code>predictTrajectory()</code> espelha os mesmos coeficientes do motor real, o que é raro e valioso.</p>
+      <div class="callout green">
+        <strong>POR QUÊ A− E NÃO A:</strong> O único ponto que impede A é que o sistema de stamina, embora rebalanceado pelo patch, ainda se comporta de forma linear — não há diferença entre um rally de 8 bolas (onde 25% da stamina some) e um rally de 20 bolas (onde 60% some). O impacto existe agora, mas não tem variação qualitativa. Isso é refinamento, não bug.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ MOVIMENTO -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">02</span>
+    <h2 style="color:var(--orange)">MOVIMENTO — C+ → precisa B+</h2>
+  </div>
+
+  <div class="callout orange">
+    <strong>DIAGNÓSTICO:</strong> O patch v1.1 corrigiu o bug raiz (target.y = 0 movement). Jogadores agora se movem em Y. Porém o clamp de interceptação está com maxForward e maxBack invertidos para AMBOS os jogadores. O resultado: jogador avança apenas 0.8m em direção à bola em vez de 2.5m. Melhora significativa sobre o D anterior, mas abaixo do B+ necessário.
+  </div>
+
+  <!-- BUG NOVO no próprio fix -->
+  <div class="card">
+    <div class="card-head">
+      <div class="badge bug-new">BUG NO FIX</div>
+      <div>
+        <div class="card-title">maxForward / maxBack invertidos no clamp de interceptação</div>
+        <div class="card-file">src/ai.js → updatePlayer() linhas ~125–149</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <p>O sistema de coordenadas do jogo é: <strong>side = +1</strong> → jogador no topo, <code>basePos.y ≈ +11.4</code> (longe da rede). "Para frente" = valores menores de Y. <strong>side = −1</strong> → jogador na base, <code>basePos.y ≈ −11.4</code>. "Para frente" = valores maiores (menos negativos).</p>
+      <p>O clamp atual <em>inverte os limites</em>: permite ao jogador ir 2.5m <em>para trás</em> (longe da bola) e apenas 0.8m <em>para frente</em>. O efeito prático é que o jogador corre para bolas normais mas não chega em drop shots e bolas médias que exigem mais de 0.8m de avanço.</p>
+
+      <div class="callout red">
+        <strong>EXEMPLO CONCRETO — side &gt; 0:</strong> Drop shot pousa em y=3. basePos.y=11.4.
+        Clamp atual: <code>clamp(3, 11.4−0.8, 11.4+2.5)</code> = <code>clamp(3, 10.6, 13.9)</code> = <code>10.6</code>.
+        Jogador se move para y=10.6 → ainda a 7.6m da bola. Nunca chega. Bug confirmado.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label err"><span class="dot"></span>CÓDIGO ATUAL — CLAMP INVERTIDO (3 ocorrências)</div>
+        <pre><span class="d">// side > 0: permite avançar só 0.8m (era para ser maxForward=2.5m)</span>
+<span class="r">target.y = clamp(landPoint.y, player.basePos.y - maxBack, player.basePos.y + maxForward);</span>
+<span class="d">// side < 0: mesmo problema</span>
+<span class="r">target.y = clamp(landPoint.y, player.basePos.y - maxForward, player.basePos.y + maxBack);</span>
+
+<span class="d">// yFrac fallback — também invertido:</span>
+<span class="r">const yFrac = clamp((ref.y - player.basePos.y) * 0.6, -maxBack, maxForward);</span>
+<span class="d">// Para side>0: yFrac negativo (indo para net), mas min é -maxBack=-0.8 → só avança 0.8m</span></pre>
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label fix"><span class="dot"></span>FIX — trocar if/else e corrigir yFrac</div>
+        <pre><span class="d">// FIX: lógica correta por side</span>
+<span class="p">if</span> (landPoint) {
+  <span class="d">// side > 0: net = menor y → avança diminuindo y (min = basePos.y - maxForward)</span>
+  <span class="d">// side < 0: net = maior y → avança aumentando y (max = basePos.y + maxForward)</span>
+  <span class="p">if</span> (player.side > <span class="y">0</span>) {
+    <span class="g">target.y = clamp(landPoint.y, player.basePos.y - maxForward, player.basePos.y + maxBack);</span>
+  } <span class="p">else</span> {
+    <span class="g">target.y = clamp(landPoint.y, player.basePos.y - maxBack, player.basePos.y + maxForward);</span>
+  }
+} <span class="p">else if</span> (ref) {
+  <span class="d">// yFrac: para side>0, ref.y < basePos.y → yFrac negativo (correto, indo para net)</span>
+  <span class="d">// Clamp deve permitir -maxForward (grande avanço) e +maxBack (pequeno recuo)</span>
+  <span class="p">const</span> yFrac = (ref.y - player.basePos.y) * <span class="y">0.6</span>;
+  <span class="p">const</span> yMin  = player.side > <span class="y">0</span> ? -maxForward : -maxBack;
+  <span class="p">const</span> yMax  = player.side > <span class="y">0</span> ?  maxBack    :  maxForward;
+  <span class="g">target.y = player.basePos.y + clamp(yFrac, yMin, yMax);</span>
+}</pre>
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label fix"><span class="dot"></span>FIX — mesmo erro no bloco CTR_PUNCHER / RETRIEVER</div>
+        <pre><span class="d">// Mesmo padrão no bloco de override CTR_PUNCHER/RETRIEVER — mesma correção:</span>
+<span class="p">if</span> (style.id === <span class="y">'CTR_PUNCHER'</span> || style.id === <span class="y">'RETRIEVER'</span>) {
+  <span class="p">const</span> lp2 = predictTrajectory(gs.ball, player.side * COURT.halfL * <span class="y">0.75</span>);
+  <span class="p">if</span> (lp2.landPoint) {
+    target.x = clamp(lp2.landPoint.x, -outerX + <span class="y">0.2</span>, outerX - <span class="y">0.2</span>);
+    <span class="p">if</span> (player.side > <span class="y">0</span>) {
+      <span class="g">target.y = clamp(lp2.landPoint.y, player.basePos.y - maxForward, player.basePos.y + maxBack);</span>
+    } <span class="p">else</span> {
+      <span class="g">target.y = clamp(lp2.landPoint.y, player.basePos.y - maxBack, player.basePos.y + maxForward);</span>
+    }
+  }
+}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ COMPORTAMENTO -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">03</span>
+    <h2 style="color:var(--blue)">COMPORTAMENTO — B+</h2>
+  </div>
+
+  <div class="callout green">
+    <strong>META ATINGIDA:</strong> Os ajustes de comportamento do patch v1.1 estão corretos e funcionam como esperado. Baseline reduzido, offset dinâmico por momentum, stamina impactando, patience mínimo corrigido, scatter de depth ativo, net caps funcionando.
+  </div>
+
+  <div class="good-list">
+    <div class="good-item"><strong>baselineOffset</strong> reduzido — jogadores jogam da linha de base, não de dentro da quadra. AGG_BASELINER foi de 1.5m → 0.4m.</div>
+    <div class="good-item"><strong>dynamicOffset por momentum</strong> — sob pressão o jogador recua organicamente, com confiança avança. Implementado e correto.</div>
+    <div class="good-item"><strong>Stamina funcional</strong> — decay 0.032 + recovery 0.18 significa fadiga visível após rallies longos (8+ shots = 25%+ stamina perdida sem recuperação total).</div>
+    <div class="good-item"><strong>patienceRallyMin = 2</strong> — jogadores nunca mais erram na primeira bola de rally. RAIVOSINHO (paciência 40) só tenta winners após rally 4.</div>
+    <div class="good-item"><strong>Depth scatter</strong> — sob pressão, bola também varia em profundidade (±18% no quality=0), não só lateral.</div>
+    <div class="good-item"><strong>Net approach caps por estilo</strong> — RETRIEVER max 6%, CTR_PUNCHER max 14%. Baselines não viram serve-volleyers com atributos altos.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ ATRIBUTOS -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">04</span>
+    <h2 style="color:var(--purple)">ATRIBUTOS — C+ (3 MORTOS)</h2>
+  </div>
+
+  <div class="callout orange">
+    <strong>SITUAÇÃO:</strong> 24 de 27 atributos estão conectados ao motor. 3 atributos existem nos cards dos jogadores, aparecem na UI, mas não produzem nenhum efeito em jogo. São valores decorativos.
+  </div>
+
+  <div class="attr-grid">
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--green)">CORPO</div>
+      <div class="attr-row"><span class="attr-name">velocidade</span><span class="attr-maps">→ speedMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">explosividade</span><span class="attr-maps">→ accelMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">agilidadeLateral</span><span class="attr-maps">→ decelMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">resistencia</span><span class="attr-maps">→ staminaDecayMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">alcance</span><span class="attr-maps">→ reachBonus</span><span class="attr-status live">LIVE</span></div>
+    </div>
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--orange)">GOLPES</div>
+      <div class="attr-row"><span class="attr-name">fhPotencia</span><span class="attr-maps">→ powerMult (avg com BH)</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">bhPotencia</span><span class="attr-maps">→ powerMult (avg com FH)</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">consistencia</span><span class="attr-maps">→ errorMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">topspin</span><span class="attr-maps">→ topspinMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">slice</span><span class="attr-maps">→ sliceMult</span><span class="attr-status live">LIVE</span></div>
+    </div>
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--yellow)">SAQUE</div>
+      <div class="attr-row"><span class="attr-name">srv1Vel</span><span class="attr-maps">→ serveMult1</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row">
+        <span class="attr-name">srv1Prec</span>
+        <span class="attr-maps">→ serveScatter (calculado, nunca lido)</span>
+        <span class="attr-status part">MORTO</span>
+      </div>
+      <div class="attr-row"><span class="attr-name">srv2Efeito</span><span class="attr-maps">→ serveMult2</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row">
+        <span class="attr-name">varSaque</span>
+        <span class="attr-maps">→ nenhum mod calculado</span>
+        <span class="attr-status dead">MORTO</span>
+      </div>
+    </div>
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--purple)">ESPECIAIS</div>
+      <div class="attr-row"><span class="attr-name">dropShot</span><span class="attr-maps">→ dropMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">lobDef</span><span class="attr-maps">→ lobDefMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">lobAtk</span><span class="attr-maps">→ lobAtkMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">smash</span><span class="attr-maps">→ smashMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">passing</span><span class="attr-maps">→ passMult</span><span class="attr-status live">LIVE</span></div>
+    </div>
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--cyan)">REDE</div>
+      <div class="attr-row"><span class="attr-name">volley</span><span class="attr-maps">→ volleyMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">instintoRede</span><span class="attr-maps">→ netApproachMult</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">reflexo</span><span class="attr-maps">→ reach bonus na rede</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row">
+        <span class="attr-name">coberturaLob</span>
+        <span class="attr-maps">→ nenhum mod calculado</span>
+        <span class="attr-status dead">MORTO</span>
+      </div>
+    </div>
+
+    <div class="attr-section">
+      <div class="attr-section-title" style="color:var(--red)">MENTAL</div>
+      <div class="attr-row"><span class="attr-name">pressao</span><span class="attr-maps">→ pressaoFactor</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">clutch</span><span class="attr-maps">→ clutchFactor</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">recuperacao</span><span class="attr-maps">→ recupFactor</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">paciencia</span><span class="attr-maps">→ patienceRallyMin</span><span class="attr-status live">LIVE</span></div>
+      <div class="attr-row"><span class="attr-name">agresDecisoria</span><span class="attr-maps">→ agresDecFactor</span><span class="attr-status live">LIVE</span></div>
+    </div>
+
+  </div>
+
+  <!-- Dead attrs fixes -->
+  <div style="margin-top: 24px">
+
+    <div class="card">
+      <div class="card-head">
+        <div class="badge dead">MORTO</div>
+        <div>
+          <div class="card-title">srv1Prec → serveScatter calculado mas nunca aplicado em tickServing</div>
+          <div class="card-file">src/players.js → computePlayerMods() · src/game.js → tickServing()</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p><code>serveScatter</code> é calculado corretamente em <code>computePlayerMods()</code> e está no objeto de retorno. Mas em <code>tickServing()</code>, a variável <code>tX</code> é definida com ranges fixos e hardcoded — o <code>sv.mods?.serveScatter</code> nunca é lido. PANCADÃO (prec 72) e SERVOLEY (prec 86) miram no mesmo ponto com a mesma precisão.</p>
+
+        <div class="code-wrap">
+          <div class="code-label fix"><span class="dot"></span>FIX — game.js tickServing(): aplicar serveScatter ao tX</div>
+          <pre><span class="d">// Após definir tX (T / WIDE / BODY target):</span>
+<span class="p">const</span> tr = Math.random(); <span class="p">let</span> tX, tgtName;
+<span class="p">if</span>      (tr &lt; <span class="y">0.38</span>) { tX = rand(-<span class="y">0.4</span>, <span class="y">0.4</span>);  tgtName = <span class="y">'T'</span>; }
+<span class="p">else if</span> (tr &lt; <span class="y">0.72</span>) { tX = gs.serveLeft ? rand(<span class="y">2.8</span>,<span class="y">3.8</span>) : rand(-<span class="y">3.8</span>,-<span class="y">2.8</span>); tgtName = <span class="y">'WIDE'</span>; }
+<span class="p">else</span>                { tX = rand(-<span class="y">1.2</span>, <span class="y">1.2</span>);  tgtName = <span class="y">'BODY'</span>; }
+
+<span class="d">// FIX: aplicar serveScatter — alta precisão = serve mais certeiro</span>
+<span class="d">// serveScatter range: ~0.4 (prec=100) até ~1.0 (prec=0)</span>
+<span class="p">const</span> scatter = sv.mods ? sv.mods.serveScatter : <span class="y">1.0</span>;
+<span class="g">tX += (Math.random() - 0.5) * scatter * 0.8;</span>
+<span class="d">// PANCADÃO (prec=72): scatter≈0.68 → ±0.27m de desvio</span>
+<span class="d">// SERVOLEY (prec=86): scatter≈0.54 → ±0.22m de desvio</span>
+<span class="d">// genérico (prec=50): scatter≈0.90 → ±0.36m de desvio</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="badge dead">MORTO</div>
+        <div>
+          <div class="card-title">varSaque — atributo sem mod e sem efeito no motor</div>
+          <div class="card-file">src/players.js → computePlayerMods() · src/game.js → tickServing()</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p><code>varSaque</code> existe em todos os 4 jogadores mas <code>computePlayerMods()</code> nunca computa um mod a partir dele. As probabilidades de saque T/Wide/Body são fixas: 38% / 34% / 28%. SERVOLEY (varSaque=90) e RAIVOSINHO (varSaque=60) servem com a mesma distribuição de direção.</p>
+
+        <div class="code-wrap">
+          <div class="code-label fix"><span class="dot"></span>FIX — players.js: computar serveVarMult</div>
+          <pre><span class="d">// Em computePlayerMods(), antes do return:</span>
+<span class="d">// Alta varSaque → distribuição mais equilibrada (nenhuma zona negligenciada)</span>
+<span class="d">// Baixa varSaque → viés para uma zona favorita</span>
+<span class="p">const</span> serveVarMult = <span class="y">0.5</span> + (attrs.varSaque / <span class="y">100</span>) * <span class="y">0.5</span>; <span class="d">// 0.5..1.0</span>
+
+<span class="d">// Adicionar ao return:</span>
+<span class="d">// return { ..., serveVarMult, ... }</span></pre>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-label fix"><span class="dot"></span>FIX — game.js tickServing(): usar serveVarMult nos thresholds</div>
+          <pre><span class="d">// Substituir os thresholds fixos por dinâmicos:</span>
+<span class="p">const</span> varMult = sv.mods ? sv.mods.serveVarMult : <span class="y">0.75</span>;
+<span class="d">// varMult=1.0 (var=100%): thresholds ~0.33/0.67 → distribuição equilibrada</span>
+<span class="d">// varMult=0.5 (var=0%):   thresholds ~0.50/0.72 → favorece T (zona mais segura)</span>
+<span class="p">const</span> tThresh    = <span class="y">0.50</span> - varMult * <span class="y">0.17</span>; <span class="d">// 0.33..0.50</span>
+<span class="p">const</span> wideThresh = tThresh + varMult * <span class="y">0.34</span>; <span class="d">// ~0.67 quando var=100%</span>
+
+<span class="p">const</span> tr = Math.random(); <span class="p">let</span> tX, tgtName;
+<span class="p">if</span>      (tr &lt; tThresh)    { tX = rand(-<span class="y">0.4</span>, <span class="y">0.4</span>);  tgtName = <span class="y">'T'</span>; }
+<span class="p">else if</span> (tr &lt; wideThresh) { tX = gs.serveLeft ? rand(<span class="y">2.8</span>,<span class="y">3.8</span>) : rand(-<span class="y">3.8</span>,-<span class="y">2.8</span>); tgtName = <span class="y">'WIDE'</span>; }
+<span class="p">else</span>                      { tX = rand(-<span class="y">1.2</span>, <span class="y">1.2</span>);  tgtName = <span class="y">'BODY'</span>; }
+
+<span class="d">// SERVOLEY (varSaque=90, varMult=0.95): ~33%T / 32%Wide / 35%Body — equilibrado</span>
+<span class="d">// RAIVOSINHO (varSaque=60, varMult=0.80): ~37%T / 27%Wide / 36%Body — levemente T-heavy</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="badge dead">MORTO</div>
+        <div>
+          <div class="card-title">coberturaLob — atributo sem mod e sem efeito na cobertura de lob</div>
+          <div class="card-file">src/players.js → computePlayerMods() · src/ai.js → updatePlayer()</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>A lógica de auto-recuo de rede quando lobado é um <code>if</code> fixo em <code>updatePlayer()</code> — <code>ball.pos.z &gt; 1.8</code>. Qualquer jogador recua com a mesma eficiência ao detectar um lob. COUTERZITUS (coberturaLob=88) e PANCADÃO (coberturaLob=54) reagem idêntico. O atributo tem zero influência.</p>
+
+        <div class="code-wrap">
+          <div class="code-label fix"><span class="dot"></span>FIX — players.js: computar lobCovMult</div>
+          <pre><span class="d">// Em computePlayerMods():</span>
+<span class="d">// coberturaLob → quão cedo o jogador detecta e reage ao lob</span>
+<span class="d">// Alta cobertura → reage ao lob mais cedo (z threshold menor)</span>
+<span class="d">// Baixa cobertura → só recua quando o lob já está muito alto</span>
+<span class="p">const</span> lobCovMult = <span class="y">0.60</span> + (attrs.coberturaLob / <span class="y">100</span>) * <span class="y">0.50</span>; <span class="d">// 0.60..1.10</span>
+<span class="d">// range resulta em z threshold de 1.26 (excelente) a 2.20 (ruim)</span>
+
+<span class="d">// Adicionar ao return:</span>
+<span class="d">// return { ..., lobCovMult, ... }</span></pre>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-label fix"><span class="dot"></span>FIX — ai.js updatePlayer(): usar lobCovMult no z threshold</div>
+          <pre><span class="d">// Substituir o threshold fixo de auto-retreat:</span>
+
+<span class="d">// ANTES:</span>
+<span class="r">if (player.atNet &amp;&amp; gs.ball.inFlight &amp;&amp; gs.ball.pos.z &gt; 1.8 &amp;&amp; ...)</span>
+
+<span class="d">// DEPOIS: threshold dinâmico por coberturaLob</span>
+<span class="d">// Alta cobertura = reage ao lob mais cedo (z threshold = 1.26 para 100)</span>
+<span class="d">// Baixa cobertura = só reage tarde (z threshold = 2.09 para 0)</span>
+<span class="p">const</span> lobZ = player.mods
+  ? <span class="y">2.2</span> - player.mods.lobCovMult * <span class="y">0.85</span>   <span class="d">// range 1.26..2.20</span>
+  : <span class="y">1.8</span>;                                      <span class="d">// fallback genérico</span>
+
+<span class="g">if (player.atNet &amp;&amp; gs.ball.inFlight &amp;&amp; gs.ball.pos.z &gt; lobZ</span>
+<span class="g">    &amp;&amp; gs.ball.vel.z &gt; 0 &amp;&amp; Math.sign(gs.ball.pos.y) !== player.side)</span>
+  player.atNet = <span class="p">false</span>;
+
+<span class="d">// COUTERZITUS (cob=88, lobCovMult=1.04): lobZ = 2.2 - 0.884 = 1.316 — recua muito cedo</span>
+<span class="d">// PANCADÃO (cob=54, lobCovMult=0.87):   lobZ = 2.2 - 0.740 = 1.460 — razoável</span>
+<span class="d">// SERVOLEY (cob=60, lobCovMult=0.90):   lobZ = 2.2 - 0.765 = 1.435 — ok (sua fraqueza)</span></pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ PRIORIDADE -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">05</span>
+    <h2 style="color:var(--text)">PRIORIDADE DE EXECUÇÃO</h2>
+  </div>
+
+  <div class="card">
+    <div class="card-body" style="padding:0">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item</th>
+            <th>Arquivo</th>
+            <th>Meta</th>
+            <th>Prioridade</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>1</code></td>
+            <td>Corrigir clamp invertido no landPoint (3 ocorrências)</td>
+            <td><code>ai.js</code></td>
+            <td>Movimento B+</td>
+            <td class="p-crit">CRÍTICO</td>
+          </tr>
+          <tr>
+            <td><code>2</code></td>
+            <td>Corrigir yFrac clamp invertido</td>
+            <td><code>ai.js</code></td>
+            <td>Movimento B+</td>
+            <td class="p-crit">CRÍTICO</td>
+          </tr>
+          <tr>
+            <td><code>3</code></td>
+            <td>Ligar srv1Prec → serveScatter em tickServing</td>
+            <td><code>game.js</code></td>
+            <td>Atributos B</td>
+            <td class="p-high">ALTO</td>
+          </tr>
+          <tr>
+            <td><code>4</code></td>
+            <td>Ligar varSaque → serveVarMult em tickServing</td>
+            <td><code>players.js + game.js</code></td>
+            <td>Atributos B</td>
+            <td class="p-high">ALTO</td>
+          </tr>
+          <tr>
+            <td><code>5</code></td>
+            <td>Ligar coberturaLob → lobCovMult em updatePlayer</td>
+            <td><code>players.js + ai.js</code></td>
+            <td>Atributos B</td>
+            <td class="p-high">ALTO</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ PROJEÇÃO -->
+<div class="section">
+  <div class="sec-hdr">
+    <span class="sec-num">06</span>
+    <h2 style="color:var(--text)">PROJEÇÃO PÓS-CORREÇÕES</h2>
+  </div>
+  <div class="callout cyan">
+    <strong>APÓS OS 5 AJUSTES ACIMA:</strong>
+    Física A− → <strong>A−</strong> (inalterado) ·
+    Movimento C+ → <strong>A−</strong> (clamp correto + predY adaptativo = perseguição real) ·
+    Comportamento B+ → <strong>B+</strong> (inalterado) ·
+    Atributos C+ → <strong>B+</strong> (todos os 27 com efeito real)
+  </div>
+</div>
+
+<div class="footer">
+  <span>TENNIX ME · RE-AUDITORIA v2.0</span>
+  <span>ai.js · game.js · players.js · constants.js · styles.js · physics.js</span>
+</div>
+</body>
+</html>

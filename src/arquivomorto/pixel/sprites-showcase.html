@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>TENNIX PIXEL — Sprites Showcase v1.1</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#080c12; color:#c8d4e0; font-family:'Courier New',monospace; padding:32px 24px; }
+  h1 { font-family:'Press Start 2P',monospace; font-size:13px; color:#00ff88;
+       text-shadow:0 0 20px rgba(0,255,136,0.5),3px 3px 0 #005533;
+       letter-spacing:3px; margin-bottom:4px; }
+  .subtitle { font-family:'VT323'; font-size:18px; color:rgba(200,255,212,0.4); letter-spacing:3px; margin-bottom:40px; }
+  .section { margin-bottom:48px; }
+  .section-title { font-family:'Press Start 2P',monospace; font-size:8px; color:#ff6b35;
+                   letter-spacing:2px; margin-bottom:20px; padding-bottom:8px;
+                   border-bottom:1px solid rgba(255,107,53,0.2); }
+  .row { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-end; }
+  .sprite-box { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .sprite-label { font-family:'VT323'; font-size:14px; color:rgba(200,255,212,0.5); letter-spacing:1px; text-align:center; }
+  .sprite-tag { font-family:'VT323'; font-size:12px; padding:1px 5px;
+                border:1px solid; letter-spacing:1px; margin-top:2px; }
+  /* pixel canvas: no smoothing */
+  canvas { image-rendering:pixelated; image-rendering:crisp-edges;
+           background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,136,0.1); }
+  .note { font-family:'VT323'; font-size:16px; color:rgba(200,255,212,0.3);
+          letter-spacing:1px; margin-bottom:24px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>TENNIX PIXEL</h1>
+<div class="subtitle">SPRITES SHOWCASE · v1.1 — TAMANHO CORRIGIDO</div>
+
+<div class="note">
+  ESCALA: 1 metro de quadra = 23px canvas. Jogador ~1.8m → ~24px altura.<br>
+  Vista de CIMA: círculo de cabelo (~12px diâm.) + braço/raquete. Vista LATERAL: sprite 14×24px.
+</div>
+
+<div class="section">
+  <div class="section-title">▶ VISTA DE CIMA — TODOS OS JOGADORES (tamanho real)</div>
+  <div class="row" id="top-view"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ VISTA LATERAL — TODOS OS JOGADORES (tamanho real)</div>
+  <div class="row" id="side-view"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ POSES LATERAIS — COUTERZITUS</div>
+  <div class="row" id="poses-couter"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ POSES LATERAIS — PANCADÃO</div>
+  <div class="row" id="poses-pancadao"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ VARIAÇÕES DE CABELO (vista lateral)</div>
+  <div class="row" id="hair-row"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ CORES DE RAQUETE (vista lateral, pose fh)</div>
+  <div class="row" id="racket-row"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">▶ PROPORÇÃO: JOGADOR NO CONTEXTO DA QUADRA (topo)</div>
+  <div class="row" id="court-scale"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════
+function lighten(hex, amt) {
+  const n = parseInt(hex.replace('#',''), 16);
+  const r = Math.min(255,(n>>16)+amt), g = Math.min(255,((n>>8)&0xff)+amt), b = Math.min(255,(n&0xff)+amt);
+  return `rgb(${r},${g},${b})`;
+}
+function darken(hex, amt) { return lighten(hex,-amt); }
+function px(ctx,x,y,w,h,c){ if(!c||c==='none')return; ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+
+// ═══════════════════════════════════════════════════
+// TOP-DOWN SPRITE
+// ═══════════════════════════════════════════════════
+const TOP_R = 6, TOP_RA = 5;
+
+function drawTopSprite(ctx, cx, cy, cfg, facing=0, swinging=false) {
+  const { hairColor='#333', racketColor='#111', skin='#c8845a',
+          shirtColor='#fff', accessory='none', accessoryColor, racketStrings='#ccff00' } = cfg;
+  cx=Math.round(cx); cy=Math.round(cy);
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(cx+1,cy+2,TOP_R,TOP_R*0.55,0,0,Math.PI*2); ctx.fill();
+
+  // Body
+  ctx.fillStyle = shirtColor;
+  ctx.beginPath(); ctx.arc(cx,cy,TOP_R,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = darken(shirtColor,20); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx,cy,TOP_R,0,Math.PI*2); ctx.stroke();
+
+  // Head / hair
+  const headR = TOP_R*0.62;
+  const headColor = accessory==='bandana' ? accessoryColor||'#fff' : hairColor;
+  ctx.fillStyle = headColor;
+  ctx.beginPath(); ctx.arc(cx,cy,headR,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.beginPath(); ctx.arc(cx-1,cy-1,headR*0.45,0,Math.PI*2); ctx.fill();
+
+  // Arm
+  const armLen = swinging ? TOP_RA+3 : TOP_RA;
+  const armX = cx+Math.cos(facing)*(TOP_R+1);
+  const armY = cy+Math.sin(facing)*(TOP_R+1);
+  const racX = cx+Math.cos(facing)*(TOP_R+armLen);
+  const racY = cy+Math.sin(facing)*(TOP_R+armLen);
+  ctx.strokeStyle=darken(skin,10); ctx.lineWidth=2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(armX,armY); ctx.lineTo(racX,racY); ctx.stroke();
+
+  // Racket
+  const perp = facing+Math.PI/2;
+  ctx.strokeStyle=racketColor; ctx.lineWidth=swinging?3:2; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(racX+Math.cos(perp)*3, racY+Math.sin(perp)*3);
+  ctx.lineTo(racX-Math.cos(perp)*3, racY-Math.sin(perp)*3);
+  ctx.stroke();
+  ctx.strokeStyle=racketStrings; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(racX+Math.cos(perp)*2, racY+Math.sin(perp)*2);
+  ctx.lineTo(racX-Math.cos(perp)*2, racY-Math.sin(perp)*2);
+  ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════════
+// SIDE SPRITE
+// ═══════════════════════════════════════════════════
+const BODY_W={slim:5,medium:6,athletic:7,tall:5};
+const BODY_H={slim:7,medium:7,athletic:8,tall:9};
+const POSES={
+  idle: {dy:0,armR:{dx:4,dy:6,w:2,h:4},armL:{dx:-5,dy:6,w:2,h:4},racketDx:6,racketDy:5,racketAngle:0},
+  run:  {dy:0,armR:{dx:4,dy:5,w:2,h:4},armL:{dx:-5,dy:7,w:2,h:4},racketDx:6,racketDy:4,racketAngle:0.3},
+  fh:   {dy:1,armR:{dx:5,dy:4,w:2,h:5},armL:{dx:-4,dy:6,w:2,h:3},racketDx:8,racketDy:1,racketAngle:-0.5},
+  bh:   {dy:1,armR:{dx:3,dy:6,w:2,h:3},armL:{dx:-6,dy:4,w:2,h:5},racketDx:-9,racketDy:1,racketAngle:0.5},
+  srv:  {dy:-1,armR:{dx:5,dy:2,w:2,h:6},armL:{dx:-4,dy:3,w:2,h:4},racketDx:6,racketDy:-4,racketAngle:-0.7,tossBall:true},
+  vol:  {dy:0,armR:{dx:6,dy:4,w:2,h:4},armL:{dx:-4,dy:6,w:2,h:3},racketDx:8,racketDy:2,racketAngle:-0.2},
+  slide:{dy:2,armR:{dx:4,dy:5,w:2,h:4},armL:{dx:-6,dy:5,w:2,h:4},racketDx:-8,racketDy:2,racketAngle:0.4},
+  cel:  {dy:-2,armR:{dx:5,dy:3,w:2,h:4},armL:{dx:-5,dy:3,w:2,h:4},racketDx:6,racketDy:0,racketAngle:-1.0},
+};
+
+function drawSprite(ctx, cx, cy, cfg, scale=1.0) {
+  const {skin='#c8845a',hair='short',hairColor='#333',bodyType='medium',
+    shirtColor='#fff',shortsColor='#1a237e',shoeColor='#ffd700',shoeAccent='#fff',
+    racketColor='#111',racketStrings='#ccff00',accessory='none',accessoryColor,
+    pose='idle',swingProgress=0} = cfg;
+
+  ctx.save();
+  ctx.translate(Math.round(cx),Math.round(cy));
+  if(scale!==1.0) ctx.scale(scale,scale);
+  ctx.imageSmoothingEnabled=false;
+
+  const pd=POSES[pose]||POSES.idle;
+  const bw=BODY_W[bodyType]||6, bh=BODY_H[bodyType]||7;
+  const half=Math.floor(bw/2), dy=pd.dy;
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0,1,5,2,0,0,Math.PI*2); ctx.fill();
+
+  // Shoes
+  px(ctx,-half-1,-3+dy,3,2,shoeColor); px(ctx,-half-1,-2+dy,4,1,shoeAccent);
+  px(ctx,half-2,-3+dy,3,2,shoeColor);  px(ctx,half-2,-2+dy,4,1,shoeAccent);
+
+  // Legs
+  const legTop=-8+dy;
+  px(ctx,-half,legTop,2,5,skin); px(ctx,half-2,legTop,2,5,skin);
+
+  // Shorts
+  const shortsY=legTop-3;
+  px(ctx,-half-1,shortsY,bw+2,5,shortsColor);
+  px(ctx,-half-1,shortsY,bw+2,1,lighten(shortsColor,20));
+
+  // Torso
+  const torsoY=shortsY-bh;
+  px(ctx,-half,torsoY,bw,bh,shirtColor);
+  px(ctx,-half,torsoY,bw,1,lighten(shirtColor,35));
+  px(ctx,-half,torsoY+2,1,bh-3,darken(shirtColor,20));
+  px(ctx,half-1,torsoY+2,1,bh-3,darken(shirtColor,20));
+
+  // Arms
+  const aBaseY=torsoY+1;
+  px(ctx,pd.armR.dx-1,aBaseY+pd.armR.dy,pd.armR.w,pd.armR.h,skin);
+  px(ctx,pd.armL.dx-1,aBaseY+pd.armL.dy,pd.armL.w,pd.armL.h,skin);
+
+  // Racket
+  const swRot=swingProgress*(pose==='fh'?-1.0:pose==='bh'?1.0:0);
+  ctx.save();
+  ctx.translate(pd.racketDx,aBaseY+pd.racketDy);
+  ctx.rotate(pd.racketAngle+swRot);
+  ctx.fillStyle=racketColor; ctx.fillRect(-1,0,2,7); ctx.fillRect(-2,-4,4,4);
+  ctx.fillStyle=racketStrings+'bb'; ctx.fillRect(-1,-3,1,3); ctx.fillRect(1,-3,1,3);
+  ctx.restore();
+
+  if(pd.tossBall){
+    ctx.fillStyle='#ccff00'; ctx.fillRect(-half-3,torsoY-5,2,2);
+    ctx.fillStyle='#fff';    ctx.fillRect(-half-3,torsoY-5,1,1);
+  }
+
+  // Head
+  const hW=5,hH=5,hX=-Math.floor(hW/2),hY=torsoY-hH-1;
+  px(ctx,hX,hY,hW,hH,skin);
+  px(ctx,hX+1,hY,hW-2,1,lighten(skin,25));
+  px(ctx,hX,hY+3,hW,2,darken(skin,15));
+
+  // Hair
+  if(accessory==='bandana'){
+    px(ctx,hX,hY,hW,2,accessoryColor||'#fff');
+    px(ctx,hX,hY+2,hW,1,hairColor);
+    px(ctx,hX-1,hY+1,1,2,hairColor); px(ctx,hX+hW,hY+1,1,2,hairColor);
+  } else if(hair==='long'){
+    px(ctx,hX,hY,hW,2,hairColor);
+    px(ctx,hX-1,hY+1,1,3,hairColor); px(ctx,hX+hW,hY+1,1,3,hairColor);
+  } else if(hair==='curly'){
+    px(ctx,hX-1,hY-1,hW+2,3,hairColor);
+    px(ctx,hX-1,hY+1,1,2,hairColor); px(ctx,hX+hW,hY+1,1,2,hairColor);
+  } else if(hair==='bun'){
+    px(ctx,hX+1,hY-3,3,3,hairColor); px(ctx,hX,hY,hW,1,hairColor);
+  } else {
+    px(ctx,hX,hY,hW,2,hairColor);
+    px(ctx,hX-1,hY+1,1,1,hairColor); px(ctx,hX+hW,hY+1,1,1,hairColor);
+  }
+  if(accessory==='visor'){
+    px(ctx,hX,hY,hW,2,accessoryColor||shirtColor);
+    px(ctx,hX-1,hY+1,hW+2,1,darken(accessoryColor||shirtColor,20));
+  } else if(accessory==='cap'){
+    px(ctx,hX,hY-1,hW,3,accessoryColor||shirtColor);
+    px(ctx,hX-1,hY+1,hW+2,1,accessoryColor||shirtColor);
+  }
+
+  // Eyes
+  ctx.fillStyle='#111';
+  ctx.fillRect(hX+1,hY+2,1,1); ctx.fillRect(hX+3,hY+2,1,1);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════
+// PLAYER CONFIGS
+// ═══════════════════════════════════════════════════
+const PLAYERS = {
+  COUTERZITUS: {
+    name:'Couterzitus',color:'#FF4444',tag:'CTR.PUNCH',
+    skin:'#a0674a',hair:'bandana',hairColor:'#2b1800',bodyType:'medium',
+    shirtColor:'#ffffff',shortsColor:'#1a237e',shoeColor:'#ffd700',shoeAccent:'#ffffff',
+    racketColor:'#111',racketStrings:'#00ff88',accessory:'bandana',accessoryColor:'#FF4444',
+  },
+  PANCADAO: {
+    name:'Pancadão',color:'#AA44FF',tag:'BIG SRV',
+    skin:'#8d5524',hair:'short',hairColor:'#1a1a1a',bodyType:'athletic',
+    shirtColor:'#3a007a',shortsColor:'#1a1a1a',shoeColor:'#cc0000',shoeAccent:'#ffffff',
+    racketColor:'#cc0000',racketStrings:'#ffffff',accessory:'none',
+  },
+  RAIVOSINHO: {
+    name:'Raivosinho',color:'#FFD700',tag:'AGG.BASE',
+    skin:'#d4a96a',hair:'short',hairColor:'#8b4513',bodyType:'athletic',
+    shirtColor:'#ffd700',shortsColor:'#ffffff',shoeColor:'#ffd700',shoeAccent:'#111',
+    racketColor:'#c8a800',racketStrings:'#ff6b35',accessory:'none',
+  },
+};
+
+const POSES_LIST=['idle','run','fh','bh','srv','vol','slide','cel'];
+const POSE_LABELS={idle:'IDLE',run:'CORRIDA',fh:'FOREHAND',bh:'BACKHAND',srv:'SAQUE',vol:'VOLLEY',slide:'SLIDE',cel:'CELEBRAÇÃO'};
+
+// ─── canvas factory ───
+function makeCanvas(w,h,scale=3){ // scale=3 for display (CSS scale to see pixels)
+  const c=document.createElement('canvas');
+  c.width=w; c.height=h;
+  c.style.width=(w*scale)+'px'; c.style.height=(h*scale)+'px';
+  return c;
+}
+
+// ─── sprite box ───
+function box(cfg, drawFn, label, tag, tagColor) {
+  const el=document.createElement('div');
+  el.className='sprite-box';
+  el.appendChild(cfg.canvas);
+  drawFn(cfg);
+  const lbl=document.createElement('div');
+  lbl.className='sprite-label'; lbl.textContent=label; el.appendChild(lbl);
+  if(tag){
+    const t=document.createElement('div'); t.className='sprite-tag';
+    t.textContent=tag; t.style.borderColor=(tagColor||'#fff')+'55';
+    t.style.color=tagColor||'#fff'; el.appendChild(t);
+  }
+  return el;
+}
+
+// ═══════════════════════════════════════════════════
+// SECTION 1: Top-view all players
+// ═══════════════════════════════════════════════════
+const topViewEl=document.getElementById('top-view');
+Object.values(PLAYERS).forEach(p=>{
+  const c=makeCanvas(36,36,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawTopSprite(ctx,18,18,p, -Math.PI/2, false);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=p.name; el.appendChild(lbl);
+  const t=document.createElement('div'); t.className='sprite-tag';
+  t.textContent=p.tag; t.style.borderColor=p.color+'55'; t.style.color=p.color; el.appendChild(t);
+  topViewEl.appendChild(el);
+});
+
+// Top-view swinging
+Object.values(PLAYERS).forEach(p=>{
+  const c=makeCanvas(36,36,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawTopSprite(ctx,18,18,p, 0.3, true);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=p.name+'\n(swing)'; el.appendChild(lbl);
+  topViewEl.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 2: Side view all players
+// ═══════════════════════════════════════════════════
+const sideViewEl=document.getElementById('side-view');
+Object.values(PLAYERS).forEach(p=>{
+  const c=makeCanvas(28,40,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawSprite(ctx,14,38,{...p,pose:'idle'},1.0);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=p.name; el.appendChild(lbl);
+  const t=document.createElement('div'); t.className='sprite-tag';
+  t.textContent=p.tag; t.style.borderColor=p.color+'55'; t.style.color=p.color; el.appendChild(t);
+  sideViewEl.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 3: All poses - Couterzitus
+// ═══════════════════════════════════════════════════
+const posesC=document.getElementById('poses-couter');
+POSES_LIST.forEach(pose=>{
+  const c=makeCanvas(32,44,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawSprite(ctx,16,42,{...PLAYERS.COUTERZITUS,pose},1.0);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=POSE_LABELS[pose]; el.appendChild(lbl);
+  posesC.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 4: All poses - Pancadão
+// ═══════════════════════════════════════════════════
+const posesP=document.getElementById('poses-pancadao');
+POSES_LIST.forEach(pose=>{
+  const c=makeCanvas(32,44,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawSprite(ctx,16,42,{...PLAYERS.PANCADAO,pose},1.0);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=POSE_LABELS[pose]; el.appendChild(lbl);
+  posesP.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 5: Hair styles
+// ═══════════════════════════════════════════════════
+const hairEl=document.getElementById('hair-row');
+['short','long','curly','bun','careca'].forEach((h,i)=>{
+  const colors=['#333','#3d2200','#8b4513','#222','#b08850'];
+  const shirts=['#fff','#ff6b35','#ffd700','#a78bfa','#00d4ff'];
+  const cfg={skin:'#c8845a',hair:h,hairColor:colors[i],bodyType:'medium',
+    shirtColor:shirts[i],shortsColor:'#1a237e',shoeColor:'#ffd700',shoeAccent:'#fff',
+    racketColor:'#333',racketStrings:'#0f0',accessory:'none',pose:'idle'};
+  const c=makeCanvas(28,40,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawSprite(ctx,14,38,cfg,1.0);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=h.toUpperCase(); el.appendChild(lbl);
+  hairEl.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 6: Racket colours
+// ═══════════════════════════════════════════════════
+const racketEl=document.getElementById('racket-row');
+const racColors=[['#111','PRETO'],['#cc0000','VERMELHO'],['#c8a800','OURO'],['#0044cc','AZUL'],['#006633','VERDE'],['#a78bfa','LILÁS'],['#ff6b35','LARANJA'],['#e0e0e0','BRANCO']];
+racColors.forEach(([rc,name])=>{
+  const cfg={skin:'#c8845a',hair:'short',hairColor:'#333',bodyType:'medium',
+    shirtColor:'#fff',shortsColor:'#1a237e',shoeColor:'#ffd700',shoeAccent:'#fff',
+    racketColor:rc,racketStrings:'#ccff00',accessory:'none',pose:'fh'};
+  const c=makeCanvas(36,44,4);
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  drawSprite(ctx,16,42,cfg,1.0);
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label'; lbl.textContent=name; el.appendChild(lbl);
+  const t=document.createElement('div'); t.className='sprite-tag';
+  t.textContent='■'; t.style.borderColor=rc+'77'; t.style.color=rc; el.appendChild(t);
+  racketEl.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════
+// SECTION 7: Court scale reference
+// ═══════════════════════════════════════════════════
+const courtEl=document.getElementById('court-scale');
+const COURT_W=252, COURT_H=547; // canvas px at scale 23
+// Draw a mini court to show player size in context
+(function(){
+  const SCALE=1; // 1:1 render
+  const cW=Math.round(COURT_H*0.35), cH=Math.round(COURT_W*0.35);
+  const c=document.createElement('canvas');
+  c.width=cW; c.height=cH;
+  c.style.width=(cW*2)+'px'; c.style.height=(cH*2)+'px';
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+
+  // Court bg
+  ctx.fillStyle='#1a6e38'; ctx.fillRect(0,0,cW,cH);
+  // Turf
+  for(let xi=0;xi<cW;xi+=4){ ctx.fillStyle='rgba(255,255,255,0.025)'; ctx.fillRect(xi,0,2,cH); }
+  // Net
+  ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(cW/2-1,0,2,cH);
+  // Baselines
+  ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(0,0,cW,2); ctx.fillRect(0,cH-2,cW,2);
+  // Sidelines
+  ctx.fillRect(0,0,2,cH); ctx.fillRect(cW-2,0,2,cH);
+
+  // Draw 2 players at correct scale
+  drawTopSprite(ctx, cW*0.25, cH*0.65, PLAYERS.COUTERZITUS, -Math.PI/2, false);
+  drawTopSprite(ctx, cW*0.75, cH*0.35, PLAYERS.PANCADAO,     Math.PI/2,  false);
+
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label';
+  lbl.textContent='PROPORÇÃO REAL (topo)'; el.appendChild(lbl);
+  courtEl.appendChild(el);
+})();
+
+// Side view scale reference
+(function(){
+  const cW=180, cH=130;
+  const c=document.createElement('canvas');
+  c.width=cW; c.height=cH;
+  c.style.width=(cW*2.5)+'px'; c.style.height=(cH*2.5)+'px';
+  const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle='#06100a'; ctx.fillRect(0,0,cW,cH);
+  // Mini iso court floor
+  ctx.fillStyle='#186830'; ctx.fillRect(20,60,140,50);
+  // Net
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.fillRect(90,35,2,25);
+  ctx.fillRect(20,60,140,2);
+
+  // Players at real scale
+  drawSprite(ctx, 55, 105, {...PLAYERS.COUTERZITUS,pose:'fh'}, 1.0);
+  drawSprite(ctx, 120, 90, {...PLAYERS.PANCADAO,  pose:'bh'}, 0.75); // far player, smaller
+
+  const el=document.createElement('div'); el.className='sprite-box';
+  el.appendChild(c);
+  const lbl=document.createElement('div'); lbl.className='sprite-label';
+  lbl.textContent='PROPORÇÃO REAL (lateral)'; el.appendChild(lbl);
+  courtEl.appendChild(el);
+})();
+</script>
+</body>
+</html>

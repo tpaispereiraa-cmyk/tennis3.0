@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEWME1.0 · Ideias de Token</title>
+  <style>
+    :root {
+      --bg: #071017;
+      --panel: #0d1820;
+      --panel-2: #13212b;
+      --line: rgba(255,255,255,.12);
+      --text: #f1ede5;
+      --dim: rgba(241,237,229,.62);
+      --accent: #d85a22;
+      --gold: #e8c84a;
+      --court: #1f6486;
+      --court-line: rgba(255,255,255,.72);
+      --p1-top: #f06428;
+      --p1-bottom: #f4efe8;
+      --p2-top: #7a4bff;
+      --p2-bottom: #efff59;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(216,90,34,.12), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(122,75,255,.12), transparent 24%),
+        linear-gradient(180deg, #081219, var(--bg));
+    }
+
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 42px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .sub {
+      color: var(--dim);
+      font-size: 15px;
+      margin-bottom: 28px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(19,33,43,.98), rgba(13,24,32,.98));
+      border: 1px solid var(--line);
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.28);
+    }
+
+    .kicker {
+      font-size: 11px;
+      letter-spacing: .28em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .copy {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--dim);
+      margin-bottom: 18px;
+    }
+
+    .court {
+      position: relative;
+      height: 440px;
+      border: 1px solid rgba(255,255,255,.16);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)),
+        var(--court);
+      overflow: hidden;
+    }
+
+    .court::before,
+    .court::after {
+      content: "";
+      position: absolute;
+      inset: 20px;
+      border: 2px solid var(--court-line);
+      pointer-events: none;
+    }
+
+    .court::after {
+      inset: 20px 33%;
+      border-left: 2px solid var(--court-line);
+      border-right: 2px solid var(--court-line);
+      border-top: none;
+      border-bottom: none;
+      opacity: .85;
+    }
+
+    .net {
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      top: 50%;
+      height: 2px;
+      background: rgba(255,255,255,.85);
+      transform: translateY(-50%);
+    }
+
+    .service {
+      position: absolute;
+      left: 50%;
+      width: 2px;
+      top: 20px;
+      bottom: 20px;
+      background: rgba(255,255,255,.55);
+      transform: translateX(-50%);
+    }
+
+    .token {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      transform: translate(-50%, -50%);
+    }
+
+    .label {
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 10px);
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 12px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.72);
+    }
+
+    .token-ball {
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.82);
+      overflow: hidden;
+      position: absolute;
+      inset: 0;
+      box-shadow: 0 8px 20px rgba(0,0,0,.28);
+      background: #111;
+    }
+
+    .token-ball .top,
+    .token-ball .bottom {
+      position: absolute;
+      left: 0;
+      right: 0;
+    }
+
+    .token-ball .top {
+      top: 0;
+      height: 55%;
+      clip-path: ellipse(68% 88% at 50% 30%);
+    }
+
+    .token-ball .bottom {
+      bottom: 0;
+      height: 52%;
+      clip-path: ellipse(74% 85% at 50% 100%);
+    }
+
+    .token-ball .front {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      transform: translateX(-50%) rotate(45deg);
+      border-top: 2px solid rgba(255,255,255,.9);
+      border-left: 2px solid rgba(255,255,255,.9);
+      opacity: .88;
+    }
+
+    .token-ball .racket {
+      position: absolute;
+      right: -7px;
+      top: 19px;
+      width: 13px;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.9);
+      transform: rotate(-24deg);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.18);
+    }
+
+    .token-capsule {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,.82);
+      overflow: hidden;
+      box-shadow: 0 8px 20px rgba(0,0,0,.28);
+      background: #111;
+    }
+
+    .token-capsule .head {
+      position: absolute;
+      left: 50%;
+      top: 4px;
+      width: 22px;
+      height: 16px;
+      transform: translateX(-50%);
+      border-radius: 999px 999px 10px 10px;
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.45);
+    }
+
+    .token-capsule .upper,
+    .token-capsule .lower {
+      position: absolute;
+      left: 0;
+      right: 0;
+    }
+
+    .token-capsule .upper {
+      top: 0;
+      height: 57%;
+      clip-path: ellipse(56% 84% at 50% 28%);
+    }
+
+    .token-capsule .lower {
+      bottom: 0;
+      height: 48%;
+      clip-path: ellipse(62% 82% at 50% 100%);
+    }
+
+    .token-capsule .arm {
+      position: absolute;
+      right: -10px;
+      top: 20px;
+      width: 16px;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.95);
+      transform: rotate(-26deg);
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .legend-item {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+      font-size: 13px;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+
+    .legend-item strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>NEWME1.0 · evolução do token</h1>
+    <div class="sub">Comparativo rápido das duas direções em uma quadra top-down, sem tentar virar mini boneco literal.</div>
+
+    <div class="grid">
+      <section class="card">
+        <div class="kicker">Opção 1</div>
+        <h2>Token de atleta</h2>
+        <div class="copy">
+          Mantém a bolinha bipartida, mas acrescenta orientação de corpo e um traço curto para a mão da raquete.
+          Continua abstrato, rápido de ler e mais esportivo que o disco atual.
+        </div>
+        <div class="court">
+          <div class="net"></div>
+          <div class="service"></div>
+
+          <div class="token" style="left:34%;top:73%;">
+            <div class="token-ball">
+              <div class="top" style="background:var(--p1-top)"></div>
+              <div class="bottom" style="background:var(--p1-bottom)"></div>
+              <div class="front"></div>
+              <div class="racket"></div>
+            </div>
+            <div class="label">player A</div>
+          </div>
+
+          <div class="token" style="left:64%;top:28%;">
+            <div class="token-ball">
+              <div class="top" style="background:var(--p2-top)"></div>
+              <div class="bottom" style="background:var(--p2-bottom)"></div>
+              <div class="front"></div>
+              <div class="racket"></div>
+            </div>
+            <div class="label">player B</div>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="legend-item">
+            <strong>Ponto forte</strong>
+            Mais elegante e muito perto do que você já tem.
+          </div>
+          <div class="legend-item">
+            <strong>Risco</strong>
+            Precisa dos detalhes bem discretos para não virar ruído.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="kicker">Opção 2</div>
+        <h2>Cápsula Top-Down</h2>
+        <div class="copy">
+          Troca o círculo por uma cápsula vista de cima, com frente, tronco e parte inferior ainda divididos pelas cores do kit.
+          Passa mais sensação de corpo em deslocamento.
+        </div>
+        <div class="court">
+          <div class="net"></div>
+          <div class="service"></div>
+
+          <div class="token" style="left:35%;top:73%;">
+            <div class="token-capsule">
+              <div class="head"></div>
+              <div class="upper" style="background:var(--p1-top)"></div>
+              <div class="lower" style="background:var(--p1-bottom)"></div>
+              <div class="arm"></div>
+            </div>
+            <div class="label">player A</div>
+          </div>
+
+          <div class="token" style="left:65%;top:28%;">
+            <div class="token-capsule">
+              <div class="head"></div>
+              <div class="upper" style="background:var(--p2-top)"></div>
+              <div class="lower" style="background:var(--p2-bottom)"></div>
+              <div class="arm"></div>
+            </div>
+            <div class="label">player B</div>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="legend-item">
+            <strong>Ponto forte</strong>
+            Passa mais leitura de corpo e direção do atleta.
+          </div>
+          <div class="legend-item">
+            <strong>Risco</strong>
+            Se exagerar no detalhe, fica mais perto do bonequinho tosco.
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
