@@ -70,8 +70,8 @@ function recordBehavior(player, shot, decision, context) {
   if (!player?.ctx) return;
   player.ctx.matchCtx ??= {};
   const fp = player.ctx.matchCtx.behaviorFingerprint ??= {
-    shots: 0, families: {}, directions: {}, blueprints: {}, patterns: {}, approaches: 0,
-    runarounds: 0, returnAttacks: 0, serves: 0, dropConsidered: 0, contactTimeSum: 0, contactHeightSum: 0,
+    shots: 0, families: {}, directions: {}, serveDirections: {}, blueprints: {}, patterns: {}, approaches: 0,
+    runarounds: 0, returnAttacks: 0, serves: 0, dropConsidered: 0, contactTimeSum: 0, contactTimeSamples: 0, contactHeightSum: 0,
     baselineDepthSum: 0, positionSamples: 0, insideContactCount: 0, cleanContactCount: 0, dropGapSum: 0, dropGapMin: 9,
   };
   fp.shots++;
@@ -88,10 +88,10 @@ function recordBehavior(player, shot, decision, context) {
     fp.dropGapSum += gap;
     fp.dropGapMin = Math.min(fp.dropGapMin, gap);
   }
-  if (shot.serve) fp.serves++;
-  if (context?.phase === 'RETURN' && shot.intent === 'PRESSURE') fp.returnAttacks++;
+  if (shot.serve) { fp.serves++; fp.serveDirections[shot.direction] = (fp.serveDirections[shot.direction] ?? 0) + 1; }
+  if (decision?.returnPlanFamily && shot.intent === 'PRESSURE') fp.returnAttacks++;
   const time = context?.body?.contactPoint?.t ?? context?.body?.contactTime;
-  if (Number.isFinite(time)) fp.contactTimeSum += time;
+  if (Number.isFinite(time)) { fp.contactTimeSum += time; fp.contactTimeSamples++; }
   const height = context?.ballState?.pos?.z;
   if (Number.isFinite(height)) fp.contactHeightSum += height;
   const y = Math.abs(player.pos?.y ?? 0);
