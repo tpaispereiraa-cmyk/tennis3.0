@@ -44,6 +44,13 @@ export const SHOT_BLUEPRINTS = Object.freeze([
   B('TOPSPIN_INSIDE_OUT', 'Forehand inside-out pesado', ShotFamily.TOPSPIN, ShotIntent.PRESSURE, ShotDirection.INSIDE_OUT, TargetDepth.MID_DEEP, TargetWidth.WIDE, {
     phases: ATTACK, baseUtility: 0.51, risk: 0.44, requirements: { minQ: 0.54, minReady: 0.42, forehandOnly: true }, capabilityWeights: { forehandPower: 0.34, topspin: 0.28, forehandControl: 0.24, movement: 0.14 }, preferences: { signatures: ['FH_INSIDE_OUT', 'INSIDE_OUT_FH'] }, tags: ['forehand', 'runaround', 'move', 'plus_one'], trajectory: { powerAdd: 1.25, topspinMult: 1.14, curveSpin: 0.20, netClearanceAdd: 0.04 }, buildMode: 'attack',
   }),
+  B('TOPSPIN_APPROACH_DEEP', 'Topspin de aproximação profundo', ShotFamily.TOPSPIN, ShotIntent.APPROACH, ShotDirection.DTL, TargetDepth.DEEP, TargetWidth.WIDE, {
+    phases: [ShotPhase.APPROACH, ShotPhase.RALLY_ATTACK], baseUtility: 0.44, risk: 0.39,
+    requirements: { minQ: 0.55, minReady: 0.44, minArrival: -0.05, ballShort: 9.2, playerInside: 10.25 },
+    capabilityWeights: { wingControl: 0.28, topspin: 0.25, volley: 0.22, tacticalVision: 0.16, movement: 0.09 },
+    preferences: { netGames: ['HUNTER', 'PROACTIVE', 'OPPORTUNIST'] },
+    tags: ['approach', 'move', 'push_back'], trajectory: { powerAdd: 0.5, topspinMult: 1.15, netClearanceAdd: 0.13 }, buildMode: 'attack',
+  }),
   B('TOPSPIN_PASS_CROSS', 'Passada cruzada com topspin', ShotFamily.TOPSPIN, ShotIntent.PASS, ShotDirection.CROSS, TargetDepth.MID_DEEP, TargetWidth.ANGLE, {
     phases: PASS, baseUtility: 0.72, risk: 0.48, requirements: { opponentAtNet: true }, capabilityWeights: { topspin: 0.33, wingControl: 0.30, tacticalVision: 0.20, wingPower: 0.17 }, tags: ['passing', 'curve', 'open_court'], trajectory: { powerAdd: 1.25, topspinMult: 1.22, curveSpin: 0.38, netClearanceAdd: -0.04 }, finishMode: 'angle_putaway',
   }),

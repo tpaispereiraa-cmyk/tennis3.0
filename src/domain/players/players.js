@@ -803,6 +803,7 @@ export const NAMED_PLAYERS = {
   // ══════════════════════════════════════════════════════════════
   YAMAMOTO: {
     id: 'YAMAMOTO',
+    courtIdentity: { favoritePlay: 'SHORT_BALL_APPROACH', positioning: { baselineDepthBias: -0.12, netFollowBias: 0.16 }, movement: { netTransitionBias: 0.17 }, shotVocabulary: { intentBias: { APPROACH: 0.14 }, blueprintBias: { TOPSPIN_APPROACH_DEEP: 0.10, SLICE_CHIP_APPROACH: 0.10 } }, construction: { favoritePatterns: ['SETUP_NET'] } },
     photo: 'https://files.catbox.moe/3i0rf0.png',
     name: 'Yamamoto',
     nickname: 'Katana',

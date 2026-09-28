@@ -10,7 +10,7 @@ try {
   const matches = Number(process.env.FINGERPRINT_MATCHES ?? 2);
   const opponent = NAMED_PLAYERS.HASSAN ?? Object.values(NAMED_PLAYERS).find(p => /Hassan/i.test(p.name));
   assert.ok(opponent);
-  for (const id of (process.env.FINGERPRINT_PLAYER ? [process.env.FINGERPRINT_PLAYER] : ['NAKAMURA', 'VANTORINI', 'KASPERK', 'BJORNSTAD'])) {
+  for (const id of (process.env.FINGERPRINT_PLAYER ? [process.env.FINGERPRINT_PLAYER] : ['NAKAMURA', 'VANTORINI', 'KASPERK', 'BJORNSTAD', 'YAMAMOTO'])) {
     const player = NAMED_PLAYERS[id];
     assert.ok(player);
     const total = { shots: 0, families: {}, directions: {}, serveDirections: {}, blueprints: {}, patterns: {}, approaches: 0, runarounds: 0, returnAttacks: 0, serves: 0, dropConsidered: 0, dropGapSum: 0, dropGapMin: 9, insideContactCount: 0, cleanContactCount: 0, contactTimeSum: 0, contactTimeSamples: 0, contactHeightSum: 0, baselineDepthSum: 0, positionSamples: 0, rallyLengthSum: 0, rallyLengthCount: 0 };
@@ -42,6 +42,7 @@ try {
     assert.ok(summary.NAKAMURA.slicePct > summary.VANTORINI.slicePct + 8, 'Nakamura perdeu seu perfil de slice');
     assert.ok(summary.VANTORINI.runaroundPct > summary.KASPERK.runaroundPct + 3, 'Vantorini perdeu a busca pelo forehand');
     assert.ok(summary.KASPERK.baselineDepthM > summary.VANTORINI.baselineDepthM + 0.1, 'Kasperk não recupera mais fundo');
+    assert.ok(summary.YAMAMOTO.approachPct > summary.KASPERK.approachPct, 'Yamamoto não procura a rede');
   }
   console.log(JSON.stringify(summary, null, 2));
 } finally {
