@@ -13,6 +13,17 @@ const T = {
   platDim: 'rgba(200,216,224,.6)',
 };
 
+const HOF_SURFACES = [
+  { key: 'CLAY', label: 'Rei do Saibro', shortLabel: 'Saibro', icon: '🏺', color: '#C4572A' },
+  { key: 'GRASS', label: 'Mago da Grama', shortLabel: 'Grama', icon: '🌿', color: '#2ECC71' },
+  { key: 'HARD', label: 'Máq. do Hard', shortLabel: 'Hard', icon: '🏙️', color: '#4A90D9' },
+  { key: 'STREET', label: 'Imperador do Asfalto', shortLabel: 'Asfalto', icon: '🛣️', color: '#EF9F27' },
+  { key: 'CARPET', label: 'Mestre do Veludo', shortLabel: 'Veludo', icon: '🎭', color: '#C4426A' },
+  { key: 'INDOOR', label: 'Sen. das Arenas', shortLabel: 'Indoor', icon: '🏟️', color: '#C84FEB' },
+];
+
+const HOF_SURFACE_BY_KEY = Object.fromEntries(HOF_SURFACES.map(surface => [surface.key, surface]));
+
 // ── CSS injection ────────────────────────────────────────────────────
 function injectHOFStyles() {
   if (document.getElementById('hof-styles')) return;
@@ -312,14 +323,13 @@ function HOFCard({ stats, rank, onClick, delay = 0 }) {
           {/* FASE 3: superfície dominante — exibe se jogador tem identidade de superfície definida */}
           {stats.player?.surfaceIdentity && (() => {
             const sid = stats.player.surfaceIdentity;
-            const SURF_COLOR_HOF = { CLAY:'#C4572A', GRASS:'#2ECC71', HARD:'#4A90D9', INDOOR:'#C84FEB' };
-            const SURF_ICON_HOF  = { CLAY:'🏺', GRASS:'🌿', HARD:'🏙️', INDOOR:'🏟️' };
-            const color = SURF_COLOR_HOF[sid.surface] ?? T.goldDim;
+            const meta = HOF_SURFACE_BY_KEY[sid.surface] ?? {};
+            const color = meta.color ?? T.goldDim;
             return (
               <span style={{ fontFamily: T.mono, fontSize: 7, color,
                 background: `${color}15`, border: `1px solid ${color}35`,
                 padding: '2px 6px', borderRadius: 2, letterSpacing: '.1em' }}>
-                {SURF_ICON_HOF[sid.surface]} {sid.label?.toUpperCase() ?? sid.surface}
+                {meta.icon} {sid.label?.toUpperCase() ?? sid.surface}
               </span>
             );
           })()}
@@ -332,6 +342,73 @@ function HOFCard({ stats, rank, onClick, delay = 0 }) {
           {stats.firstYear ?? '----'} - {stats.lastYear ?? '----'}
         </div>
         <div style={{ fontFamily: T.mono, fontSize: 7, color: T.faint, letterSpacing: '.1em' }}>VER HISTÓRIA →</div>
+      </div>
+    </div>
+  );
+}
+
+function PyramidSlot({ stats, rank, tier, onSelect, compact = false }) {
+  if (!stats) return null;
+  return (
+    <button onClick={() => onSelect(stats)} style={{
+      border: `1px solid ${tier.border}`,
+      background: `linear-gradient(135deg, ${tier.bg}, rgba(10,14,17,.92))`,
+      color: T.white,
+      cursor: 'pointer',
+      padding: compact ? '8px 10px' : '10px 12px',
+      minWidth: compact ? 122 : 152,
+      flex: compact ? '0 1 150px' : '0 1 190px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      textAlign: 'left',
+      transition: 'transform .15s, border-color .15s',
+    }}>
+      <PlayerFace player={stats.player} size={compact ? 34 : 42} borderColor={tier.color} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 7, color: tier.color, letterSpacing: '.14em' }}>#{rank + 1}</div>
+        <div style={{ fontFamily: T.disp, fontSize: compact ? 15 : 18, color: T.white, letterSpacing: '.04em', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stats.name}</div>
+        <div style={{ fontFamily: T.mono, fontSize: 7, color: T.faint, letterSpacing: '.08em', marginTop: 3 }}>{stats.gs} GS · {stats.masters} M1000 · {Math.round(stats.goatScore?.total ?? 0)} pts</div>
+      </div>
+    </button>
+  );
+}
+
+function HallPyramid({ inductees, onSelect }) {
+  const tiers = [
+    { id: 'GOAT', label: 'GOAT', count: 1, color: '#FFD700', border: 'rgba(255,215,0,.58)', bg: 'rgba(232,200,74,.18)' },
+    { id: 'LENDAS', label: 'LENDAS', count: 3, color: '#C8D8E0', border: 'rgba(200,216,224,.42)', bg: 'rgba(200,216,224,.10)' },
+    { id: 'IMORTAIS', label: 'IMORTAIS', count: 5, color: '#C84FEB', border: 'rgba(200,79,235,.36)', bg: 'rgba(200,79,235,.09)' },
+    { id: 'EPOCA', label: 'MARCARAM ÉPOCA', count: 7, color: '#4A90D9', border: 'rgba(74,144,217,.32)', bg: 'rgba(74,144,217,.08)' },
+  ];
+  let offset = 0;
+  const rows = tiers.map(tier => {
+    const items = inductees.slice(offset, offset + tier.count);
+    const start = offset;
+    offset += tier.count;
+    return { ...tier, items, start };
+  });
+  const pyramidTotal = offset;
+  if (!inductees.length) return null;
+  return (
+    <div style={{ padding: '18px 24px 4px', flexShrink: 0 }}>
+      <div style={{ borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`, padding: '18px 0 16px' }}>
+        {rows.map(row => row.items.length > 0 && (
+          <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 14, alignItems: 'center', marginBottom: row.id === 'EPOCA' ? 0 : 10 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: T.disp, fontSize: row.id === 'GOAT' ? 25 : 18, color: row.color, letterSpacing: '.12em', lineHeight: 1 }}>{row.label}</div>
+              <div style={{ fontFamily: T.mono, fontSize: 7, color: T.faint, letterSpacing: '.14em', marginTop: 4 }}>{row.items.length}/{row.count}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {row.items.map((stats, i) => (
+                <PyramidSlot key={stats.id} stats={stats} rank={row.start + i} tier={row} onSelect={onSelect} compact={row.id === 'EPOCA'} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily: T.mono, fontSize: 7, color: T.faint, letterSpacing: '.14em', textTransform: 'uppercase', marginTop: 8, textAlign: 'right' }}>
+        Topo histórico: {Math.min(inductees.length, pyramidTotal)} nomes · Hall limitado a 70
       </div>
     </div>
   );
@@ -359,7 +436,10 @@ function TimelineNode({ event, idx }) {
     GS_FINAL_LOSS: 'VICE GRAND SLAM', MASTERS_1000: 'MASTERS 1000', FINALS: 'ATP FINALS',
     TITLES_MINOR:  'TÍTULOS', YEAR_SUMMARY: 'TEMPORADA', INJURY_MAJOR: 'LESÃO GRAVE',
     BREAKING_NEWS: 'BREAKING', RETIREMENT_ANNOUNCED: 'DESPEDIDA',
+    RANKING_MILESTONE: 'MARCO DE RANKING', SPONSOR: 'PATROCÍNIO',
+    COACH_START: 'NOVA EQUIPE', COACH_RUPTURE: 'MUDANÇA DE EQUIPE',
   };
+  const eventLabel = typeLabels[event.type] ?? event.category?.replace(/_/g, ' ') ?? 'HISTÓRIA PESSOAL';
 
   return (
     <div className="hof-timeline-node" style={{ animationDelay: `${idx * 60}ms` }}>
@@ -383,9 +463,7 @@ function TimelineNode({ event, idx }) {
         <div style={{ fontFamily: T.mono, fontSize: 8, color: event.color,
           letterSpacing: '.2em', textTransform: 'uppercase', marginBottom: 4 }}>
           {event.year}
-          {typeLabels[event.type] && (
-            <span style={{ marginLeft: 8, color: T.faint }}>· {typeLabels[event.type]}</span>
-          )}
+          <span style={{ marginLeft: 8, color: T.faint }}>· {eventLabel}</span>
         </div>
 
         {/* Título */}
@@ -451,12 +529,8 @@ function PlayerTimelineView({ stats, state, onBack }) {
 
   const p = stats.player;
 
-  const surfLabel  = { HARD: 'Hard', CLAY: 'Saibro', GRASS: 'Grama', INDOOR: 'Indoor' };
   const dominantSurf = Object.entries(stats.surfTitles ?? {}).sort((a,b)=>b[1]-a[1])[0]?.[0];
-
-  const dominantColor = {
-    HARD: '#1565C0', CLAY: '#C4572A', GRASS: '#2E7D32', INDOOR: '#6A1B9A',
-  };
+  const dominantMeta = HOF_SURFACE_BY_KEY[dominantSurf] ?? null;
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', animation: 'hof-in .3s ease' }}>
@@ -507,8 +581,8 @@ function PlayerTimelineView({ stats, state, onBack }) {
             { label: 'TÍTULOS',     value: stats.totalTitles, color: T.dim },
             { label: 'TOP-10 MESES', value: stats.top10Months, color: T.dim },
             { label: 'WIN RATE',    value: `${Math.round((stats.winRate ?? 0) * 100)}%`, color: T.dim },
-            ...(dominantSurf ? [{ label: 'SUPERFÍCIE', value: surfLabel[dominantSurf] ?? dominantSurf,
-              color: dominantColor[dominantSurf] ?? T.dim }] : []),
+            ...(dominantSurf ? [{ label: 'SUPERFÍCIE', value: dominantMeta?.shortLabel ?? dominantSurf,
+              color: dominantMeta?.color ?? T.dim }] : []),
           ].map(({ label, value, color }, i) => (
             <div key={label} style={{
               flex: 1, padding: '12px 8px', textAlign: 'center',
@@ -547,14 +621,15 @@ function PlayerTimelineView({ stats, state, onBack }) {
 }
 
 // ── Gallery view (lista dos induzidos) ───────────────────────────────
-function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
+function GalleryView({ inductees, allStats = [], sponsorRecords, coachRecords, onSelect }) {
   const [filter, setFilter] = useState('ALL'); // ALL / ACTIVE / RETIRED / CAREER_SLAM
+  const pyramidCutoff = 16;
 
   const filtered = useMemo(() => {
     if (filter === 'ACTIVE')       return inductees.filter(s => !s.isRetired);
     if (filter === 'RETIRED')      return inductees.filter(s => s.isRetired);
     if (filter === 'CAREER_SLAM')  return inductees.filter(s => s.careerSlam);
-    return inductees;
+    return inductees.slice(pyramidCutoff);
   }, [inductees, filter]);
 
   const filters = [
@@ -589,10 +664,10 @@ function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
       <div style={{ padding: '24px 24px 0', flexShrink: 0 }}>
         <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <div style={{ fontFamily: T.disp, fontSize: 32, letterSpacing: '.1em', color: T.gold }}>HALL OF FAME</div>
-          <div style={{ fontFamily: T.mono, fontSize: 8, color: T.faint, letterSpacing: '.2em' }}>{inductees.length} INDUZIDOS</div>
+          <div style={{ fontFamily: T.mono, fontSize: 8, color: T.faint, letterSpacing: '.2em' }}>{inductees.length}/70 INDUZIDOS</div>
         </div>
         <div style={{ fontFamily: T.mono, fontSize: 8, color: T.faint, letterSpacing: '.14em',
-          marginBottom: 16, lineHeight: 1.8 }}>CRITÉRIOS: 3+ GRAND SLAMS · 20+ MESES TOP-10 · APOSENTADO OU 35+ ANOS</div>
+          marginBottom: 16, lineHeight: 1.8 }}>CRITÉRIOS: 1+ GRAND SLAM OU 5+ MASTERS 1000 · APOSENTADO OU 35+ ANOS · TOP 70 POR GOAT SCORE</div>
 
         {/* Filtros */}
         <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${T.border}`, paddingBottom: 0 }}>
@@ -611,6 +686,8 @@ function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
           ))}
         </div>
       </div>
+
+      {filter === 'ALL' && <HallPyramid inductees={inductees} onSelect={onSelect} />}
 
       {/* Recordes de Patrocínio */}
       {sponsorRecords && (sponsorRecords.biggestContract || sponsorRecords.mostLoyal || sponsorRecords.topEarner) && (
@@ -639,6 +716,22 @@ function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
                 <div style={{ fontFamily: T.mono, fontSize: 8, color: T.text }}>{sponsorRecords.mostLoyal.renewals} renovações</div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {coachRecords?.ranking?.length > 0 && (
+        <div style={{ padding: '12px 24px 0', flexShrink: 0, borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ fontFamily: T.mono, fontSize: 7, color: T.gold, letterSpacing: '.2em',
+            marginBottom: 8, textTransform: 'uppercase' }}>BANCO VIVO · TÉCNICOS HISTÓRICOS</div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', paddingBottom: 12 }}>
+            {coachRecords.ranking.slice(0, 3).map(coach => (
+              <div key={coach.id} style={{ background: T.card, border: `1px solid ${T.border}`, padding: '6px 10px', flex: 1, minWidth: 160 }}>
+                <div style={{ fontFamily: T.mono, fontSize: 6, color: T.faint, letterSpacing: '.16em', marginBottom: 2 }}>{coach.methodLabel ?? coach.method}</div>
+                <div style={{ fontFamily: T.disp, fontSize: 13, color: T.gold }}>{coach.name}</div>
+                <div style={{ fontFamily: T.mono, fontSize: 8, color: T.text }}>{coach.slams ?? 0} GS · {coach.titles ?? 0} títulos · score {coach.recordScore}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -675,13 +768,7 @@ function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
 
       {/* FASE 3: Recordes de Superfície — Rei/Mago de cada surface */}
       {inductees.length > 0 && (() => {
-        const SURF_CFG = [
-          { key: 'CLAY',   label: 'Rei do Saibro',     icon: '🏺', color: '#C4572A' },
-          { key: 'GRASS',  label: 'Mago da Grama',      icon: '🌿', color: '#2ECC71' },
-          { key: 'HARD',   label: 'Máq. do Hard',       icon: '🏙️', color: '#4A90D9' },
-          { key: 'INDOOR', label: 'Sen. das Arenas',    icon: '🏟️', color: '#C84FEB' },
-        ];
-        const surfKings = SURF_CFG.map(cfg => {
+        const surfKings = HOF_SURFACES.map(cfg => {
           // Melhor jogador por surfTitles[key] entre todos os inductees
           let best = null;
           for (const s of inductees) {
@@ -734,11 +821,18 @@ function GalleryView({ inductees, allStats = [], sponsorRecords, onSelect }) {
             <div style={{ fontFamily: T.body, fontSize: 13, color: T.faint, maxWidth: 340, lineHeight: 1.6 }}>Quando os critérios forem atingidos, os ícones da história aparecem aqui.</div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          <div>
+            {filter === 'ALL' && (
+              <div style={{ fontFamily: T.mono, fontSize: 7, color: T.gold, letterSpacing: '.2em', textTransform: 'uppercase', marginBottom: 10 }}>
+                RESTO DO HALL
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
             {filtered.map((s, i) => (
               <HOFCard key={s.id} stats={s} rank={inductees.indexOf(s)}
                 delay={i * 40} onClick={() => onSelect(s)} />
             ))}
+            </div>
           </div>
         )}
       </div>
@@ -752,7 +846,7 @@ export default function HallOfFameView({ state }) {
 
   const [selected, setSelected] = useState(null);
 
-  const { inductees, allStats, sponsorRecords } = useMemo(() => computeHOFData(state), [state]);
+  const { inductees, allStats, sponsorRecords, coachRecords } = useMemo(() => computeHOFData(state), [state]);
 
   const handleSelect = useCallback((stats) => setSelected(stats), []);
   const handleBack   = useCallback(() => setSelected(null), []);
@@ -783,7 +877,7 @@ export default function HallOfFameView({ state }) {
         {selected ? (
           <PlayerTimelineView stats={selected} state={state} onBack={handleBack} />
         ) : (
-          <GalleryView inductees={inductees} allStats={allStats} sponsorRecords={sponsorRecords} onSelect={handleSelect} />
+          <GalleryView inductees={inductees} allStats={allStats} sponsorRecords={sponsorRecords} coachRecords={coachRecords} onSelect={handleSelect} />
         )}
       </div>
     </div>

@@ -15,14 +15,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NAMED_PLAYERS, overallRating, getPlayerPhoto } from '../../domain/players/players.js';
 import { generateNewgenBatch, generateNewgen } from '../../systems/newgen/NewgenSystem.js';
-import { advanceSeason, currentAge, updateSurfaceStats, computeSurfaceIdentity, applyCareerAlcunhas } from '../../systems/progression/DevelopmentSystem.js';
-import { simulateMatchHeadless, simulateMatchSlim, simulateMatchMid, simulateAndCollectHighlights } from '../../core/Headless.jsx';
+import { advanceSeason, currentAge, applyCareerAlcunhas } from '../../systems/progression/DevelopmentSystem.js';
+import { simulateMatchHeadless, simulateMatchSlim, simulateMatchMid } from '../../core/Headless.jsx';
+import { simulateAndCollectStoryHighlights } from '../../core/HighlightStoryEngine.js';
+import { buildDynamicHighlightStory } from '../../core/HighlightNarrativeDirector.js';
+import { simulateRemainingMatchHeadless } from '../../core/ResumeHeadless.js';
 import { simulateMatchFast, courtKeyToSurface } from '../../core/FastSimulation.js';
 import {
   CALENDAR,
   roundIndexToLabel, computeTournamentPoints,
   selectTournamentPlayers, runQualifying, generateBracket, advanceRound,
   createSeasonSlots, updateSeasonSlots, buildATPFirstRound, prepareTournamentPackageSync,
+  selectParallelPairPlayers,
 } from '../../systems/tournaments/TournamentSystem.js';
 import {
   generateTournamentPreferences,
@@ -37,9 +41,9 @@ import {
 import TournamentBracket from '../tournaments/TournamentBracket.jsx';
 import { PLAY_STYLES, SIGNATURE_SHOTS, RALLY_PATTERNS } from '../../domain/players/styles.js';
 import { gameTick, initGameState, onBounce } from '../../game.jsx';
-import { GameState, TRAIL_LEN, TIMING } from '../../core/constants.js';
+import { GameState, TRAIL_LEN, TIMING, MATCH_RULES, isTiebreakSetScore } from '../../core/constants.js';
 import { mag3 } from '../../core/math.js';
-import { processSeasonRetirements, computeRetirementChance, retirementRiskLabel, tryBecomeCoach } from '../../systems/career/RetirementSystem.js';
+import { processSeasonRetirements, computeRetirementChance, retirementRiskLabel, refreshMonthlyRetirementOutlook } from '../../systems/career/RetirementSystem.js';
 import { initPlayerFinance, awardPrizeMoney, processMonthlyFinances, processYearEndFinances } from '../../systems/finance/FinanceSystem.js';
 import { createEmptyPoolState, assignNewgenPhoto, releaseRetiredPhotos } from '../../systems/newgen/NewgenImagePool.js';
 import { generateKits, getAppearance } from '../pixel/appearances.js';
@@ -57,13 +61,16 @@ import DefinitiveME from '../game/NEWME1.0.jsx';
 import MatchOverScreen from '../game/MatchOverScreen.jsx';
 import TracePanel from '../game/TracePanel.jsx';
 import DebugLog from '../game/DebugLog.jsx';
+import LiveHighlightsControlRoom from '../game/LiveHighlightsControlRoom.jsx';
 import {
-  applyFormModifier, calcTournamentFormDeltas,
-  applySeasonReset, clampFormPoints, FORM_POINTS_TABLE, updateRecentForm,
+  applyFormModifier, applyCompetitiveAttributeImpact, calcTournamentFormDeltas,
+  applySeasonReset, applyMonthlyFormRegression, capTournamentFormDelta,
+  clampFormPoints, FORM_POINTS_TABLE, updateRecentForm,
 } from '../../systems/progression/formas.jsx';
 import { RivalrySystem } from '../../systems/circuit/RivalrySystem.js';
 import ChronicleEngine from '../../systems/press/ChronicleEngine.js';
-import { NewsEngine, generateTournamentNews, generateUpcomingTournamentNews, generateYearEndNews, genTournamentWrap, genCoachRetirement, generateSponsorNewsFromChronicleEvents, careerMomentNarrativeLine, genLifeEventArticle, generateSeasonPulseNews } from '../../systems/press/NewsEngine.js';
+import { NewsEngine, generateTournamentNews, generateUpcomingTournamentNews, generateYearEndNews, genTournamentWrap, generateSponsorNewsFromChronicleEvents, careerMomentNarrativeLine, genLifeEventArticle, generateSeasonPulseNews } from '../../systems/press/NewsEngine.js';
+import { generateYouthCircuitCoverage, generateYouthCircuitPreview } from '../../systems/press/YouthCircuitPressSystem.js';
 import { generateBreakingNewsArticles, generateBreakingTournamentFollowups } from '../../systems/press/NewsEngine.js';
 import {
   generateMonthlyInterviewFeature,
@@ -71,41 +78,45 @@ import {
   summarizeInterviewForPlayer,
 } from '../../systems/press/InterviewEngine.js';
 import { applyNarrativeConsequences } from '../../systems/narrative/NarrativeConsequenceEngine.js';
+import { buildCircuitShift } from '../../systems/narrative/CircuitShiftEngine.js';
 import { updateCareerMemoriesForTournament } from '../../systems/narrative/CareerMemorySystem.js';
 import { buildSeasonAct } from '../../systems/narrative/SeasonActEngine.js';
 import { buildNarrativeRaces } from '../../systems/narrative/NarrativeRaceEngine.js';
 import { buildTournamentChapter } from '../../systems/narrative/TournamentChapterEngine.js';
-import { appendTacticHistory, calcTrustDelta, applyTrustDelta, generateFastSimTacticEntry } from '../../systems/coaches/CoachTacticTracker.js';
-import {
-  generateCoachPool,
-  updateAllCoachReputations,
-  replenishCoachPool,
-  serializeCoachPool,
-  deserializeCoachPool,
-  ageCoachPool,
-  getCoachRetirementType,
-} from '../../systems/coaches/CoachingSystem.js';
-import { offlineNoop as rollCoachSignature } from '../../systems/shotlab/ShotEngineOffline.js';
 import { O_OUTRO_MUNDO, markAsJunior, markAsProfessional, orderJuniorCandidates } from '../../systems/progression/OOutroMundo.js';
-import {
-  assignCoachesToAll,
-  processCoachContracts,
-  pickCoachForPlayer,
-} from '../../systems/coaches/CoachContractSystem.js';
-import {
-  initPartnership,
-  processAllPartnerships,
-  generateSeasonGoal,
-  getPartnershipState,
-} from '../../systems/coaches/CoachPartnershipSystem.js';
 import { computeHOFData, buildPlayerTimeline, GRAND_SLAM_INFO, GRAND_SLAM_IDS } from '../../systems/history/HallOfFame.js';
+import {
+  createHistoryBook,
+  migrateHistoryBook,
+  serializeHistoryBook,
+  buildAnnualHistorySnapshot,
+  recordAnnualHistorySnapshot,
+  analyzeHistoryTrends,
+  recordHistoryTrendAnalysis,
+  processEraSignals,
+  writeHistoryNarrative,
+  calibrateHistoryBook,
+} from '../../systems/history/WorldHistoryBook.js';
 import { narrateMatchLight } from '../../systems/press/MatchNarrator.js';
 import { processPersonalityEvolution, migratePlayerPersonality } from '../../domain/players/PlayerPersonality.js';
+import { ensureCareerTrajectory } from '../../systems/career/CareerTrajectorySystem.js';
+import { ensureYouthProfile } from '../../systems/youth/YouthFoundationSystem.js';
+import { ensureSurfaceProfile, recordSurfaceMatch } from '../../systems/surfaces/SurfaceIdentitySystem.js';
+import { createYouthCohortUniverse, ensureYouthCohortUniverse, advanceYouthCohortUniverse, getCohortMaterializationBlueprint } from '../../systems/youth/YouthCohortUniverseSystem.js';
+import { applyYouthAgeCaps } from '../../systems/youth/YouthDevelopmentGuardrails.js';
+import { ensureJuniorCircuitProfile, recordJuniorCircuitTournament, summarizeYouthCircuitSeason } from '../../systems/youth/YouthCircuitSystem.js';
+import { resolveJuniorSurvival, summarizeYouthSurvivalSeason } from '../../systems/youth/YouthSurvivalSystem.js';
+import { isReadyForProfessionalTransition, materializeAlternativePathway, materializeJuniorFromCohort, promoteYouthToProfessional } from '../../systems/youth/YouthTransitionSystem.js';
+import { ensureYouthShadowHistory } from '../../systems/youth/YouthShadowHistorySystem.js';
+import { createCompetitiveDensityState, ensureCompetitiveDensityState, planCompetitiveDensity, consumeCompetitiveDirective } from '../../systems/youth/CompetitiveDensityDirector.js';
 import { buildIdentityDuel, buildPlayerIdentity } from '../../domain/players/PlayerIdentity.js';
-import { offlineNoop as updatePlayerPhaseTwo, offlineNoop as pushMatchRating } from '../../systems/shotlab/ShotEngineOffline.js';
+import { offlineIdentity as updatePlayerPhaseTwo, offlineIdentity as pushMatchRating } from '../../systems/shotlab/ShotEngineOffline.js';
 import { getPlayerBadges, diffBadgeUnlocks, generateBadgeNewsArticles } from '../../systems/achievements/BadgeSystem.js';
 import { migratePlayerLifeData } from '../../domain/players/PlayerLifeData.js';
 import { rollLifeEvents, runLifePulseEvents, migrateLifeEventLog } from '../../systems/life/LifeEventSystem.js';
+import { ensureLifeSimulation, getLifeMatchModifiers, processMonthlyLifeSimulation } from '../../systems/life/LifeSimulationSystem.js';
+import { processMonthlyPropertyPortfolio } from '../../systems/life/LifePropertySystem.js';
+import { ensurePlayerHype, processMonthlyHype } from '../../systems/narrative/HypeSystem.js';
 import {
   migrateBreakingNewsState,
   maybeTriggerBreakingNews,
@@ -114,6 +125,7 @@ import {
   isPlayerUnavailableForTournament,
 } from '../../systems/press/BreakingNewsSystem.js';
 import { initSponsorPool } from '../../systems/sponsors/SponsorPool.js';
+import { ensureSponsorPoolFoundation } from '../../systems/sponsors/SponsorCompanySystem.js';
 import {
   runSponsorshipWindow,
   runSponsorshipPulse,
@@ -127,9 +139,93 @@ import {
   runSeasonPulse,
   SEASON_PULSE_PHASES,
 } from '../../systems/season/SeasonPulseSystem.js';
+import { createWorldDate, ensurePlayerBirthDate, normalizeUniverseDate } from '../../systems/season/UniverseTimeSystem.js';
+import { createInitialCoachMarket } from '../../systems/coaching/CoachIdentitySystem.js';
+import { initializePlayersCoaching, migrateCoachMarket, runCoachMarketYear, runCoachRelationshipPulse } from '../../systems/coaching/CoachMarketSystem.js';
+import { coachEventToNews } from '../../systems/coaching/CoachNarrativeSystem.js';
+import {
+  SAVE_SCHEMA_VERSION,
+  compactRankingStoreForSave,
+} from '../../systems/save/SaveGameSystem.js';
+import { createSaveArtifactOffThread, decodeSaveFileOffThread } from '../../systems/save/SaveGameWorkerClient.js';
+import { loadLatestAutosave, storeRotatingAutosave } from '../../systems/save/SaveBackupStore.js';
 import { computeRating } from '../game/IndividualRating.jsx';
 import { BROADCAST_THEME as U, SURFACE_THEME } from '../theme/uiTheme.js';
+import {
+  RADAR_MAX_FOLLOWED,
+  createRadarState,
+  normalizeFollowedPlayerIds,
+  isRadarMatch,
+  buildRadarMatchRecord,
+  buildRadarDigest,
+  buildRadarAlerts,
+  buildRadarSeasonRecap,
+  buildRadarRankingTimeline,
+} from '../../systems/radar/RadarSystem.js';
 const UNIVERSE_TOUR_TARGET = 250;
+
+function radarFollowSignature(followedPlayerIds = []) {
+  return [...new Set((followedPlayerIds ?? []).filter(Boolean))].sort().join('|');
+}
+
+function appendPreparedRadarMatch(radarMatches, playerA, playerB, result, tournament, roundLabel, year) {
+  if (result?.simulationSource !== 'FOLLOWED_HEADLESS') return;
+  const winner = result.winner?.id === playerA?.id ? playerA : playerB;
+  radarMatches.push(buildRadarMatchRecord({ playerA, playerB, winner, result, tournament, roundLabel, year }));
+}
+
+// Invariante do Radar: partidas com um acompanhado nunca podem cair no
+// FastSimulation. O resto do circuito continua usando o modo escolhido.
+function simulateRadarAwareFastMatch(playerA, playerB, surface, bestOf, tournament, roundLabel, followedPlayerIds = [], rivalrySystem = null) {
+  const simA = applyTournamentContextModifiers(playerA, tournament);
+  const simB = applyTournamentContextModifiers(playerB, tournament);
+  if (isRadarMatch(playerA, playerB, followedPlayerIds)) {
+    const result = simulateMatchHeadless(
+      { playerData: simA }, { playerData: simB },
+      tournament?.courtKey ?? tournament?.surface ?? surface,
+      bestOf,
+      rivalrySystem,
+      tournament?.isSlam ?? false,
+      { category: tournament?.category, round: roundLabel, format: tournament?.format ?? null, radarFollowed: true },
+    );
+    result.simulationSource = 'FOLLOWED_HEADLESS';
+    return result;
+  }
+  const result = simulateMatchFast(simA, simB, surface, bestOf, {
+    format: tournament?.format ?? null,
+    tournamentTier: tournament?.category ?? null,
+    roundLabel,
+  });
+  result.simulationSource = 'FAST';
+  return result;
+}
+
+function getSetsDetailFromPlayers(players = []) {
+  const [playerA, playerB] = players;
+  const aHistory = playerA?.setsHistory ?? [];
+  const bHistory = playerB?.setsHistory ?? [];
+  const count = Math.max(aHistory.length, bHistory.length);
+  return Array.from({ length: count }, (_, index) => [
+    aHistory[index] ?? 0,
+    bHistory[index] ?? 0,
+  ]);
+}
+
+function stripLegacyCoachData(player) {
+  if (!player) return player;
+  const {
+    coach,
+    coachHistory,
+    _coachInstructions,
+    _adaptacaoBoost,
+    ...rest
+  } = player;
+  return rest;
+}
+
+function stripOldCoachButKeepBancoVivo(player) {
+  return stripLegacyCoachData(player);
+}
 const DEV_TITLE_BY_CATEGORY = {
   GRAND_SLAM: 'SLAM',
   SLAM_CLASH: 'SLAM_CLASH',
@@ -152,6 +248,9 @@ function ensureDevelopmentLedger(player, year = 2025) {
   const seasonStartOverall = ledgerYear === year
     ? (existing.seasonStartOverall ?? currentOverall)
     : currentOverall;
+  const seasonStartAttrs = ledgerYear === year
+    ? (existing.seasonStartAttrs ?? { ...(player.attrs ?? {}) })
+    : { ...(player.attrs ?? {}) };
   return {
     ...player,
     _proDebutOverall: debutOverall,
@@ -162,6 +261,12 @@ function ensureDevelopmentLedger(player, year = 2025) {
       debutOverall,
       currentYear: year,
       seasonStartOverall,
+      seasonStartAttrs,
+      currentAttrs: { ...(player.attrs ?? {}) },
+      seasonAttrDelta: Object.fromEntries(Object.keys(player.attrs ?? {}).map(key => [
+        key,
+        (player.attrs?.[key] ?? 0) - (seasonStartAttrs?.[key] ?? player.attrs?.[key] ?? 0),
+      ]).filter(([, delta]) => delta !== 0)),
       seasonDelta: +(currentOverall - seasonStartOverall).toFixed(2),
       careerDelta: +(currentOverall - debutOverall).toFixed(2),
       currentOverall,
@@ -182,8 +287,19 @@ function applyRTDDevelopmentLedger(beforePlayers = [], afterPlayers = [], year =
     const seasonStartOverall = ledgerYear === year
       ? (beforeLedger.seasonStartOverall ?? beforeOverall)
       : beforeOverall;
+    const seasonStartAttrs = ledgerYear === year
+      ? (beforeLedger.seasonStartAttrs ?? { ...(before.attrs ?? {}) })
+      : { ...(before.attrs ?? {}) };
     const debutOverall = beforeLedger.debutOverall ?? before._proDebutOverall ?? before._ovrSeed ?? beforeOverall;
     const monthlyDelta = +(afterOverall - beforeOverall).toFixed(2);
+    const attrMonthlyDelta = Object.fromEntries(Object.keys(raw.attrs ?? {}).map(key => [
+      key,
+      (raw.attrs?.[key] ?? 0) - (before.attrs?.[key] ?? raw.attrs?.[key] ?? 0),
+    ]).filter(([, delta]) => delta !== 0));
+    const seasonAttrDelta = Object.fromEntries(Object.keys(raw.attrs ?? {}).map(key => [
+      key,
+      (raw.attrs?.[key] ?? 0) - (seasonStartAttrs?.[key] ?? raw.attrs?.[key] ?? 0),
+    ]).filter(([, delta]) => delta !== 0));
     const history = [
       ...(beforeLedger.history ?? []),
       {
@@ -192,6 +308,7 @@ function applyRTDDevelopmentLedger(beforePlayers = [], afterPlayers = [], year =
         beforeOverall,
         afterOverall,
         delta: monthlyDelta,
+        attrDelta: attrMonthlyDelta,
       },
     ].slice(-36);
     return {
@@ -203,6 +320,10 @@ function applyRTDDevelopmentLedger(beforePlayers = [], afterPlayers = [], year =
         debutOverall,
         currentYear: year,
         seasonStartOverall,
+        seasonStartAttrs,
+        currentAttrs: { ...(raw.attrs ?? {}) },
+        lastAttrDelta: attrMonthlyDelta,
+        seasonAttrDelta,
         currentOverall: afterOverall,
         lastMonthDelta: monthlyDelta,
         seasonDelta: +(afterOverall - seasonStartOverall).toFixed(2),
@@ -268,16 +389,11 @@ function isJuniorTournament(tournament) {
     tournament.isJuniors ||
     tournament.isProspects ||
     tournament.isProspectsFinals ||
+    tournament.category === 'JUNIOR_50' ||
+    tournament.category === 'JUNIOR_100' ||
+    tournament.category === 'JUNIOR_SLAM' ||
     tournament.category === 'ATP_PROSPECTS' ||
     tournament.category === 'PROSPECTS_FINALS'
-  );
-}
-
-function shouldUseSlimHeadlessTournament(tournament) {
-  if (!tournament) return false;
-  return (
-    tournament.category === 'ATP_250' ||
-    tournament.category === 'ATP_500'
   );
 }
 
@@ -289,12 +405,22 @@ function shouldUseFastInvisibleTournament(tournament) {
   );
 }
 
-function createJuniorNewgens(seasonYear, count, poolOpts) {
+function createJuniorNewgens(seasonYear, count, poolOpts, cohortUniverse = null) {
   if (count <= 0) return [];
-  return generateNewgenBatch(seasonYear, count, {
-    ageRange: [O_OUTRO_MUNDO.JUNIOR_AGE_MIN, O_OUTRO_MUNDO.JUNIOR_AGE_MAX],
-    ...poolOpts,
-  }).map((player) => {
+  let densityState = poolOpts._competitiveDensityState ?? createCompetitiveDensityState(seasonYear);
+  const generated = [];
+  for (let index = 0; index < count; index += 1) {
+    const directive = densityState.pendingDirectives?.[0] ?? null;
+    const blueprint = getCohortMaterializationBlueprint(cohortUniverse, seasonYear, index, directive);
+    const generationOptions = {
+      ageRange: blueprint.ageRange ?? [O_OUTRO_MUNDO.JUNIOR_AGE_MIN, O_OUTRO_MUNDO.JUNIOR_AGE_MAX],
+      nationality: blueprint.nationality,
+      forcePotential: blueprint.potential,
+      forceDevelopmentStyle: blueprint.developmentStyle,
+      ...poolOpts,
+    };
+    const player = generateNewgen(seasonYear, generationOptions);
+    poolOpts._poolState = generationOptions._poolState;
     let nextPlayer = markAsJunior({
       ...player,
       formPoints: 0,
@@ -305,12 +431,20 @@ function createJuniorNewgens(seasonYear, count, poolOpts) {
     nextPlayer = migrateLifeEventLog(nextPlayer);
     nextPlayer = migratePlayerLifeData(nextPlayer);
     nextPlayer = initPlayerFinance(nextPlayer);
-    return nextPlayer;
-  });
+    nextPlayer = materializeJuniorFromCohort(ensureYouthProfile(nextPlayer, seasonYear, 'JUNIOR_NEWGEN'), seasonYear, { blueprint });
+    if (directive) {
+      const consumed = consumeCompetitiveDirective(densityState, nextPlayer, seasonYear);
+      densityState = consumed.state;
+      nextPlayer = consumed.player;
+    }
+    generated.push(nextPlayer);
+  }
+  poolOpts._competitiveDensityState = densityState;
+  return generated;
 }
 
 function normalizeJuniorField(players = [], seasonYear) {
-  return orderJuniorCandidates(players).map((player, index) => markAsJunior({
+  return orderJuniorCandidates(players).map((player, index) => ensureJuniorCircuitProfile(applyYouthAgeCaps(ensureYouthProfile(ensurePlayerBirthDate(markAsJunior({
     ...player,
     age: Math.min(player.age ?? O_OUTRO_MUNDO.JUNIOR_AGE_MAX, O_OUTRO_MUNDO.JUNIOR_AGE_OUT),
     birthYear: player.birthYear ?? (seasonYear - (player.age ?? O_OUTRO_MUNDO.JUNIOR_AGE_MAX)),
@@ -318,7 +452,7 @@ function normalizeJuniorField(players = [], seasonYear) {
     _ovrSeed: player._ovrSeed ?? overallRating(player.attrs),
     formPoints: player.formPoints ?? 0,
     formHistory: player.formHistory ?? [],
-  }, seasonYear));
+  }, seasonYear), { year: seasonYear, month: 1 }, seasonYear), seasonYear, 'JUNIOR_NORMALIZATION'), { age: player.age }), seasonYear));
 }
 
 function buildJuniorSeasonTransition({
@@ -326,51 +460,50 @@ function buildJuniorSeasonTransition({
   vacancies,
   seasonYear,
   poolOpts,
+  cohortUniverse = null,
+  competitiveDensity = null,
+  densityRoster = [],
 }) {
-  const aged = normalizeJuniorField(
-    prospects.map((player, index) => ({
-      ...player,
-      age: (player.age ?? O_OUTRO_MUNDO.JUNIOR_AGE_MAX) + 1,
-      rankPosition: player.rankPosition ?? (index + 1),
-      _ovrSeed: player._ovrSeed ?? overallRating(player.attrs),
-    })),
-    seasonYear,
-  );
+  // A idade já foi atualizada no mês de aniversário; a virada não pode
+  // adicionar mais um ano artificial aos juniors.
+  const aged = normalizeJuniorField(prospects, seasonYear);
 
+  const survival = resolveJuniorSurvival(aged, seasonYear);
+  const surviving = survival.active;
   const forcedPromotionIds = new Set(
-    aged
+    surviving
       .filter(player => (player.age ?? 0) >= O_OUTRO_MUNDO.JUNIOR_FORCED_PROMOTION_AGE)
       .map(player => player.id)
   );
-  const promotionPool = orderJuniorCandidates(aged).filter((player, index) =>
-    forcedPromotionIds.has(player.id) || index < O_OUTRO_MUNDO.JUNIOR_PROMOTION_RANK
-  );
+  const promotionPool = orderJuniorCandidates(surviving).filter(player =>
+    forcedPromotionIds.has(player.id) || isReadyForProfessionalTransition(player)
+  ).slice(0, O_OUTRO_MUNDO.JUNIOR_PROMOTION_RANK);
   const promotedCount = Math.min(Math.max(0, vacancies), promotionPool.length);
   const promotedIds = new Set(promotionPool.slice(0, promotedCount).map(player => player.id));
 
-  const promoted = aged
+  const promoted = surviving
     .filter(player => promotedIds.has(player.id))
     .map(player => {
       const age = Math.max(
-        player.age ?? O_OUTRO_MUNDO.NEW_TOUR_ENTRANT_AGE_MIN,
-        O_OUTRO_MUNDO.NEW_TOUR_ENTRANT_AGE_MIN,
+        player.age ?? 17,
+        17,
       );
-      let nextPlayer = markAsProfessional({
+      let nextPlayer = markAsProfessional(promoteYouthToProfessional({
         ...player,
         age,
         birthYear: player.birthYear ?? (seasonYear - age),
         rankPosition: null,
-      });
+      }, seasonYear, { cohortUniverse }));
       nextPlayer = migrateTournamentPreferences(nextPlayer);
       nextPlayer = migrateLifeEventLog(nextPlayer);
       nextPlayer = migratePlayerLifeData(nextPlayer);
       return initPlayerFinance(nextPlayer);
     });
 
-  const retained = aged.filter(player =>
+  const retained = surviving.filter(player =>
     !promotedIds.has(player.id) && (player.age ?? 0) <= O_OUTRO_MUNDO.JUNIOR_MAX_AGE
   );
-  const agedOut = aged
+  const agedOut = surviving
     .filter(player => !promotedIds.has(player.id) && (player.age ?? 0) > O_OUTRO_MUNDO.JUNIOR_MAX_AGE)
     .map(player => ({
       ...player,
@@ -383,10 +516,11 @@ function buildJuniorSeasonTransition({
     }));
 
   const replenishment = Math.max(0, O_OUTRO_MUNDO.JUNIOR_TARGET - retained.length);
-  const newJuniors = createJuniorNewgens(seasonYear, replenishment, poolOpts);
+  poolOpts._competitiveDensityState = planCompetitiveDensity([...densityRoster, ...surviving], seasonYear, competitiveDensity);
+  const newJuniors = createJuniorNewgens(seasonYear, replenishment, poolOpts, cohortUniverse);
   const finalJuniors = normalizeJuniorField([...retained, ...newJuniors], seasonYear);
 
-  return { promoted, agedOut, finalJuniors };
+  return { promoted, agedOut, droppedOut: survival.droppedOut, finalJuniors, competitiveDensity: poolOpts._competitiveDensityState };
 }
 
 // -------------------------------------------------------------------
@@ -415,21 +549,159 @@ function buildJuniorSeasonTransition({
  *   stats.*.rallyLengths      ? array de todos os rallies (~300 números)
  *   stats.*.serveLog          ? array de todos os saques
  */
+function compactStoryCapsuleForBracket(capsule) {
+  if (!capsule || typeof capsule !== 'object') return null;
+  return {
+    type: capsule.type ?? null,
+    title: capsule.title ?? null,
+    oneLine: capsule.oneLine ?? null,
+    mode: capsule.mode ?? null,
+    weight: capsule.weight ?? null,
+    tags: Array.isArray(capsule.tags) ? capsule.tags.slice(0, 6) : [],
+  };
+}
+
+function compactNarrativeDossierForBracket(dossier) {
+  if (!dossier || typeof dossier !== 'object') return null;
+  return {
+    headline: dossier.headline ?? null,
+    thesis: dossier.thesis ?? null,
+    mode: dossier.mode ?? null,
+    heatScore: dossier.heatScore ?? 0,
+    tags: Array.isArray(dossier.tags) ? dossier.tags.slice(0, 8) : [],
+    topMoments: Array.isArray(dossier.topMoments)
+      ? dossier.topMoments.slice(0, 5).map(compactStoryCapsuleForBracket).filter(Boolean)
+      : [],
+  };
+}
+
+function tournamentDebugLog(step, data = {}) {
+  const safeData = data && typeof data === 'object' ? data : { value: data };
+  console.info(`[TournamentFlow] ${step}`, {
+    at: new Date().toISOString(),
+    ...safeData,
+  });
+}
+
 function slimMatchResult(res) {
   if (!res) return res;
   function slimStats(s) {
     if (!s) return s;
-    const { rallyLengths: _rl, serveLog: _sl, ...rest } = s;
+    const {
+      rallyLengths: _rl,
+      serveLog: _sl,
+      returnLog: _retLog,
+      receptionLog: _recLog,
+      contactLog: _contactLog,
+      shotLog: _shotLog,
+      intentLog: _intentLog,
+      ...rest
+    } = s;
     return rest;
   }
-  const { gs: _gs, log: _log, ticks: _ticks, points: _pts, ...slim } = res;
+  const {
+    gs: _gs,
+    log: _log,
+    ticks: _ticks,
+    points: _pts,
+    winner: _winner,
+    loser: _loser,
+    matchNarrativeDossier,
+    matchStoryCapsules,
+    storyTags,
+    ...slim
+  } = res;
   if (slim.stats) {
     slim.stats = {
       a: slimStats(slim.stats.a),
       b: slimStats(slim.stats.b),
     };
   }
+  if (matchNarrativeDossier) {
+    slim.matchNarrativeDossier = compactNarrativeDossierForBracket(matchNarrativeDossier);
+  }
+  if (Array.isArray(matchStoryCapsules)) {
+    slim.matchStoryCapsules = matchStoryCapsules
+      .slice(0, 6)
+      .map(compactStoryCapsuleForBracket)
+      .filter(Boolean);
+  }
+  if (Array.isArray(storyTags)) {
+    slim.storyTags = storyTags.slice(0, 10);
+  }
   return slim;
+}
+
+function compactBracketPlayerForRuntime(player) {
+  if (!player || typeof player !== 'object') return player ?? null;
+  return {
+    id: player.id,
+    name: player.name,
+    nationality: player.nationality,
+    rankPosition: player.rankPosition,
+    seed: player.seed,
+    styleId: player.styleId,
+    color: player.color,
+    photo: player.photo ?? null,
+    namedPlayerKey: player.namedPlayerKey ?? null,
+    isJunior: player.isJunior ?? false,
+  };
+}
+
+function compactBracketMatchForRuntime(match) {
+  if (!match || typeof match !== 'object') return match;
+  const playerA = compactBracketPlayerForRuntime(match.playerA ?? match.player1);
+  const playerB = compactBracketPlayerForRuntime(match.playerB ?? match.player2);
+  const winner = compactBracketPlayerForRuntime(match.winner);
+  const loser = compactBracketPlayerForRuntime(match.loser);
+  return {
+    ...match,
+    playerA,
+    playerB,
+    player1: playerA,
+    player2: playerB,
+    winner,
+    loser,
+    result: slimMatchResult(match.result),
+  };
+}
+
+function compactBracketForRuntime(bracket) {
+  if (!bracket || typeof bracket !== 'object') return bracket;
+  return {
+    ...bracket,
+    players: Array.isArray(bracket.players)
+      ? bracket.players.map(compactBracketPlayerForRuntime)
+      : bracket.players,
+    seeds: Array.isArray(bracket.seeds)
+      ? bracket.seeds.map(compactBracketPlayerForRuntime)
+      : bracket.seeds,
+    champion: compactBracketPlayerForRuntime(bracket.champion),
+    finalist: compactBracketPlayerForRuntime(bracket.finalist),
+    rounds: Array.isArray(bracket.rounds)
+      ? bracket.rounds.map(round => Array.isArray(round) ? round.map(compactBracketMatchForRuntime) : round)
+      : bracket.rounds,
+    qualifyingRounds: Array.isArray(bracket.qualifyingRounds)
+      ? bracket.qualifyingRounds.map(round => Array.isArray(round) ? round.map(compactBracketMatchForRuntime) : round)
+      : bracket.qualifyingRounds,
+    qualRoundsData: Array.isArray(bracket.qualRoundsData)
+      ? bracket.qualRoundsData.map(round => Array.isArray(round) ? round.map(compactBracketMatchForRuntime) : round)
+      : bracket.qualRoundsData,
+  };
+}
+
+function compactTournamentResultForRuntime(result) {
+  if (!result || typeof result !== 'object') return result;
+  return {
+    ...result,
+    bracket: compactBracketForRuntime(result.bracket),
+    qualifiers: Array.isArray(result.qualifiers)
+      ? result.qualifiers.map(compactBracketPlayerForRuntime)
+      : result.qualifiers,
+    preQualWinners: Array.isArray(result.preQualWinners)
+      ? result.preQualWinners.map(compactBracketPlayerForRuntime)
+      : result.preQualWinners,
+  };
 }
 
 // -------------------------------------------------------------------
@@ -440,6 +712,8 @@ const SURFACE_COLOR = {
   CLAY:   { ...SURFACE_THEME.CLAY, icon: '🧱' },
   GRASS:  { ...SURFACE_THEME.GRASS, icon: '🌿' },
   HARD:   { ...SURFACE_THEME.HARD, icon: '🔵' },
+  STREET: { ...SURFACE_THEME.STREET, icon: '🛣️' },
+  CARPET: { ...SURFACE_THEME.CARPET, icon: '🎭' },
   INDOOR: { ...SURFACE_THEME.INDOOR, icon: '🏟️' },
 };
 
@@ -454,6 +728,9 @@ const CAT_COLOR = {
   ATP_50:        { main: '#BCAAA4', label: 'ATP 50',        icon: '🎾' },
   ATP_25:        { main: '#D7CCC8', label: 'ATP 25',        icon: '🎾' },
   ATP_PROSPECTS: { main: '#FF7043', label: 'Juniors',     icon: '🎾' },
+  JUNIOR_50:      { main: '#B7B3B0', label: 'Junior 50',   icon: '🎾' },
+  JUNIOR_100:     { main: '#FFB067', label: 'Junior 100',  icon: '🎾' },
+  JUNIOR_SLAM:    { main: '#FFD166', label: 'Junior Slam', icon: '🎾' },
   FINALS:        { main: '#F44336', label: 'Finals',        icon: '🎾' },
   PROSPECTS_FINALS: { main: '#FF7043', label: 'Junior Finals', icon: '🎾' },
   OLYMPICS:      { main: '#1976D2', label: 'Jogos Olímpicos', icon: '🎾' },
@@ -507,7 +784,6 @@ function injectCSS() {
 // -------------------------------------------------------------------
 
 function injectPreGameCSS() {
-  if (document.getElementById('pg-styles')) return;
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Barlow+Condensed:ital,wght@0,300;0,400;0,600;0,700;0,800;1,400;1,600&display=swap');
 
@@ -580,7 +856,33 @@ function injectPreGameCSS() {
       position:absolute; left:50%; top:0; bottom:0; width:1px;
       background:rgba(255,255,255,.1); transform:translateX(-50%);
     }
+    .pg-dossier { max-width:1220px; margin:0 auto; padding:22px 28px 46px; }
+    .pg-dossier-hero { display:grid; grid-template-columns:1fr 280px 1fr; align-items:stretch; gap:12px; }
+    .pg-dossier-grid { display:grid; grid-template-columns:minmax(0,1.18fr) minmax(330px,.82fr); gap:12px; margin-top:12px; }
+    .pg-player-now { position:relative; overflow:hidden; min-height:180px; padding:22px; display:flex; align-items:center; gap:18px; }
+    .pg-player-now.right { flex-direction:row-reverse; text-align:right; }
+    .pg-weapon-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .pg-radar-wrap { display:grid; grid-template-columns:270px 1fr; gap:18px; align-items:center; }
+    .pg-past-strip { display:grid; grid-template-columns:repeat(6,minmax(100px,1fr)); gap:7px; }
+    .pg-kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+    @media (max-width:980px) {
+      .pg-dossier-hero { grid-template-columns:1fr 190px 1fr; }
+      .pg-dossier-grid, .pg-radar-wrap { grid-template-columns:1fr; }
+      .pg-past-strip { grid-template-columns:repeat(3,1fr); }
+    }
+    @media (max-width:700px) {
+      .pg-dossier { padding:14px 12px 36px; }
+      .pg-dossier-hero { grid-template-columns:1fr; }
+      .pg-player-now.right { flex-direction:row; text-align:left; }
+      .pg-weapon-grid { grid-template-columns:1fr; }
+      .pg-past-strip { grid-template-columns:repeat(2,1fr); }
+    }
   `;
+  const existing = document.getElementById('pg-styles');
+  if (existing) {
+    existing.textContent = css;
+    return;
+  }
   const el = document.createElement('style');
   el.id = 'pg-styles'; el.textContent = css;
   document.head.appendChild(el);
@@ -607,6 +909,9 @@ const PG_CAT = {
   ATP_25:        { label:'ATP 25',        color:'#D7CCC8', icon:'🎾' },
   FINALS:        { label:'Finals',        color:'#F44336', icon:'🎾' },
   ATP_PROSPECTS: { label:'Juniors',     color:'#FF7043', icon:'🎾' },
+  JUNIOR_50:      { label:'Junior 50',  color:'#B7B3B0', icon:'🎾' },
+  JUNIOR_100:     { label:'Junior 100', color:'#FFB067', icon:'🎾' },
+  JUNIOR_SLAM:    { label:'Junior Slam',color:'#FFD166', icon:'🎾' },
 };
 
 const PG_ROUND = {0:'1ª Ronda',1:'2ª Ronda',2:'3ª Ronda',3:'Oitavas',4:'Quartas',5:'Semifinal',6:'Final'};
@@ -775,7 +1080,7 @@ function pgMatchupNote(sA, sB) {
 // -- Pre-match paragraph --------------------------------------------
 function pgNarrative(pA, pB, h2h, surfKey, tournament) {
   const nA = pA.name, nB = pB.name;
-  const surfLabel = { CLAY:'saibro', GRASS:'grama', HARD:'quadra dura', INDOOR:'indoor' }[surfKey] ?? 'quadra';
+  const surfLabel = { CLAY:'saibro', GRASS:'grama', HARD:'quadra dura', STREET:'asfalto', CARPET:'veludo', INDOOR:'indoor' }[surfKey] ?? 'quadra';
   const saA = pA.surfaceIdentity, saB = pB.surfaceIdentity;
   const aHome = saA?.surface?.toUpperCase() === surfKey;
   const bHome = saB?.surface?.toUpperCase() === surfKey;
@@ -1321,7 +1626,7 @@ function PGH2HHistory({ h2h, pA, pB, colorA, colorB }) {
 // --------------------------------------------------------------------
 // MAIN COMPONENT
 // --------------------------------------------------------------------
-function PreGameAnalysis({ preGamePending, universeState, onStart, onStartHighlights, onSimHighlights, onSkip }) {
+function LegacyPreGameAnalysis({ preGamePending, universeState, onStart, onStartHighlights, onSimHighlights, onSkip }) {
   React.useEffect(() => { injectPreGameCSS(); }, []);
 
   const { playerA, playerB, tournament, roundIdx, bestOf } = preGamePending;
@@ -1980,15 +2285,224 @@ function PreGameAnalysis({ preGamePending, universeState, onStart, onStartHighli
   );
 }
 
+function pgTopSeven(player) {
+  const attrs = player?.attrs ?? {};
+  const seen = new Set();
+  return ATTR_CATEGORIES.flatMap((category) => category.attrs.map((attr) => ({
+    ...attr,
+    category: category.label,
+    color: category.color,
+    value: Number(attrs[attr.key] ?? 0),
+  })))
+    .filter((attr) => attr.value > 0 && !seen.has(attr.key) && seen.add(attr.key))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 7);
+}
+
+function pgWeaponReading(weapon, opponent) {
+  const rivalValue = Number(opponent?.attrs?.[weapon.key] ?? 0);
+  const gap = weapon.value - rivalValue;
+  if (weapon.value >= 92 && gap >= 8) return `arma de elite e vantagem clara de ${gap} pontos`;
+  if (gap >= 6) return `uma das rotas mais limpas para ferir o rival (+${gap})`;
+  if (gap <= -6) return `ponto forte, mas o rival responde ainda melhor (${Math.abs(gap)} acima)`;
+  if (weapon.value >= 88) return 'nível de elite; os dois possuem resposta forte neste setor';
+  return 'força confiável, com diferença pequena no confronto direto';
+}
+
+function PGNowPlayer({ player, opponent, stats, surfKey, color, side }) {
+  const style = PG_STYLE[player.styleId] ?? { label:player.styleId ?? 'Sem estilo', color };
+  const ovr = overallRating(player.attrs ?? {});
+  const surface = pgSurfaceRecord(player, surfKey);
+  const seasonPct = pgSafePct(stats.wins, stats.wins + stats.losses);
+  const form = player.formPoints ?? 0;
+  const formLabel = form >= 12 ? 'EM ALTA' : form <= -12 ? 'EM BAIXA' : form >= 4 ? 'BOM MOMENTO' : form <= -4 ? 'OSCILANDO' : 'ESTÁVEL';
+  const top = pgTopSeven(player)[0];
+  return (
+    <div className={`pg-glass pg-player-now ${side === 'right' ? 'right' : ''}`} style={{borderTop:`2px solid ${color}`}}>
+      <div style={{position:'absolute',inset:0,pointerEvents:'none',background:`radial-gradient(circle at ${side==='right'?'100%':'0%'} 0%,${color}20,transparent 58%)`}}/>
+      <PGPhoto player={player} size={92}/>
+      <div style={{position:'relative',flex:1,minWidth:0}}>
+        <div className="pg-label" style={{color,marginBottom:5}}>{side==='right'?'DESAFIANTE':'LADO DO QUADRO'} · #{player.rankPosition ?? '—'}</div>
+        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:'clamp(32px,4vw,52px)',letterSpacing:'.045em',lineHeight:.92,color:'#fff'}}>{pgLastName(player).toUpperCase()}</div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,.48)',letterSpacing:'.08em',marginTop:7}}>{style.label} · {player.age ?? '—'} ANOS · NÍVEL {ovr}</div>
+        <div className="pg-kpi-row" style={{marginTop:16}}>
+          {[
+            ['ANO',`${stats.wins}-${stats.losses}`],
+            ['APROV.',seasonPct == null?'—':`${seasonPct}%`],
+            [PG_SURF[surfKey]?.label?.toUpperCase() ?? 'PISO',surface.pct == null?'—':`${surface.pct}%`],
+            ['FORMA',formLabel],
+          ].map(([label,value]) => <div key={label} style={{padding:'8px 6px',background:'rgba(255,255,255,.025)',border:'1px solid rgba(255,255,255,.055)'}}>
+            <div className="pg-label" style={{fontSize:6.5}}>{label}</div>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:value.length>8?14:20,color:value===formLabel?color:'#fff',marginTop:3,lineHeight:1}}>{value}</div>
+          </div>)}
+        </div>
+        {top && <div style={{fontSize:11.5,color:'rgba(255,255,255,.62)',marginTop:11,lineHeight:1.4}}>
+          Arma máxima: <span style={{color:top.color,fontWeight:700}}>{top.label} {top.value}</span>. {pgWeaponReading(top, opponent)}.
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function PGH2HCore({ h2h, colorA, colorB, nameA, nameB }) {
+  const pct = h2h.total ? Math.round(h2h.wA / h2h.total * 100) : 50;
+  const circumference = 2 * Math.PI * 54;
+  return (
+    <div className="pg-glass" style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16,position:'relative',overflow:'hidden'}}>
+      <div className="pg-label" style={{marginBottom:7}}>HEAD TO HEAD</div>
+      <svg width="142" height="142" viewBox="0 0 142 142" aria-label={`Head to head ${h2h.wA} a ${h2h.wB}`}>
+        <circle cx="71" cy="71" r="54" fill="none" stroke={colorB} strokeWidth="10" opacity=".8"/>
+        <circle cx="71" cy="71" r="54" fill="none" stroke={colorA} strokeWidth="10" strokeLinecap="round"
+          strokeDasharray={`${circumference * pct / 100} ${circumference}`} transform="rotate(-90 71 71)"/>
+        <text x="71" y="65" textAnchor="middle" fill="#fff" fontFamily="Bebas Neue" fontSize="32">{h2h.wA}—{h2h.wB}</text>
+        <text x="71" y="84" textAnchor="middle" fill="rgba(255,255,255,.35)" fontFamily="Space Mono" fontSize="7">{h2h.total ? `${h2h.total} ENCONTROS` : 'PRIMEIRO ENCONTRO'}</text>
+      </svg>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,width:'100%',fontFamily:"'Space Mono',monospace",fontSize:7,letterSpacing:'.08em'}}>
+        <span style={{color:colorA,textAlign:'right'}}>{nameA.toUpperCase()} {pct}%</span>
+        <span style={{color:colorB}}>{100-pct}% {nameB.toUpperCase()}</span>
+      </div>
+    </div>
+  );
+}
+
+function PGRadarDuel({ rows, playerA, playerB, colorA, colorB }) {
+  const data = (rows ?? []).slice(0, 6);
+  const center = 130, radius = 92;
+  const point = (index, value) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / Math.max(1, data.length);
+    const r = radius * Math.max(.15, Math.min(1, Number(value ?? 0) / 100));
+    return `${center + Math.cos(angle)*r},${center + Math.sin(angle)*r}`;
+  };
+  const ring = (scale) => data.map((_,i)=>point(i,scale*100)).join(' ');
+  return (
+    <div className="pg-radar-wrap">
+      <svg viewBox="0 0 260 260" style={{width:'100%',maxWidth:270,margin:'0 auto',overflow:'visible'}}>
+        {[.25,.5,.75,1].map(scale=><polygon key={scale} points={ring(scale)} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="1"/>)}
+        {data.map((_,i)=><line key={i} x1={center} y1={center} x2={point(i,100).split(',')[0]} y2={point(i,100).split(',')[1]} stroke="rgba(255,255,255,.07)"/>)}
+        <polygon points={data.map((row,i)=>point(i,row.a)).join(' ')} fill={`${colorA}25`} stroke={colorA} strokeWidth="2"/>
+        <polygon points={data.map((row,i)=>point(i,row.b)).join(' ')} fill={`${colorB}20`} stroke={colorB} strokeWidth="2"/>
+        {data.map((row,i)=>{const [x,y]=point(i,114).split(',').map(Number);return <text key={row.id} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fill="rgba(255,255,255,.5)" fontFamily="Space Mono" fontSize="7">{row.label}</text>;})}
+      </svg>
+      <div>
+        <div className="pg-label" style={{marginBottom:12}}>MAPA DO CONFRONTO</div>
+        {data.map((row) => {
+          const lead = row.leader==='A' ? playerA : row.leader==='B' ? playerB : null;
+          const c = row.leader==='A' ? colorA : row.leader==='B' ? colorB : 'rgba(255,255,255,.55)';
+          return <div key={row.id} style={{display:'grid',gridTemplateColumns:'44px 1fr 44px',gap:9,alignItems:'center',marginBottom:9}}>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:row.leader==='A'?colorA:'#fff'}}>{row.a}</span>
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:'rgba(255,255,255,.42)',letterSpacing:'.09em'}}><span>{row.label}</span><span style={{color:c}}>{lead ? `${pgLastName(lead)} +${Math.abs(row.diff)}` : 'EQUILÍBRIO'}</span></div>
+              <div style={{height:4,display:'flex',marginTop:4,background:'rgba(255,255,255,.05)'}}><div style={{width:`${row.a/(row.a+row.b)*100}%`,background:colorA}}/><div style={{flex:1,background:colorB}}/></div>
+            </div>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:row.leader==='B'?colorB:'#fff',textAlign:'right'}}>{row.b}</span>
+          </div>;
+        })}
+        <div style={{display:'flex',gap:16,marginTop:12,fontSize:10,color:'rgba(255,255,255,.42)'}}><span><b style={{color:colorA}}>●</b> {pgLastName(playerA)}</span><span><b style={{color:colorB}}>●</b> {pgLastName(playerB)}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function PGSevenWeapons({ player, opponent, color }) {
+  const weapons = pgTopSeven(player);
+  return <div style={{padding:'15px 16px',background:'rgba(255,255,255,.018)',border:`1px solid ${color}25`}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div className="pg-label">7 ARMAS DE {pgLastName(player).toUpperCase()}</div><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color}}>{weapons[0]?.value ?? '—'}</span></div>
+    {weapons.map((weapon,index) => {
+      const rival = Number(opponent?.attrs?.[weapon.key] ?? 0);
+      const gap = weapon.value-rival;
+      return <div key={weapon.key} style={{display:'grid',gridTemplateColumns:'20px 96px 1fr 32px',gap:8,alignItems:'center',marginBottom:8}} title={weapon.note}>
+        <span style={{fontFamily:"'Space Mono',monospace",fontSize:7,color:'rgba(255,255,255,.25)'}}>0{index+1}</span>
+        <span style={{fontSize:11.5,color:index===0?'#fff':'rgba(255,255,255,.7)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{weapon.label}</span>
+        <div style={{height:5,background:'rgba(255,255,255,.055)',position:'relative'}}><div style={{height:'100%',width:`${weapon.value}%`,background:`linear-gradient(90deg,${weapon.color},${color})`}}/></div>
+        <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:weapon.color,textAlign:'right'}}>{weapon.value}</span>
+        <span/><span style={{gridColumn:'2 / 5',fontSize:9.5,color:gap>=6?color:'rgba(255,255,255,.32)',marginTop:-5}}>{pgWeaponReading(weapon,opponent)}</span>
+      </div>;
+    })}
+  </div>;
+}
+
+function PGRecentPast({ h2h, playerA, playerB, colorA, colorB }) {
+  const matches = h2h.lastMatches ?? [];
+  if (!matches.length) return <div style={{padding:'22px',color:'rgba(255,255,255,.45)',fontStyle:'italic'}}>Não existe passado entre eles. Hoje começa a história.</div>;
+  return <div className="pg-past-strip">{matches.slice(0,6).map((match,index)=>{
+    const aWon=match.winnerId===playerA.id; const winner=aWon?playerA:playerB; const color=aWon?colorA:colorB;
+    return <div key={`${match.year}-${match.tourName}-${index}`} style={{padding:'11px 10px',background:`${color}09`,border:`1px solid ${color}25`,borderTop:`2px solid ${color}`}}>
+      <div className="pg-label" style={{fontSize:6.5}}>{index===0?'ÚLTIMO':'ANTES'} · {match.year ?? '—'}</div>
+      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:19,color,marginTop:6,lineHeight:1}}>{pgLastName(winner)}</div>
+      <div style={{fontSize:10,color:'rgba(255,255,255,.48)',marginTop:5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{match.tourName ?? 'Torneio'}</div>
+      <div style={{fontFamily:"'Space Mono',monospace",fontSize:7,color:'rgba(255,255,255,.25)',marginTop:4}}>{PG_ROUND[match.roundIdx] ?? PG_CAT[match.cat]?.label ?? 'CONFRONTO'}</div>
+    </div>;
+  })}</div>;
+}
+
+function PreGameAnalysis({ preGamePending, universeState, onStart, onStartHighlights, onSimHighlights, onSkip }) {
+  React.useEffect(() => { injectPreGameCSS(); }, []);
+  const { playerA, playerB, tournament, roundIdx, bestOf } = preGamePending ?? {};
+  if (!playerA || !playerB) return <div className="pg-screen" style={{display:'grid',placeItems:'center'}}><button className="pg-skip" onClick={onSkip}>VOLTAR</button></div>;
+  const year = universeState?.year ?? 2025;
+  const hist = {...(universeState?.historicalTournamentResults ?? {}),...(universeState?.tournamentResults ?? {})};
+  const surfKey=pgSurfKey(tournament?.courtKey), surf=PG_SURF[surfKey] ?? PG_SURF.HARD;
+  const catCfg=PG_CAT[tournament?.category] ?? {label:tournament?.category ?? 'Torneio',color:'#aaa',icon:'●'};
+  const roundLbl=PG_ROUND[roundIdx] ?? (roundIdx!=null?`R${roundIdx+1}`:'Partida');
+  const statsA=pgSeasonStats(playerA.id,hist,year), statsB=pgSeasonStats(playerB.id,hist,year);
+  const h2h=pgH2H(playerA.id,playerB.id,universeState?.rivalrySystem,hist);
+  const rows=pgCategoryDuelRows(playerA,playerB);
+  const edges=computeEdges(playerA,playerB,surfKey);
+  const styleA=PG_STYLE[playerA.styleId] ?? {color:'#C4572A'}, styleB=PG_STYLE[playerB.styleId] ?? {color:'#4A90D9'};
+  const colorA=playerA.color ?? styleA.color, colorB=playerB.color ?? styleB.color;
+  const narrative=pgNarrative(playerA,playerB,h2h,surfKey,tournament);
+  const matchup=pgMatchupNote(playerA.styleId,playerB.styleId);
+  const decisive=edges.filter(e=>e.edge!=='EVEN').sort((a,b)=>Math.abs(b.sA-b.sB)-Math.abs(a.sA-a.sB)).slice(0,2);
+  const rivalry=h2h.rivalry, rivalryCfg=rivalry ? (PG_RIVALRY[rivalry.type] ?? PG_RIVALRY.CLASSIC) : null;
+  return <div className="pg-screen">
+    <div className="pg-scan-line"/>
+    <div style={{position:'sticky',top:0,zIndex:20,height:44,padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(2,4,10,.96)',borderBottom:`1px solid ${surf.color}35`,backdropFilter:'blur(14px)'}}>
+      <div className="pg-label" style={{color:'rgba(255,255,255,.5)'}}>DOSSIÊ H2H · {catCfg.label} · {surf.label} · {roundLbl}</div><button className="pg-skip" onClick={onSkip}>FECHAR</button>
+    </div>
+    <main className="pg-dossier">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'end',gap:16,marginBottom:14}}>
+        <div><div className="pg-label" style={{color:catCfg.color,marginBottom:5}}>{tournament?.name ?? 'Torneio'} · TEMPORADA {year}</div><div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:'clamp(30px,4vw,48px)',letterSpacing:'.06em',lineHeight:1}}>O PASSADO ENCONTRA O AGORA</div></div>
+        {rivalryCfg && <div style={{padding:'7px 11px',border:`1px solid ${rivalryCfg.color}45`,color:rivalryCfg.color,fontFamily:"'Space Mono',monospace",fontSize:8,letterSpacing:'.12em'}}>{rivalryCfg.label.toUpperCase()}</div>}
+      </div>
+      <section className="pg-dossier-hero">
+        <PGNowPlayer player={playerA} opponent={playerB} stats={statsA} surfKey={surfKey} color={colorA} side="left"/>
+        <PGH2HCore h2h={h2h} colorA={colorA} colorB={colorB} nameA={pgLastName(playerA)} nameB={pgLastName(playerB)}/>
+        <PGNowPlayer player={playerB} opponent={playerA} stats={statsB} surfKey={surfKey} color={colorB} side="right"/>
+      </section>
+      <section className="pg-glass" style={{marginTop:12,padding:'15px 18px',borderLeft:`3px solid ${surf.color}`}}>
+        <div className="pg-label" style={{marginBottom:6}}>LEITURA EM UMA FRASE</div><div style={{fontSize:15.5,fontStyle:'italic',color:'rgba(255,255,255,.72)',lineHeight:1.55}}>{narrative}</div>
+      </section>
+      <section className="pg-dossier-grid">
+        <div className="pg-glass" style={{padding:'18px'}}><PGRadarDuel rows={rows} playerA={playerA} playerB={playerB} colorA={colorA} colorB={colorB}/></div>
+        <div className="pg-glass" style={{padding:'18px'}}>
+          <div className="pg-label" style={{marginBottom:12}}>COMO ESTE JOGO PODE SER DECIDIDO</div>
+          <div style={{fontSize:14,color:'#fff',lineHeight:1.45,marginBottom:13}}>{matchup}</div>
+          {decisive.map((edge,index)=>{const leader=edge.edge==='A'?playerA:playerB;const color=edge.edge==='A'?colorA:colorB;return <div key={edge.key} style={{padding:'11px 12px',marginBottom:8,background:`${color}09`,borderLeft:`2px solid ${color}`}}><div className="pg-label" style={{color}}>CHAVE {index+1} · {edge.label}</div><div style={{fontSize:12.5,color:'rgba(255,255,255,.7)',marginTop:5}}>{pgLastName(leader)} chega com a vantagem mais nítida deste setor. É uma rota provável para tomar o controle.</div></div>;})}
+          <div style={{padding:'11px 12px',background:'rgba(255,255,255,.025)',border:'1px solid rgba(255,255,255,.06)'}}><div className="pg-label">PRESENTE</div><div style={{fontSize:12.5,color:'rgba(255,255,255,.62)',marginTop:5}}>Forma recente: <PGFormDots player={playerA} count={6}/> <span style={{display:'inline-block',width:10}}/> <PGFormDots player={playerB} count={6}/></div></div>
+        </div>
+      </section>
+      <section className="pg-glass" style={{marginTop:12,padding:'18px'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div className="pg-label">PASSADO RECENTE · ÚLTIMOS CAPÍTULOS</div><span style={{fontSize:11,color:'rgba(255,255,255,.34)'}}>quem venceu, onde e quando</span></div><PGRecentPast h2h={h2h} playerA={playerA} playerB={playerB} colorA={colorA} colorB={colorB}/></section>
+      <section className="pg-glass" style={{marginTop:12,padding:'18px'}}><div style={{marginBottom:13}}><div className="pg-label">ARSENAL COMPARADO</div><div style={{fontSize:12,color:'rgba(255,255,255,.42)',marginTop:5}}>Os sete atributos mais fortes de cada jogador, lidos contra a mesma habilidade do adversário.</div></div><div className="pg-weapon-grid"><PGSevenWeapons player={playerA} opponent={playerB} color={colorA}/><PGSevenWeapons player={playerB} opponent={playerA} color={colorB}/></div></section>
+      <section style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,paddingTop:22}}>
+        <button className="pg-cta-main" onClick={onStart}>VER PARTIDA COMPLETA</button>
+        <div style={{display:'flex',gap:9,flexWrap:'wrap',justifyContent:'center'}}>
+          {onSimHighlights && <button className="pg-cta-sec" onClick={onSimHighlights} style={{border:'1px solid rgba(100,180,255,.32)',color:'#64B4FF',background:'rgba(100,180,255,.06)'}}>SIMULAR + HIGHLIGHTS</button>}
+          {onStartHighlights && <button className="pg-cta-sec" onClick={onStartHighlights} style={{border:'1px solid rgba(255,215,0,.3)',color:'#FFD700',background:'rgba(255,215,0,.05)'}}>SÓ OS HIGHLIGHTS</button>}
+        </div>
+      </section>
+    </main>
+  </div>;
+}
+
 function buildHighlightsSuspenseLabel(gs, context) {
   if (!context) return null;
   if (context.isMatchPoint) {
     return {
-      text: 'CL—MAX',
+      text: 'CLÍMAX',
       color: '#FF6B6B',
-      tone: 'defini——o máxima',
-      subline: gs?.inTiebreak ? 'Tie-break em ponto cr—tico' : 'A partida entrou em zona de defini——o',
-      intensity: 'EXPLOS—O',
+      tone: 'definição máxima',
+      subline: gs?.inTiebreak ? 'Tie-break em ponto crítico' : 'A partida entrou em zona de definição',
+      intensity: 'EXPLOSÃO',
     };
   }
   if (context.isSetPoint) {
@@ -1996,7 +2510,7 @@ function buildHighlightsSuspenseLabel(gs, context) {
       text: 'FIM DE SET',
       color: '#FFD166',
       tone: 'set sob tensão',
-      subline: gs?.inTiebreak ? 'Tie-break em aberto' : 'O set est— em ponto delicado',
+      subline: gs?.inTiebreak ? 'Tie-break em aberto' : 'O set está em ponto delicado',
       intensity: 'PRESSÃO',
     };
   }
@@ -2058,12 +2572,13 @@ function buildSeasonSlots(tourPlayers) {
 // Nunca — apagado — sobrevive ao trimming do historicalTournamentResults.
 // -------------------------------------------------------------------
 
-const GS_IDS_SET = new Set(['JAN_GS_MERIDIAN','MAI_GS_ROLAND','JUN_GS_ALBION','AGO_GS_EMPIRE']);
+const GS_IDS_SET = new Set(['B1_GS_MERIDIAN','B2_GS_TERRA','B3_GS_HIGHLAND','B4_GS_URBAN','B5_GS_VELVET','B6_GS_CRYSTAL']);
 
 /** Retorna (criando se necess—rio) o objeto de stats de um jogador no store. */
 function _rsGet(store, id) {
   if (!store.playerStats[id]) {
     store.playerStats[id] = {
+      id,
       // identity snapshot — atualizado sempre que temos o player object
       name: null, nationality: null, age: null, color: null, styleId: null, photo: null,
       // t—tulos por categoria
@@ -2076,9 +2591,9 @@ function _rsGet(store, id) {
       gsWonIds:[],
       // W/L / partidas
       wins:0, losses:0, matchesPlayed:0,
-      surfWins:{HARD:0,CLAY:0,GRASS:0,INDOOR:0},
-      surfLosses:{HARD:0,CLAY:0,GRASS:0,INDOOR:0},
-      surfTitles:{HARD:0,CLAY:0,GRASS:0,INDOOR:0},
+      surfWins:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
+      surfLosses:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
+      surfTitles:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
       // streaks
       winStreak:0, curStreak:0,
       // sets / bagels / tiebreaks
@@ -2108,6 +2623,39 @@ function _rsGet(store, id) {
 
 const MAX_SEASON_DATA = 20; // guarda at— 20 temporadas de seasonData por jogador
 
+const PERFORMANCE_STAT_FIELDS = [
+  'aces', 'winners', 'doubleFaults', 'unforcedErrors', 'forcedErrors',
+  'serve1In', 'serve1Total', 'serve1WonPoints', 'serve1LostPoints',
+  'serve2In', 'serve2Total', 'serve2WonPoints', 'serve2LostPoints',
+  'pointsWonServing', 'pointsLostServing', 'pointsWonReturning', 'pointsLostReturning',
+  'gamesServed', 'gamesHeld', 'gamesReturned', 'gamesConverted',
+  'breakPointsWon', 'breakPointsFaced', 'netApproaches', 'netPointsWon',
+  'rallySum', 'rallyCount', 'rallyMax', 'longRallies',
+  'qualitySum', 'qualityCount', 'attackShots', 'defenseShots',
+  'attackPointsPlayed', 'attackPointsWon', 'defensePointsPlayed', 'defensePointsWon',
+];
+
+function _rsEmptyPerformance() {
+  return {
+    matchesWithStats: 0,
+    byType: {},
+    pointWinsByType: {},
+    ...Object.fromEntries(PERFORMANCE_STAT_FIELDS.map(field => [field, 0])),
+  };
+}
+
+function _rsEnsurePerformance(target) {
+  if (!target.performance) target.performance = _rsEmptyPerformance();
+  const performance = target.performance;
+  for (const field of PERFORMANCE_STAT_FIELDS) {
+    if (!Number.isFinite(performance[field])) performance[field] = 0;
+  }
+  if (!Number.isFinite(performance.matchesWithStats)) performance.matchesWithStats = 0;
+  if (!performance.byType) performance.byType = {};
+  if (!performance.pointWinsByType) performance.pointWinsByType = {};
+  return performance;
+}
+
 /** Snapshot de identidade do jogador (para exibi——o mesmo após aposentadoria). */
 function _rsSnap(s, player) {
   if (!player) return;
@@ -2124,7 +2672,8 @@ function _rsSeasonData(s, yr) {
     s.seasonData[yr] = {
       pts:0, titles:0, wins:0, matchesPlayed:0,
       aces:0, winners:0, doubleFaults:0, unforcedErrors:0,
-      pointWinsByType:{},
+      pointWinsByType:{}, surfaces:{}, performance:_rsEmptyPerformance(),
+      entryRank:null, entryOverall:null,
     };
   }
   if (s.seasonData[yr].matchesPlayed == null) s.seasonData[yr].matchesPlayed = 0;
@@ -2133,7 +2682,21 @@ function _rsSeasonData(s, yr) {
   if (s.seasonData[yr].doubleFaults == null) s.seasonData[yr].doubleFaults = 0;
   if (s.seasonData[yr].unforcedErrors == null) s.seasonData[yr].unforcedErrors = 0;
   if (s.seasonData[yr].pointWinsByType == null) s.seasonData[yr].pointWinsByType = {};
+  if (s.seasonData[yr].surfaces == null) s.seasonData[yr].surfaces = {};
+  _rsEnsurePerformance(s.seasonData[yr]);
   return s.seasonData[yr];
+}
+
+function _rsSurfaceData(season, surface) {
+  const key = surface ?? 'HARD';
+  if (!season.surfaces[key]) {
+    season.surfaces[key] = {
+      wins:0, losses:0, matchesPlayed:0, titles:0,
+      performance:_rsEmptyPerformance(),
+    };
+  }
+  _rsEnsurePerformance(season.surfaces[key]);
+  return season.surfaces[key];
 }
 
 /**
@@ -2152,14 +2715,47 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
 
   const pm = playerMap ?? {};
   const snap = (s, id) => _rsSnap(s, pm[id]);
+  const seasonFor = (s, id) => {
+    const season = _rsSeasonData(s, year);
+    const player = pm[id];
+    if (season.entryRank == null) {
+      season.entryRank = player?.rankPosition ?? player?.rank ?? null;
+    }
+    if (season.entryOverall == null && player?.attrs) {
+      season.entryOverall = Math.round(overallRating(player.attrs));
+    }
+    return season;
+  };
+
+  // Uma memória curta, mas rica, das partidas que podem virar lenda no almanaque.
+  // Não depende do bracket antigo, que é compactado ao fim da temporada.
+  const rememberMatch = ({ winnerId, loserId, setsDetail, stats, roundIndex=0, heat=0, maxRally=0 }) => {
+    if (!winnerId || !loserId) return;
+    const score = (setsDetail ?? []).map(([a,b]) => `${a}-${b}`).join(' ');
+    const key = `${year}:${tid}:${winnerId}:${loserId}:${score}`;
+    const matches = Array.isArray(store.matchRecords) ? store.matchRecords : [];
+    if (matches.some(m => m.key === key)) return;
+    const a = stats?.a ?? {}, b = stats?.b ?? {};
+    const totalGames = (setsDetail ?? []).reduce((sum, [x,y]) => sum + x + y, 0);
+    matches.push({
+      key, year, tournamentId:tid, tournamentName:tournament.name ?? 'Torneio',
+      category, surface:surf, roundIndex, winnerId, loserId, score,
+      totalGames, maxRally: maxRally ?? 0, heat: heat ?? 0,
+      aces: Math.max(a.aces ?? 0, b.aces ?? 0),
+      winners: Math.max(a.winners ?? 0, b.winners ?? 0),
+      tiebreaks: (setsDetail ?? []).filter(([x,y]) => isTiebreakSetScore(x,y)).length,
+    });
+    // Preserva as mais relevantes e recentes; evita fazer o save crescer para sempre.
+    store.matchRecords = matches.sort((x,y) => ((y.totalGames + y.maxRally + y.heat) - (x.totalGames + x.maxRally + x.heat)) || y.year - x.year).slice(0, 80);
+  };
 
   // -- helper: processar um set result de uma partida ---------------
   function processSets(wId, lId, sd, winnerIsA) {
     if (!sd?.length) return;
     const ws = _rsGet(store, wId);
     const ls = lId ? _rsGet(store, lId) : null;
-    const wBagels = sd.filter(([a,b]) => winnerIsA ? b===0 : a===0).length;
-    const lBagels = sd.filter(([a,b]) => winnerIsA ? a===0 : b===0).length;
+    const wBagels = sd.filter(([a,b]) => winnerIsA ? a===MATCH_RULES.gamesPerSet && b===0 : b===MATCH_RULES.gamesPerSet && a===0).length;
+    const lBagels = sd.filter(([a,b]) => winnerIsA ? b===MATCH_RULES.gamesPerSet && a===0 : a===MATCH_RULES.gamesPerSet && b===0).length;
     ws.bagels += wBagels;
     if (wBagels >= 2) ws.doubleBagels++;
     if (ls) { ls.bagels += lBagels; }
@@ -2167,20 +2763,58 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
       const [wG,lG] = winnerIsA ? [a,b] : [b,a];
       ws.setsWon++;
       if (ls) { ls.setsLost++; if (lG > wG) ls.setsWon++; }
-      if (a===7 || b===7) ws.tiebreaksWon++;
+      if (isTiebreakSetScore(a, b)) ws.tiebreaksWon++;
     });
   }
 
   function processMatchStats(pAId, pBId, stats) {
-    const aStats = stats?.a;
-    const bStats = stats?.b;
-    if (pAId && aStats) {
-      const s = _rsGet(store, pAId);
-      const season = _rsSeasonData(s, year);
-      const aces = aStats.aces ?? 0;
-      const winners = aStats.winners ?? 0;
-      const doubleFaults = aStats.doubleFaults ?? 0;
-      const unforcedErrors = aStats.unforcedErrors ?? 0;
+    const accumulate = (id, raw) => {
+      if (!id || !raw) return;
+      const s = _rsGet(store, id);
+      const season = seasonFor(s, id);
+      const surface = _rsSurfaceData(season, surf);
+      const seasonPerf = _rsEnsurePerformance(season);
+      const surfacePerf = _rsEnsurePerformance(surface);
+      seasonPerf.matchesWithStats++;
+      surfacePerf.matchesWithStats++;
+
+      // Headless e FastSimulation usam alguns nomes diferentes. O ledger normaliza
+      // ambos para que a análise histórica seja comparável entre níveis de torneio.
+      const normalized = {
+        ...raw,
+        serve1WonPoints: raw.serve1WonPoints ?? raw.serve1Won ?? 0,
+        serve1LostPoints: raw.serve1LostPoints ?? Math.max(0, (raw.serve1In ?? 0) - (raw.serve1Won ?? 0)),
+        serve2WonPoints: raw.serve2WonPoints ?? raw.serve2Won ?? 0,
+        serve2LostPoints: raw.serve2LostPoints ?? Math.max(0, (raw.serve2In ?? 0) - (raw.serve2Won ?? 0)),
+        rallySum: raw.rallySum ?? (raw.rallyLengths ?? []).reduce((sum, value) => sum + value, 0),
+        rallyCount: raw.rallyCount ?? (raw.rallyLengths ?? []).length,
+        rallyMax: raw.rallyMax ?? ((raw.rallyLengths ?? []).length ? Math.max(...raw.rallyLengths) : 0),
+      };
+      for (const field of PERFORMANCE_STAT_FIELDS) {
+        const value = Number(normalized[field] ?? 0);
+        if (!Number.isFinite(value)) continue;
+        if (field === 'rallyMax') {
+          seasonPerf[field] = Math.max(seasonPerf[field], value);
+          surfacePerf[field] = Math.max(surfacePerf[field], value);
+        } else {
+          seasonPerf[field] += value;
+          surfacePerf[field] += value;
+        }
+      }
+      for (const mapField of ['byType', 'pointWinsByType']) {
+        for (const [shotType, rawCount] of Object.entries(raw[mapField] ?? {})) {
+          const count = Number(rawCount ?? 0);
+          if (!Number.isFinite(count)) continue;
+          seasonPerf[mapField][shotType] = (seasonPerf[mapField][shotType] ?? 0) + count;
+          surfacePerf[mapField][shotType] = (surfacePerf[mapField][shotType] ?? 0) + count;
+        }
+      }
+
+      // Campos legados continuam alimentados para Hall da Fama e saves antigos.
+      const aces = raw.aces ?? 0;
+      const winners = raw.winners ?? 0;
+      const doubleFaults = raw.doubleFaults ?? 0;
+      const unforcedErrors = raw.unforcedErrors ?? 0;
       s.aces += aces;
       s.winners += winners;
       s.doubleFaults += doubleFaults;
@@ -2189,31 +2823,14 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
       season.winners += winners;
       season.doubleFaults += doubleFaults;
       season.unforcedErrors += unforcedErrors;
-      for (const [shotType, count] of Object.entries(aStats.pointWinsByType ?? {})) {
+      for (const [shotType, count] of Object.entries(raw.pointWinsByType ?? {})) {
         s.pointWinsByType[shotType] = (s.pointWinsByType[shotType] ?? 0) + count;
         season.pointWinsByType[shotType] = (season.pointWinsByType[shotType] ?? 0) + count;
       }
-    }
-    if (pBId && bStats) {
-      const s = _rsGet(store, pBId);
-      const season = _rsSeasonData(s, year);
-      const aces = bStats.aces ?? 0;
-      const winners = bStats.winners ?? 0;
-      const doubleFaults = bStats.doubleFaults ?? 0;
-      const unforcedErrors = bStats.unforcedErrors ?? 0;
-      s.aces += aces;
-      s.winners += winners;
-      s.doubleFaults += doubleFaults;
-      s.unforcedErrors += unforcedErrors;
-      season.aces += aces;
-      season.winners += winners;
-      season.doubleFaults += doubleFaults;
-      season.unforcedErrors += unforcedErrors;
-      for (const [shotType, count] of Object.entries(bStats.pointWinsByType ?? {})) {
-        s.pointWinsByType[shotType] = (s.pointWinsByType[shotType] ?? 0) + count;
-        season.pointWinsByType[shotType] = (season.pointWinsByType[shotType] ?? 0) + count;
-      }
-    }
+    };
+
+    accumulate(pAId, stats?.a);
+    accumulate(pBId, stats?.b);
   }
 
   if (result._slim) {
@@ -2239,7 +2856,9 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
         if (s.youngestChampAge===null || age < s.youngestChampAge) s.youngestChampAge = age;
         if (s.oldestChampAge===null   || age > s.oldestChampAge)   s.oldestChampAge   = age;
       }
-      _rsSeasonData(s, year).titles++;
+      const championSeason = seasonFor(s, result.champion.id);
+      championSeason.titles++;
+      _rsSurfaceData(championSeason, surf).titles++;
     }
     if (result.finalist) {
       const s = _rsGet(store, result.finalist.id);
@@ -2261,9 +2880,12 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
       ws.surfWins[surf] = (ws.surfWins[surf]||0) + 1;
       ws.curStreak++;
       if (ws.curStreak > ws.winStreak) ws.winStreak = ws.curStreak;
-      const wSeason = _rsSeasonData(ws, year);
+      const wSeason = seasonFor(ws, w);
       wSeason.wins++;
       wSeason.matchesPlayed++;
+      const wSurface = _rsSurfaceData(wSeason, surf);
+      wSurface.wins++;
+      wSurface.matchesPlayed++;
       processSets(w, l, sd, wa);
       if (l) {
         const ls = _rsGet(store, l);
@@ -2272,14 +2894,19 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
         ls.matchesPlayed++;
         ls.surfLosses[surf] = (ls.surfLosses[surf]||0) + 1;
         ls.curStreak = 0;
-        _rsSeasonData(ls, year).matchesPlayed++;
+        const lSeason = seasonFor(ls, l);
+        lSeason.matchesPlayed++;
+        const lSurface = _rsSurfaceData(lSeason, surf);
+        lSurface.losses++;
+        lSurface.matchesPlayed++;
       }
       processMatchStats(wa ? w : l, wa ? l : w, st);
+      rememberMatch({ winnerId:w, loserId:l, setsDetail:sd, stats:st });
     });
     for (const [pid, pts] of Object.entries(result.pts ?? {})) {
       const s = _rsGet(store, pid);
       s.careerPts += pts;
-      _rsSeasonData(s, year).pts += pts;
+      seasonFor(s, pid).pts += pts;
     }
 
   } else {
@@ -2311,11 +2938,13 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
         if (s.youngestChampAge===null || age < s.youngestChampAge) s.youngestChampAge = age;
         if (s.oldestChampAge===null   || age > s.oldestChampAge)   s.oldestChampAge   = age;
       }
-      _rsSeasonData(s, year).titles++;
+      const championSeason = seasonFor(s, champ.id);
+      championSeason.titles++;
+      _rsSurfaceData(championSeason, surf).titles++;
     }
 
     if (bracket.rounds) {
-      bracket.rounds.forEach(round => {
+      bracket.rounds.forEach((round, roundIndex) => {
         round.forEach(match => {
           if (!match.winner || match.isBye) return;
           const winner = match.winner;
@@ -2329,11 +2958,21 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
           ws.surfWins[surf] = (ws.surfWins[surf]||0) + 1;
           ws.curStreak++;
           if (ws.curStreak > ws.winStreak) ws.winStreak = ws.curStreak;
-          const wSeason = _rsSeasonData(ws, year);
+          const wSeason = seasonFor(ws, winner.id);
           wSeason.wins++;
           wSeason.matchesPlayed++;
+          const wSurface = _rsSurfaceData(wSeason, surf);
+          wSurface.wins++;
+          wSurface.matchesPlayed++;
           processSets(winner.id, loser?.id, match.result?.setsDetail ?? match.setsDetail, pA?.id === winner.id);
           processMatchStats(pA?.id, pB?.id, match.result?.stats ?? null);
+          rememberMatch({
+            winnerId:winner.id, loserId:loser?.id,
+            setsDetail:match.result?.setsDetail ?? match.setsDetail,
+            stats:match.result?.stats, roundIndex,
+            heat:match.result?.heat?.peak ?? match.result?.heatPeak ?? 0,
+            maxRally:match.result?.maxRally ?? 0,
+          });
           if (loser?.id) {
             const ls = _rsGet(store, loser.id);
             snap(ls, loser.id);
@@ -2341,7 +2980,11 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
             ls.matchesPlayed++;
             ls.surfLosses[surf] = (ls.surfLosses[surf]||0) + 1;
             ls.curStreak = 0;
-            _rsSeasonData(ls, year).matchesPlayed++;
+            const lSeason = seasonFor(ls, loser.id);
+            lSeason.matchesPlayed++;
+            const lSurface = _rsSurfaceData(lSeason, surf);
+            lSurface.losses++;
+            lSurface.matchesPlayed++;
           }
         });
       });
@@ -2387,7 +3030,7 @@ function updateRecordsStoreWithResult(store, result, year, playerMap) {
         if (points > 0) {
           const s = _rsGet(store, pid);
           s.careerPts += points;
-          _rsSeasonData(s, year).pts += points;
+          seasonFor(s, pid).pts += points;
         }
       }
     } catch(_) {}
@@ -2451,6 +3094,25 @@ function getOrMigrateRecordsStore(state) {
 // -------------------------------------------------------------------
 // SLIM FORMAT — reduz tamanho do save ao virar o ano
 // -------------------------------------------------------------------
+
+function compactPerformanceStats(raw) {
+  if (!raw) return null;
+  const compact = {};
+  for (const field of PERFORMANCE_STAT_FIELDS) {
+    const value = Number(raw[field] ?? 0);
+    if (Number.isFinite(value) && value !== 0) compact[field] = value;
+  }
+  // aliases usados pelo FastSimulation antes da normalização no recordsStore
+  for (const field of ['serve1Won', 'serve2Won']) {
+    const value = Number(raw[field] ?? 0);
+    if (Number.isFinite(value) && value !== 0) compact[field] = value;
+  }
+  for (const mapField of ['byType', 'pointWinsByType']) {
+    const entries = Object.entries(raw[mapField] ?? {}).filter(([, value]) => Number(value) !== 0);
+    if (entries.length) compact[mapField] = Object.fromEntries(entries);
+  }
+  return Object.keys(compact).length ? compact : null;
+}
 
 /**
  * Converte um resultado completo de torneio (com bracket enorme)
@@ -2530,22 +3192,8 @@ function slimifyTournamentResult(result, year) {
           }
           if (match.result?.stats?.a || match.result?.stats?.b) {
             entry.st = {
-              a: match.result?.stats?.a ? {
-                aces: match.result.stats.a.aces ?? 0,
-                winners: match.result.stats.a.winners ?? 0,
-                doubleFaults: match.result.stats.a.doubleFaults ?? 0,
-                unforcedErrors: match.result.stats.a.unforcedErrors ?? 0,
-                forcedErrors: match.result.stats.a.forcedErrors ?? 0,
-                byType: match.result.stats.a.byType ? { ...match.result.stats.a.byType } : undefined,
-              } : null,
-              b: match.result?.stats?.b ? {
-                aces: match.result.stats.b.aces ?? 0,
-                winners: match.result.stats.b.winners ?? 0,
-                doubleFaults: match.result.stats.b.doubleFaults ?? 0,
-                unforcedErrors: match.result.stats.b.unforcedErrors ?? 0,
-                forcedErrors: match.result.stats.b.forcedErrors ?? 0,
-                byType: match.result.stats.b.byType ? { ...match.result.stats.b.byType } : undefined,
-              } : null,
+              a: compactPerformanceStats(match.result?.stats?.a),
+              b: compactPerformanceStats(match.result?.stats?.b),
             };
           }
           slim.matches.push(entry);
@@ -2588,12 +3236,37 @@ function slimifyRetiredPlayer(p) {
     birthYear:         p.birthYear         ?? null,
     peakAge:           p.peakAge           ?? null,
     personality:       p.personality       ?? null,
+    careerTrajectory:  p.careerTrajectory  ?? null,
+    youthProfile:      p.youthProfile      ?? null,
     surfaceStats:      p.surfaceStats      ?? null,
     surfaceIdentity:   p.surfaceIdentity   ?? null,
+    surfaceProfile:    p.surfaceProfile    ?? null,
     dna:               p.dna               ?? null,
     injuryHistory:     p.injuryHistory     ?? [],
     lifeEventLog:      p.lifeEventLog      ?? [],
+    // A biografia do Hall precisa sobreviver ao enxugamento do aposentado.
+    // Mantemos apenas os rastros narrativos, nunca dados pesados de simulação.
+    sponsorTimeline:   p.sponsorTimeline   ?? [],
+    coachTimeline:     p.coachTimeline     ?? [],
+    latestInterview:   p.latestInterview   ?? null,
+    lifeMemory:        p.lifeMemory        ?? null,
     _isSlimRetired: true,
+  };
+}
+
+function slimifyYouthExit(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    fullName: p.fullName ?? null,
+    nationality: p.nationality,
+    age: p.age,
+    birthYear: p.birthYear ?? null,
+    styleId: p.styleId ?? null,
+    photo: p.photo ?? null,
+    youthProfile: p.youthProfile ?? null,
+    retirementInfo: p.retirementInfo ?? null,
+    generatedIn: p.generatedIn ?? null,
   };
 }
 
@@ -2659,7 +3332,7 @@ function slimifyInterviewArchiveItem(item) {
 
 function slimifyPlayerForSave(player) {
   if (!player || typeof player !== 'object') return player;
-  const compact = { ...player };
+  const compact = { ...player, youthProfile: player.youthProfile ?? null };
   compact.formHistory = (compact.formHistory ?? []).slice(-24);
   return compact;
 }
@@ -2689,6 +3362,72 @@ function slimifyNewsEngineForSave(newsEngine) {
   return {
     ...raw,
     feed: (raw.feed ?? []).map(slimifyArchivedArticle),
+  };
+}
+
+const WORLD_MILESTONE_EVENT = /GRAND_SLAM|SLAM|TITLE|CHAMPION|RETIRE|CAREER|RECORD|NO1|NUMBER_ONE|RANKING_MILESTONE|BREAKING|SCANDAL|HEALTH_CAREER|DEATH|LEGACY|ERA|RIVALRY|OLYMPIC|BREAKTHROUGH|COMEBACK/i;
+
+function compactWorldEventsPreservingMilestones(events, recentRoutineLimit = 1800) {
+  const rows = Array.isArray(events) ? events : [];
+  const routineCount = rows.reduce((count, event) => count + (WORLD_MILESTONE_EVENT.test(String(event?.type ?? '')) ? 0 : 1), 0);
+  const discardRoutine = Math.max(0, routineCount - recentRoutineLimit);
+  let routineSeen = 0;
+  return rows.filter(event => {
+    if (WORLD_MILESTONE_EVENT.test(String(event?.type ?? ''))) return true;
+    routineSeen += 1;
+    return routineSeen > discardRoutine;
+  });
+}
+
+function buildUniverseSavePayload(s) {
+  const slimHistorical = {};
+  for (const [key, result] of Object.entries(s.historicalTournamentResults ?? {})) {
+    slimHistorical[key] = compactTournamentResultForSave(
+      result._slim ? result : slimifyTournamentResult(result, result._season ?? s.year - 1)
+    );
+  }
+  const slimCurrent = {};
+  for (const [key, result] of Object.entries(s.tournamentResults ?? {})) {
+    slimCurrent[key] = compactTournamentResultForSave(
+      result._slim ? result : slimifyTournamentResult(result, result._season ?? s.year)
+    );
+  }
+
+  return {
+    _version: SAVE_SCHEMA_VERSION,
+    year: s.year,
+    worldDate: s.worldDate ?? createWorldDate(s.year ?? 2025, 1),
+    season: s.season,
+    calendarIndex: s.calendarIndex,
+    tourPlayers: (s.tourPlayers ?? []).map(slimifyPlayerForSave),
+    prospects: (s.prospects ?? []).map(slimifyPlayerForSave),
+    youthCohortUniverse: s.youthCohortUniverse ?? createYouthCohortUniverse(s.year ?? 2025, (s.prospects ?? []).length),
+    competitiveDensity: ensureCompetitiveDensityState(s.competitiveDensity, s.year ?? 2025),
+    circuitShock: s.circuitShock ?? null,
+    youthExitArchive: (s.youthExitArchive ?? []).slice(-500),
+    retiredPlayers: (s.retiredPlayers ?? []).map(player => player._isSlimRetired ? player : slimifyRetiredPlayer(player)),
+    rankingStore: compactRankingStoreForSave(s.rankingStore),
+    tournamentResults: slimCurrent,
+    historicalTournamentResults: slimHistorical,
+    events: compactWorldEventsPreservingMilestones(s.events),
+    playerSeasonSlots: s.playerSeasonSlots ?? {},
+    newgenImagePool: s.newgenImagePool ?? {},
+    yearSummary: s.yearSummary ?? null,
+    rivalrySystem: s.rivalrySystem?.toJSON?.() ?? null,
+    chronicleEngine: s.chronicleEngine?.toJSON?.() ?? null,
+    newsEngine: slimifyNewsEngineForSave(s.newsEngine),
+    coachMarket: s.coachMarket ?? null,
+    sponsorPool: s.sponsorPool ?? null,
+    pendingOffers: s.pendingOffers ?? [],
+    highestPaidPlayerId: s.highestPaidPlayerId ?? null,
+    seasonPulseState: s.seasonPulseState ?? createSeasonPulseState(s.year ?? 2025),
+    monthlyInterviews: (s.monthlyInterviews ?? []).map(slimifyInterviewArchiveItem),
+    grandSlamInterviews: (s.grandSlamInterviews ?? []).map(slimifyInterviewArchiveItem),
+    recordsStore: s.recordsStore ?? { _version:1, playerStats:{} },
+    radar: s.radar ?? createRadarState(),
+    circuitShifts: (s.circuitShifts ?? []).slice(-120),
+    latestCircuitShift: s.latestCircuitShift ?? null,
+    historyBook: serializeHistoryBook(s.historyBook, s.year ?? 2025),
   };
 }
 
@@ -2774,45 +3513,31 @@ function buildUniverse(universeMode = 'normal') {
   });
 
   // Juniors: base viva do submundo. Entram jovens e não podem envelhecer presos aqui.
+  const initialYouthCohortUniverse = createYouthCohortUniverse(2025, O_OUTRO_MUNDO.JUNIOR_TARGET);
   const juniorJuniors = normalizeJuniorField(
-    createJuniorNewgens(2025, O_OUTRO_MUNDO.JUNIOR_TARGET, poolOpts),
+    createJuniorNewgens(2025, O_OUTRO_MUNDO.JUNIOR_TARGET, poolOpts, initialYouthCohortUniverse),
     2025,
   );
 
   const rankingStore = createRankingStore();
 
-  // Seed pontos iniciais dos jogadores nomeados.
-  // F—rmula: 129 - initialRank (rank 1 = 128 pts, rank 128 = 1 pt).
-  // Calculado diretamente do initialRank — não depende de initialPts no players.js.
-  if (useNamedCast) {
-    for (const p of named) {
-      const rank = p.initialRank ?? 999;
-      const pts  = Math.max(0, 129 - rank);
-      if (pts > 0) {
-        rankingStore.playerResults[p.id] = [{
-          tournamentId:   '__seed__',
-          tournamentName: 'Carry-over 2024',
-          category:       'ATP_250',
-          points:         pts,
-          round:          'W',
-          season:         2024,
-          weekIndex:      0,
-          mandatory:      false,
-        }];
-      }
-    }
-  }
-
-  // Ranking inicial: named players pelo initialRank, restante por OVR
-  const allTour = [...named, ...newgensTour];
-  const tourPlayers = allTour.sort((a, b) => {
+  // Ordem de entrada: nomes conhecidos respeitam o rank de abertura; no modo
+  // all-new, o OVR organiza o ponto de partida antes de os resultados falarem.
+  const allTour = [...named, ...newgensTour].sort((a, b) => {
     if (useNamedCast) {
       const aRank = a.initialRank ?? 9999;
       const bRank = b.initialRank ?? 9999;
       if (aRank !== bRank) return aRank - bRank;
     }
     return overallRating(b.attrs) - overallRating(a.attrs);
-  }).map((p, idx) => ({ ...p, rankPosition: idx + 1 }));
+  });
+
+  // Universo novo começa sem herdar uma temporada fictícia: todos têm 0
+  // ponto. A ordem inicial apenas resolve empates até os torneios reais
+  // começarem a formar o ranking em quadra.
+  rankingStore.seedOrder = Object.fromEntries(allTour.map((player, index) => [player.id, index + 1]));
+
+  const tourPlayers = allTour.map((p, idx) => ({ ...p, rankPosition: idx + 1 }));
 
   // Calcula ranking inicial
   const initialRanked     = computeRanking(rankingStore, tourPlayers.map(p => p.id));
@@ -2834,26 +3559,29 @@ function buildUniverse(universeMode = 'normal') {
     if (!np.kits?.length) {
       np = { ...np, kits: generateKits(np.id, np.namedPlayerKey ?? null, 5), activeKitIndex: 0 };
     }
-    return np;
+    const withYouth = ensureYouthProfile(ensurePlayerBirthDate(ensureCareerTrajectory(np, 2025, 'UNIVERSE_CREATION'), { year: 2025, month: 1 }, 2025), 2025, 'UNIVERSE_CREATION');
+    return ensureSurfaceProfile(withYouth, { year: 2025, source: np.isNewgen ? 'NEWGEN' : 'UNIVERSE_CREATION' });
   });
 
-  const initialCoachPool = generateCoachPool(2025, 250);
-  const { players: tourWithCoaches, coachPool: finalCoachPool } =
-    assignCoachesToAll(tourPlayersWithLife, initialCoachPool, 2025);
-
-  const coachMap = Object.fromEntries(finalCoachPool.map(c => [c.id, c]));
-  const tourWithPartnerships = tourWithCoaches.map(p => {
-    const coach = p.coach ? coachMap[p.coach.coachId] : null;
-    const withPartnership = coach ? initPartnership(p, coach, 2025) : p;
-    return migrateBreakingNewsState(withPartnership);
-  });
+  const coachMarketSeed = createInitialCoachMarket([...tourPlayersWithLife, ...juniorJuniors], 2025);
+  const initialCoaching = initializePlayersCoaching(
+    tourPlayersWithLife.map(p => migrateBreakingNewsState(stripOldCoachButKeepBancoVivo(p))),
+    coachMarketSeed,
+    2025,
+  );
+  const tourWithoutCoaches = initialCoaching.players;
   const seasonOpenBreaking = maybeTriggerBreakingNews(
-    tourWithPartnerships,
+    tourWithoutCoaches,
     2025,
     {},
     { phase: 'SEASON_OPEN', tournament: CALENDAR[0] },
   );
-  const tourAtSeasonOpen = seasonOpenBreaking.players ?? tourWithPartnerships;
+  const tourAtSeasonOpen = seasonOpenBreaking.players ?? tourWithoutCoaches;
+  const initialCompetitiveDensity = planCompetitiveDensity(
+    [...tourAtSeasonOpen, ...juniorJuniors],
+    2025,
+    poolOpts._competitiveDensityState,
+  );
   const initialPreparedBundle = buildPreparedTournamentPackageBundle(
     CALENDAR[0],
     tourAtSeasonOpen,
@@ -2880,18 +3608,31 @@ function buildUniverse(universeMode = 'normal') {
 
   return {
     year: 2025,
+    worldDate: createWorldDate(2025, 1),
     season: 1,
     newgenImagePool: poolOpts._poolState,
-    tourPlayers:  tourAtSeasonOpen.map(p  => ensureDevelopmentLedger(initPlayerFinance(p), 2025)),
-    prospects:    juniorJuniors.map(p => ensureDevelopmentLedger(initPlayerFinance(p), 2025)),
+    tourPlayers:  tourAtSeasonOpen.map(p  => ensurePlayerHype(ensureLifeSimulation(ensureDevelopmentLedger(initPlayerFinance(p), 2025), { year: 2025, month: 1 }), { year:2025, month:1 })),
+    prospects:    juniorJuniors.map(p => ensureLifeSimulation(ensureDevelopmentLedger(initPlayerFinance(ensureYouthProfile(ensurePlayerBirthDate(ensureCareerTrajectory(p, 2025, 'UNIVERSE_CREATION'), { year: 2025, month: 1 }, 2025), 2025, 'UNIVERSE_CREATION')), 2025), { year: 2025, month: 1 })),
+    youthCohortUniverse: ensureYouthCohortUniverse(initialYouthCohortUniverse, 2025, juniorJuniors.length),
+    competitiveDensity: initialCompetitiveDensity,
+    youthExitArchive: [],
     rankingStore,
     calendarIndex: 0,
     preparedTournamentPackage: initialPreparedTournamentPackage,
     preparedTournamentPackageCache: initialPreparedBundle.packageCache,
     tournamentResults: {},
     historicalTournamentResults: {}, // acumula resultados de TODAS as temporadas
+    circuitShifts: [],
+    latestCircuitShift: null,
+    circuitShock: seasonOpenBreaking.directorState,
+    // Livro das Eras: memória macro-histórica. O patch 1 apenas persiste a
+    // base; a classificação de eras entra nos patches seguintes.
+    historyBook: createHistoryBook(2025),
     recordsStore: { _version:1, playerStats:{} }, // stats acumuladas — nunca apagado
-    events: [...(seasonOpenBreaking.events ?? []).map(e => ({ ...e, year: 2025 }))],
+    events: [
+      ...(seasonOpenBreaking.events ?? []).map(e => ({ ...e, year: 2025 })),
+      ...(initialCoaching.events ?? []).slice(0, 12).map(e => ({ ...e, year: 2025, icon: '[t+]' })),
+    ],
     view: null,
     retiredPlayers: [],
     
@@ -2899,19 +3640,17 @@ function buildUniverse(universeMode = 'normal') {
     rivalrySystem: new RivalrySystem(), // inst—ncia viva — atualizada fora do reducer
     chronicleEngine,
     newsEngine: initialNewsEngine,       // motor de jornalismo — feed de artigos
+    coachMarket: initialCoaching.coachMarket,
 
     // -- Sponsorship System (Fases 3—5) ---------------------------
-    sponsorPool: initSponsorPool(),
+    sponsorPool: initSponsorPool({ year: 2025 }),
     pendingOffers: [],
     highestPaidPlayerId: null,
     seasonPulseState: createSeasonPulseState(2025),
     monthlyInterviews: [],
     grandSlamInterviews: [],
+    radar: createRadarState(),
 
-    // -- Coaching System -------------------------------------------
-    // Pool j— com todos os coaches distribu—dos.
-    // processCoachContracts() no ADVANCE_YEAR cuida de renova——es e trocas.
-    coachPool: finalCoachPool,
   };
 }
 
@@ -2931,6 +3670,47 @@ function reducer(state, action) {
     case 'SET_VIEW':
       return { ...state, view: action.view };
 
+    case 'SET_RADAR_FOLLOWED': {
+      const availableIds = [...(state.tourPlayers ?? []), ...(state.prospects ?? []), ...(state.retiredPlayers ?? [])].map((player) => player.id);
+      const followedPlayerIds = normalizeFollowedPlayerIds(action.playerIds, availableIds);
+      return {
+        ...state,
+        tourPlayers: (state.tourPlayers ?? []).map(player => followedPlayerIds.includes(player.id)
+          ? ensureYouthShadowHistory(player, { year: state.year, trigger: 'RADAR_FOLLOWED', cohortUniverse: state.youthCohortUniverse })
+          : player),
+        prospects: (state.prospects ?? []).map(player => followedPlayerIds.includes(player.id)
+          ? ensureYouthShadowHistory(player, { year: state.year, trigger: 'RADAR_FOLLOWED', cohortUniverse: state.youthCohortUniverse })
+          : player),
+        radar: {
+          ...(state.radar ?? createRadarState()),
+          followedPlayerIds,
+        },
+        // O pacote pode conter qualifying e rodadas iniciais já resolvidos.
+        // Ao mudar o Radar, ele precisa ser reconstruído para que nenhum jogo
+        // do novo acompanhado permaneça com um resultado vindo do Fast.
+        preparedTournamentPackage: null,
+        preparedTournamentPackageCache: {},
+      };
+    }
+
+    case 'SET_RADAR_SETTINGS':
+      return { ...state, radar: { ...(state.radar ?? createRadarState()), settings: { ...(state.radar?.settings ?? {}), ...(action.settings ?? {}) } } };
+
+    case 'APPEND_RADAR_COVERAGE': {
+      const radar = state.radar ?? createRadarState();
+      const matches = [...(radar.matchLog ?? []), ...(action.matches ?? [])].slice(-240);
+      const digest = action.digest ?? null;
+      return {
+        ...state,
+        radar: {
+          ...radar,
+          matchLog: matches,
+          alerts: [...(radar.alerts ?? []), ...(action.alerts ?? [])].slice(-120),
+          weeklyDigest: digest ? [...(radar.weeklyDigest ?? []), digest].slice(-80) : (radar.weeklyDigest ?? []),
+        },
+      };
+    }
+
     case 'SKIP_TOURNAMENT': {
       // Avan—a calendarIndex sem simular (usado para Olimp—adas em anos não-ol—mpicos)
       return {
@@ -2943,10 +3723,30 @@ function reducer(state, action) {
 
     case 'APPLY_TOURNAMENT_RESULT': {
       const { tournamentId, result, tournament } = action;
+      tournamentDebugLog('reducer:apply:start', {
+        tournamentId,
+        tournamentName: tournament?.name,
+        category: tournament?.category,
+        champion: result?.bracket?.champion?.name ?? null,
+        rounds: result?.bracket?.rounds?.length ?? 0,
+        alreadyApplied: !!state.tournamentResults?.[tournamentId],
+      });
       if (state.tournamentResults?.[tournamentId]) {
+        tournamentDebugLog('reducer:apply:skip-already-applied', { tournamentId });
         return state;
       }
       const { bracket, qualifiers, preQualWinners } = result;
+      const radarMatches = (result?.radarMatches?.length ? result.radarMatches : (bracket?.rounds ?? []).flatMap((round) => round ?? [])
+        .filter((match) => match?.result?.simulationSource === 'FOLLOWED_HEADLESS')
+        .map((match) => buildRadarMatchRecord({
+          playerA: match.playerA,
+          playerB: match.playerB,
+          winner: match.winner,
+          result: match.result,
+          tournament,
+          roundLabel: match.result?.roundLabel ?? null,
+          year: state.year,
+        }))) ?? [];
 
       // -- Rota——o de kits por torneio ----------------------------------------
       // Cada jogador sorteia um dos seus 5 kits no in—cio de cada torneio.
@@ -3064,6 +3864,22 @@ function reducer(state, action) {
           formHistMap[loseId].push({ round: rl, label: `Perde na ${rlFull}`,  delta: row.loss, tournamentName: tournament.name, year: state.year });
         });
       });
+      // Uma chave longa não pode transformar um bom torneio em meses de
+      // superioridade automática. Consolidamos o saldo por evento.
+      for (const [playerId, rawDelta] of formDeltaMap.entries()) {
+        const cappedDelta = capTournamentFormDelta(rawDelta);
+        formDeltaMap.set(playerId, cappedDelta);
+        if (cappedDelta !== rawDelta) {
+          if (!formHistMap[playerId]) formHistMap[playerId] = [];
+          formHistMap[playerId].push({
+            round: 'FORM_CAP',
+            label: 'Consolidação da forma no torneio',
+            delta: cappedDelta - rawDelta,
+            tournamentName: tournament.name,
+            year: state.year,
+          });
+        }
+      }
       for (const q of qualifiers ?? []) participatedIds.add(q.id);
       for (const pq of preQualWinners ?? []) participatedIds.add(pq.id);
       const breakingResolvedEvents = [];
@@ -3071,11 +3887,12 @@ function reducer(state, action) {
       const updatedTourPlayers = tourPlayersWithKits.map(p => {
         // Aplica estado de lesão atualizado da rodada
         let np = injuryMeta[p.id] ?? ensurePhysicalCondition(p);
-        // Decai condi——o física de quem jogou; recupera quem ficou fora
-        if (withdrawals.has(p.id)) {
-          np = recoverPhysicalCondition(np);
-        } else {
+        // Só quem realmente entrou em quadra acumula desgaste. Retirados e
+        // jogadores fora da chave usam o slot para recuperar condição física.
+        if (participatedIds.has(p.id) && !withdrawals.has(p.id)) {
           np = decayPhysicalCondition(np, tournament);
+        } else {
+          np = recoverPhysicalCondition(np);
         }
         // Tick da lesão (avan—a 1 slot)
         np = tickInjury(np);
@@ -3115,6 +3932,12 @@ function reducer(state, action) {
             oppRank: opp?.rankPosition ?? 99,
             sets: qm.sets ?? [0, 0],
           });
+          npWithForm = recordSurfaceMatch(npWithForm, {
+            won,
+            surface: qm.surface ?? surf,
+            year: state.year,
+            importance: 0.22,
+          });
         }
 
         const champId = bracket.champion?.id;
@@ -3139,19 +3962,20 @@ function reducer(state, action) {
               tiebreakWon:  tbWon  !== null && (tbWon  > 0) ? true  : (tbWon  !== null ? false : null),
               tiebreakLost: tbLost !== null && (tbLost > 0) ? true  : null,
             });
-            // FASE 4 — Atualizar surfaceStats hist—rico de carreira
+            // Surface Identity 2.0: dominio e confianca evoluem; o DNA de
+            // formacao permanece imutavel.
             const isFinal = champId && won && match.winner.id === champId &&
               bracketRounds.indexOf(round) === bracketRounds.length - 1;
-            npWithForm = updateSurfaceStats(npWithForm, {
+            npWithForm = recordSurfaceMatch(npWithForm, {
               won,
               surface: surf,
               isTournamentTitle: isFinal,
+              isSlam: tournament.category === 'GRAND_SLAM',
+              year: state.year,
+              importance: tournament.category === 'GRAND_SLAM' ? 1 : isFinal ? 0.72 : 0.38,
             });
           });
         });
-        // Recalcular surfaceIdentity após cada torneio (barato — s— leitura de surfaceStats)
-        const newIdentity = computeSurfaceIdentity(npWithForm);
-        if (newIdentity) npWithForm = { ...npWithForm, surfaceIdentity: newIdentity };
 
         // -- Fase 2: match rating individual (IndividualRating) ------------------
         // Para cada partida do jogador neste torneio, extrai rating da engine completa
@@ -3195,45 +4019,24 @@ function reducer(state, action) {
           allPlayers:    state.tourPlayers,
         });
 
-        // FASE 2: CoachTacticTracker ? modo headless/fast
-        // Gera entradas sint—ticas de hist—rico t—tico para cada partida do jogador.
-        // No modo visual, o tracker recebe log ponto-a-ponto; aqui usamos stats agregados.
-        if (npWithForm.coach?.coachId) {
-          bracketRounds.forEach(round => {
-            round.forEach(match => {
-              if (match.isBye || !match.winner || !match.playerA || !match.playerB) return;
-              const isA = match.playerA.id === npWithForm.id;
-              const isB = match.playerB.id === npWithForm.id;
-              if (!isA && !isB) return;
-              const matchStats = isA ? match.result?.stats?.a : match.result?.stats?.b;
-              if (!matchStats) return;
-              const won = match.winner.id === npWithForm.id;
-              const fromEnd = bracketRounds.length - 1 - bracketRounds.indexOf(round);
-              const rl = fromEnd === 0 ? 'F' : fromEnd === 1 ? 'SF' : fromEnd === 2 ? 'QF' : fromEnd === 3 ? 'R16' : 'R32';
-              const tacticEntry = generateFastSimTacticEntry(npWithForm, { won, stats: matchStats, surface: surf, roundLabel: rl });
-              if (tacticEntry) {
-                const trustDelta = calcTrustDelta(tacticEntry.report);
-                const updatedCoach = appendTacticHistory(
-                  applyTrustDelta(npWithForm.coach, trustDelta),
-                  tacticEntry.report,
-                  [],
-                  tacticEntry.matchContext,
-                );
-                if (updatedCoach) npWithForm = { ...npWithForm, coach: updatedCoach };
-              }
-            });
-          });
-        }
-
         return npWithForm;
       });
 
-      const updatedJuniors = state.prospects.map((p, idx) => ({
-        ...ensurePhysicalCondition(p),
-        rankPosition: prospectRankMap[p.id] ?? p.rankPosition ?? (idx + 1),
-        circuitLevel: 'JUNIOR',
-        isProspect: true,
-      }));
+      const updatedJuniors = state.prospects.map((p, idx) => {
+        const junior = {
+          ...ensurePhysicalCondition(p),
+          rankPosition: prospectRankMap[p.id] ?? p.rankPosition ?? (idx + 1),
+          circuitLevel: 'JUNIOR',
+          isProspect: true,
+        };
+        if (!isJuniors) return junior;
+        const circuitResult = pointMap.get?.(p.id);
+        return recordJuniorCircuitTournament(junior, tournament, {
+          ...circuitResult,
+          isChampion: bracket.champion?.id === p.id,
+          isFinalist: bracket.finalist?.id === p.id,
+        }, state.year, { cohortUniverse: state.youthCohortUniverse });
+      });
       // Evento narrativo
       const champ = bracket.champion;
       const newEvents = [];
@@ -3332,10 +4135,18 @@ function reducer(state, action) {
       }
 
       const newResult = { bracket, qualifiers, preQualWinners: preQualWinners ?? [], tournament };
+      const storedResult = compactTournamentResultForRuntime(newResult);
 
       // -- Records Store: atualiza incrementalmente -------------------
       const allPlayersForSnap = [...(state.tourPlayers ?? []), ...(state.prospects ?? [])];
-      const snapMap = Object.fromEntries(allPlayersForSnap.map(p => [p.id, p]));
+      const entryRankById = Object.fromEntries([
+        ...(state.rankingStore?.ranked ?? []).map((row, index) => [row.playerId, row.position ?? index + 1]),
+        ...(state.rankingStore?.prospectRanked ?? []).map((row, index) => [row.playerId, row.position ?? index + 1]),
+      ]);
+      const snapMap = Object.fromEntries(allPlayersForSnap.map(p => [p.id, {
+        ...p,
+        rankPosition: p.rankPosition ?? entryRankById[p.id] ?? null,
+      }]));
       const currentRecordsStore = getOrMigrateRecordsStore(state);
       // Deep-copy cada objeto de stats individual para evitar muta——o de refer—ncias
       // compartilhadas quando o React StrictMode invoca o reducer duas vezes.
@@ -3357,22 +4168,43 @@ function reducer(state, action) {
               Object.entries(v.seasonData ?? {}).map(([yr, sd]) => [yr, {
                 ...sd,
                 pointWinsByType: { ...(sd.pointWinsByType ?? {}) },
+                performance: sd.performance ? {
+                  ...sd.performance,
+                  byType: { ...(sd.performance.byType ?? {}) },
+                  pointWinsByType: { ...(sd.performance.pointWinsByType ?? {}) },
+                } : undefined,
+                surfaces: Object.fromEntries(
+                  Object.entries(sd.surfaces ?? {}).map(([surface, surfaceData]) => [surface, {
+                    ...surfaceData,
+                    performance: surfaceData.performance ? {
+                      ...surfaceData.performance,
+                      byType: { ...(surfaceData.performance.byType ?? {}) },
+                      pointWinsByType: { ...(surfaceData.performance.pointWinsByType ?? {}) },
+                    } : undefined,
+                  }])
+                ),
               }])
             ),
           }])
         ),
       };
       updateRecordsStoreWithResult(updatedRecordsStore, newResult, state.year, snapMap);
+      tournamentDebugLog('reducer:records:done', {
+        tournamentId,
+        playerStats: Object.keys(updatedRecordsStore.playerStats ?? {}).length,
+      });
 
       // -- Fase 4/5: monitorar contratos ativos após torneio --------
       let postMonitorTourPlayers = updatedTourPlayers;
       let postMonitorJuniors   = updatedJuniors;
       let postMonitorPool        = state.sponsorPool;
+      let postMonitorCoachMarket = state.coachMarket;
       let postMonitorNews        = [];
       let pulseDevEvents         = [];
       let monthlyInterviewArchive = state.monthlyInterviews ?? [];
       let grandSlamInterviewArchive = state.grandSlamInterviews ?? [];
       let breakingWaveEvents     = [];
+      let nextCircuitShockState  = state.circuitShock;
       if (state.sponsorPool) {
         const gsWinnerId = tournament?.category === 'GRAND_SLAM'
           ? bracket?.champion?.id ?? null : null;
@@ -3401,6 +4233,12 @@ function reducer(state, action) {
 
       const nextCalendarIndex = state.calendarIndex + 1;
       const nextTournament = CALENDAR[nextCalendarIndex] ?? null;
+      tournamentDebugLog('reducer:next-tournament:start', {
+        tournamentId,
+        nextCalendarIndex,
+        nextTournamentId: nextTournament?.id ?? null,
+        nextTournamentName: nextTournament?.name ?? null,
+      });
       if (nextTournament) {
         const breakingWave = maybeTriggerBreakingNews(
           postMonitorTourPlayers,
@@ -3410,6 +4248,7 @@ function reducer(state, action) {
         );
         postMonitorTourPlayers = breakingWave.players ?? postMonitorTourPlayers;
         breakingWaveEvents = breakingWave.events ?? [];
+        nextCircuitShockState = breakingWave.directorState ?? nextCircuitShockState;
       }
       postMonitorTourPlayers = updateCareerMemoriesForTournament(postMonitorTourPlayers, {
         tournament,
@@ -3425,14 +4264,26 @@ function reducer(state, action) {
         previousPlayers: state.prospects,
         rivalrySystem: state.rivalrySystem ?? null,
       });
+      const shouldPrepareNextPackage = shouldPrebuildTournamentPackage(nextTournament);
+      const playerSeasonSlotsAfterCurrent = result.playerSeasonSlotsAfterSelection ?? state.playerSeasonSlots ?? {};
       const shouldReusePairedPackage = !!(
         nextTournament &&
+        shouldPrepareNextPackage &&
         isParallelWeekATPEvent(nextTournament) &&
         state.preparedTournamentPackageCache?.[nextTournament.id] &&
+        state.preparedTournamentPackageCache?.[nextTournament.id]?.radarFollowSignature === radarFollowSignature(state.radar?.followedPlayerIds) &&
         tournament?.parallelGroup &&
         nextTournament.parallelGroup === tournament.parallelGroup
       );
-      const nextPreparedBundle = nextTournament
+      if (nextTournament && !shouldPrepareNextPackage) {
+        tournamentDebugLog('reducer:next-package:skipped', {
+          tournamentId,
+          nextTournamentId: nextTournament.id,
+          nextTournamentName: nextTournament.name,
+          category: nextTournament.category,
+        });
+      }
+      const nextPreparedBundle = nextTournament && shouldPrepareNextPackage
         ? (
             shouldReusePairedPackage
               ? {
@@ -3443,12 +4294,22 @@ function reducer(state, action) {
                   nextTournament,
                   postMonitorTourPlayers,
                   postMonitorJuniors,
-                  state.playerSeasonSlots ?? {},
+                  playerSeasonSlotsAfterCurrent,
                   state.year,
+                  {
+                    followedPlayerIds: state.radar?.followedPlayerIds ?? [],
+                    rivalrySystem: state.rivalrySystem ?? null,
+                  },
                 )
           )
         : { currentPackage: null, packageCache: {} };
       const nextPreparedTournamentPackage = nextPreparedBundle.currentPackage;
+      tournamentDebugLog('reducer:next-package:done', {
+        tournamentId,
+        nextTournamentId: nextTournament?.id ?? null,
+        hasPackage: !!nextPreparedTournamentPackage,
+        cacheSize: Object.keys(nextPreparedBundle.packageCache ?? {}).length,
+      });
       const seasonPulseResult = runSeasonPulse({
         ...state,
         sponsorPool: postMonitorPool,
@@ -3458,7 +4319,7 @@ function reducer(state, action) {
         prospects: postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors,
         tournamentResults: {
           ...state.tournamentResults,
-          [tournamentId]: newResult,
+          [tournamentId]: storedResult,
         },
         calendarIndex: nextCalendarIndex,
       }, {
@@ -3468,6 +4329,79 @@ function reducer(state, action) {
         year: state.year,
         weekIndex: tournament?.weekIndex ?? state.calendarIndex,
       });
+      // O aniversário é uma mudança civil, não um efeito de fechamento anual.
+      // Sincronizamos todos antes dos pulsos de vida, equipe e mercado.
+      postMonitorTourPlayers = postMonitorTourPlayers.map(player =>
+        ensurePlayerBirthDate(player, seasonPulseResult.timing?.date, state.year)
+      );
+      postMonitorJuniors = postMonitorJuniors.map(player =>
+        ensurePlayerBirthDate(player, seasonPulseResult.timing?.date, state.year)
+      );
+      const hasMonthlyPulse = seasonPulseResult.pulses?.some(
+        pulse => pulse.type === SEASON_PULSE_PHASES.MONTHLY
+      );
+      // Janeiro começa com o reset sazonal. A partir da primeira troca real
+      // de mês, a forma perde 18% do saldo e precisa ser renovada em quadra.
+      const shouldRegressMonthlyForm = hasMonthlyPulse
+        && state.seasonPulseState?.lastMonthIndex != null;
+      if (shouldRegressMonthlyForm) {
+        const regressPlayerForm = (player) => {
+          const before = clampFormPoints(player?.formPoints ?? 0);
+          const after = applyMonthlyFormRegression(before);
+          if (before === after) return player;
+          return {
+            ...player,
+            formPoints: after,
+            formHistory: [
+              ...(player.formHistory ?? []),
+              {
+                round: 'MONTHLY_REGRESSION',
+                label: 'Forma regressa em direção ao nível normal',
+                delta: after - before,
+                tournamentName: 'Ciclo mensal',
+                year: state.year,
+                monthIndex: seasonPulseResult.timing?.monthIndex ?? null,
+              },
+            ].slice(-180),
+          };
+        };
+        postMonitorTourPlayers = postMonitorTourPlayers.map(regressPlayerForm);
+        postMonitorJuniors = postMonitorJuniors.map(regressPlayerForm);
+      }
+      try {
+        const coachPulse = runCoachRelationshipPulse({
+          players: postMonitorTourPlayers,
+          prospects: postMonitorJuniors,
+          coachMarket: postMonitorCoachMarket,
+          year: state.year,
+          context: {
+            tournament,
+            participatedIds,
+            // A timeline pública filtra lesões menores, mas a equipe sente todas elas.
+            injuryIds: new Set(injEventsRaw.map(event => event?.playerId).filter(Boolean)),
+            formDeltaMap,
+            winnerId: bracket?.champion?.id ?? null,
+            monthlyPulse: seasonPulseResult.pulses?.some(pulse => pulse.type === SEASON_PULSE_PHASES.MONTHLY),
+            worldDate: seasonPulseResult.timing?.date,
+            monthIndex: seasonPulseResult.timing?.monthIndex,
+          },
+        });
+        postMonitorTourPlayers = coachPulse.players ?? postMonitorTourPlayers;
+        postMonitorJuniors = coachPulse.prospects ?? postMonitorJuniors;
+        postMonitorCoachMarket = coachPulse.coachMarket ?? postMonitorCoachMarket;
+        if (coachPulse.events?.length) newEvents.push(...coachPulse.events);
+        if (coachPulse.events?.length) {
+          const playerLookup = Object.fromEntries([...postMonitorTourPlayers, ...postMonitorJuniors].map(player => [player.id, player]));
+          const coachArticles = coachPulse.events
+            .filter(event => ['COACH_TOURNAMENT_HIGH', 'COACH_INJURY_TENSION', 'COACH_TOURNAMENT_TENSION'].includes(event.type))
+            .map(event => coachEventToNews(event, playerLookup[event.playerId], postMonitorCoachMarket?.coachesById?.[event.coachId]))
+            .filter(Boolean)
+            .slice(0, 2);
+          if (coachArticles.length) postMonitorNews = [...postMonitorNews, ...coachArticles];
+        }
+      } catch (error) {
+        console.warn('[CoachPulse] erro:', error?.message);
+      }
       if (state.sponsorPool && seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
         try {
           const sponsorPulse = runSponsorshipPulse({
@@ -3476,6 +4410,7 @@ function reducer(state, action) {
             sponsorPool: postMonitorPool,
             seasonPulseState: seasonPulseResult.state.seasonPulseState,
             year: state.year,
+            worldDate: seasonPulseResult.timing?.date,
           }, seasonPulseResult);
           const pulsePlayerMap = Object.fromEntries((sponsorPulse.state.players ?? []).map(p => [p.id, p]));
           postMonitorTourPlayers = postMonitorTourPlayers.map(p => pulsePlayerMap[p.id] ?? p);
@@ -3496,7 +4431,7 @@ function reducer(state, action) {
             state.chronicleEngine._sponsorEvents = [
               ...(state.chronicleEngine._sponsorEvents ?? []),
               ...sponsorPulse.chronicleEvents,
-            ];
+            ].slice(-160);
             if (state.newsEngine) {
               const eliteMilestoneArticles = generateSponsorNewsFromChronicleEvents(
                 sponsorPulse.chronicleEvents,
@@ -3510,6 +4445,7 @@ function reducer(state, action) {
           console.warn('[SponsorshipPulse] erro:', e?.message);
         }
       }
+      let lifeEventsByPlayer = {};
       if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
         try {
           const lifePulse = runLifePulseEvents(
@@ -3522,9 +4458,11 @@ function reducer(state, action) {
               titleWinners: bracket?.champion?.id ? { [bracket.champion.id]: tournament } : {},
               chanceMultiplier: 0.08,
               maxEvents: 1,
+              worldDate: seasonPulseResult.timing?.date,
             }
           );
           const lifePulseMap = Object.fromEntries((lifePulse.players ?? []).map(p => [p.id, p]));
+          lifeEventsByPlayer = Object.fromEntries((lifePulse.results ?? []).map(result => [result.player?.id, result.events ?? []]).filter(([id]) => !!id));
           postMonitorTourPlayers = postMonitorTourPlayers.map(p => lifePulseMap[p.id] ?? p);
           postMonitorJuniors = postMonitorJuniors.map(p => lifePulseMap[p.id] ?? p);
 
@@ -3542,6 +4480,36 @@ function reducer(state, action) {
         }
       }
       if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
+        const lifeSimulation = processMonthlyLifeSimulation(
+          [...postMonitorTourPlayers, ...postMonitorJuniors],
+          seasonPulseResult.timing?.date ?? { year: state.year, month: seasonPulseResult.timing?.monthIndex ?? 1 },
+          lifeEventsByPlayer,
+        );
+        const lifeSimulationMap = Object.fromEntries((lifeSimulation.players ?? []).map(player => [player.id, player]));
+        postMonitorTourPlayers = postMonitorTourPlayers.map(player => lifeSimulationMap[player.id] ?? player);
+        postMonitorJuniors = postMonitorJuniors.map(player => lifeSimulationMap[player.id] ?? player);
+        newEvents.push(...(lifeSimulation.events ?? []));
+        const propertyPulse = processMonthlyPropertyPortfolio(
+          [...postMonitorTourPlayers, ...postMonitorJuniors],
+          seasonPulseResult.timing?.date ?? { year: state.year, month: seasonPulseResult.timing?.monthIndex ?? 1 },
+        );
+        const propertyMap = Object.fromEntries((propertyPulse.players ?? []).map(player => [player.id, player]));
+        postMonitorTourPlayers = postMonitorTourPlayers.map(player => propertyMap[player.id] ?? player);
+        postMonitorJuniors = postMonitorJuniors.map(player => propertyMap[player.id] ?? player);
+        newEvents.push(...(propertyPulse.events ?? []));
+      }
+      if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
+        const retirementPulse = refreshMonthlyRetirementOutlook(
+          [...postMonitorTourPlayers, ...postMonitorJuniors],
+          seasonPulseResult.timing?.date,
+          { ...state.tournamentResults, [tournamentId]: storedResult },
+        );
+        const retirementMap = Object.fromEntries((retirementPulse.players ?? []).map(player => [player.id, player]));
+        postMonitorTourPlayers = postMonitorTourPlayers.map(player => retirementMap[player.id] ?? player);
+        postMonitorJuniors = postMonitorJuniors.map(player => retirementMap[player.id] ?? player);
+        newEvents.push(...(retirementPulse.events ?? []));
+      }
+      if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
         try {
           const championId = bracket?.champion?.id ?? null;
           const pulseTitleWinners = championId
@@ -3550,11 +4518,11 @@ function reducer(state, action) {
           const devBeforePlayers = [...postMonitorTourPlayers, ...postMonitorJuniors];
           const devPulse = advanceSeason(
             devBeforePlayers,
-            state.year + ((seasonPulseResult.timing?.monthIndex ?? 1) - 1) / 12,
+            seasonPulseResult.timing?.date ?? { year: state.year, month: seasonPulseResult.timing?.monthIndex ?? 1 },
             1,
             pulseTitleWinners,
             {},
-            state.coachPool ?? [],
+            { recordSeasonLedger: false },
           );
           const devLedgerPlayers = applyRTDDevelopmentLedger(
             devBeforePlayers,
@@ -3574,6 +4542,17 @@ function reducer(state, action) {
         } catch (e) {
           console.warn('[DevelopmentPulse] erro:', e?.message);
         }
+      }
+      if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
+        const hypePulse = processMonthlyHype(
+          [...postMonitorTourPlayers, ...postMonitorJuniors],
+          seasonPulseResult.timing?.date ?? { year: state.year, month: seasonPulseResult.timing?.monthIndex ?? 1 },
+          { winnerId: bracket?.champion?.id ?? null, formDeltaMap, tournamentCategory: tournament?.category },
+        );
+        const hypeMap = Object.fromEntries((hypePulse.players ?? []).map(player => [player.id, player]));
+        postMonitorTourPlayers = postMonitorTourPlayers.map(player => hypeMap[player.id] ?? player);
+        postMonitorJuniors = postMonitorJuniors.map(player => hypeMap[player.id] ?? player);
+        newEvents.push(...(hypePulse.events ?? []));
       }
       if (seasonPulseResult.pulses?.some(p => p.type === SEASON_PULSE_PHASES.MONTHLY)) {
         const monthIndex = seasonPulseResult.timing?.monthIndex ?? 1;
@@ -3633,7 +4612,7 @@ function reducer(state, action) {
             prospects: postMonitorJuniors,
             tournamentResults: {
               ...state.tournamentResults,
-              [tournamentId]: newResult,
+              [tournamentId]: storedResult,
             },
             grandSlamInterviews: grandSlamInterviewArchive,
           }, tournament, champion, newResult);
@@ -3656,14 +4635,37 @@ function reducer(state, action) {
         }
       }
 
+      // Um veredito confirmado repercute nos contratos. Investigação não é
+      // condenação: CLEARED/INCONCLUSIVE nunca acionam rompimento comercial.
+      for (const shockEvent of [...breakingResolvedEvents, ...breakingWaveEvents]) {
+        if (!(shockEvent.sponsorSeverity > 0) || !postMonitorPool) continue;
+        const accused = postMonitorTourPlayers.find(p => p.id === shockEvent.playerId);
+        if (!accused) continue;
+        try {
+          const scandalResult = handleScandal({
+            ...state,
+            sponsorPool: postMonitorPool,
+            tourPlayers: postMonitorTourPlayers,
+            prospects: postMonitorJuniors,
+          }, accused, shockEvent.sponsorSeverity);
+          postMonitorPool = scandalResult.state.sponsorPool;
+          postMonitorTourPlayers = scandalResult.state.tourPlayers ?? postMonitorTourPlayers;
+          postMonitorJuniors = scandalResult.state.prospects ?? postMonitorJuniors;
+          postMonitorNews.push(...(scandalResult.news ?? []));
+        } catch (e) {
+          console.warn('[CircuitShock:Sponsors] erro:', e?.message);
+        }
+      }
+
       const postStateView = {
         ...state,
+        worldDate: seasonPulseResult.timing?.date ?? state.worldDate ?? createWorldDate(state.year, 1),
         nextTournament,
         tourPlayers: postMonitorTourPlayers,
         prospects: postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors,
         tournamentResults: {
           ...state.tournamentResults,
-          [tournamentId]: newResult,
+          [tournamentId]: storedResult,
         },
       };
       let badgeNewsArticles = [];
@@ -3697,10 +4699,32 @@ function reducer(state, action) {
         console.warn('[BadgeSystem] erro ao gerar noticias:', e?.message);
       }
       const breakingEvents = [...breakingResolvedEvents, ...breakingWaveEvents].map(e => ({ ...e, year: e.year ?? state.year }));
-      const postNewsArticles = generateTournamentNews(tournament, bracket, postStateView, result).slice(0, 6);
+      const postNewsArticles = isJuniors
+        ? generateYouthCircuitCoverage({
+          tournament,
+          bracket,
+          prospects: postStateView.prospects,
+          year: state.year,
+        })
+        : generateTournamentNews(tournament, bracket, postStateView, result).slice(0, 6);
+      tournamentDebugLog('reducer:news:post-generated', {
+        tournamentId,
+        postNews: postNewsArticles.length,
+      });
       const previewNewsArticles = nextTournament && nextPreparedTournamentPackage
-        ? generateUpcomingTournamentNews(nextTournament, nextPreparedTournamentPackage, postStateView, { seasonStart: false }).slice(0, 2)
+        ? (isJuniorTournament(nextTournament)
+          ? generateYouthCircuitPreview({
+            tournament: nextTournament,
+            preparedPackage: nextPreparedTournamentPackage,
+            prospects: postStateView.prospects,
+            year: state.year,
+          })
+          : generateUpcomingTournamentNews(nextTournament, nextPreparedTournamentPackage, postStateView, { seasonStart: false }).slice(0, 2))
         : [];
+      tournamentDebugLog('reducer:news:preview-generated', {
+        tournamentId,
+        previewNews: previewNewsArticles.length,
+      });
       const breakingNewsArticles = generateBreakingNewsArticles(breakingEvents, postMonitorTourPlayers, state.year);
       const breakingFollowupArticles = generateBreakingTournamentFollowups(
         tournament,
@@ -3708,7 +4732,7 @@ function reducer(state, action) {
         postStateView,
       );
       const relationalArticles = [
-        ...postNewsArticles,
+        ...postNewsArticles.filter(article => !article.isYouthCircuitCoverage),
         ...breakingFollowupArticles,
         ...breakingNewsArticles,
       ];
@@ -3728,25 +4752,93 @@ function reducer(state, action) {
         if (breakingNewsArticles.length > 0) state.newsEngine.append(breakingNewsArticles);
       }
 
+      // A edição pós-torneio usa a mudança real de ranking, pressão, rivalidade
+      // e resultados desta chave; ela também sobrevive no save como memória curta.
+      const circuitShift = buildCircuitShift({
+        tournament,
+        bracket,
+        beforePlayers: state.tourPlayers,
+        afterPlayers: relationalTourPlayers,
+        nextTournament,
+        rivalrySystem: state.rivalrySystem ?? null,
+        articles: relationalArticles,
+        year: state.year,
+      });
+
+      tournamentDebugLog('reducer:apply:return-state', {
+        tournamentId,
+        nextCalendarIndex,
+        calendarAdvancedTo: nextTournament?.name ?? null,
+        tourPlayers: relationalTourPlayers.length,
+        prospects: (postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors).length,
+      });
+
       return {
         ...state,
+        worldDate: seasonPulseResult.timing?.date ?? state.worldDate ?? createWorldDate(state.year, 1),
         sponsorPool: postMonitorPool,
+        coachMarket: postMonitorCoachMarket,
         rankingStore: newStore,
         recordsStore: updatedRecordsStore,
         tourPlayers: relationalTourPlayers,
         prospects: postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors,
+        playerSeasonSlots: playerSeasonSlotsAfterCurrent,
         preparedTournamentPackage: nextPreparedTournamentPackage,
         preparedTournamentPackageCache: nextPreparedBundle.packageCache,
         tournamentResults: {
           ...state.tournamentResults,
-          [tournamentId]: newResult,
+          [tournamentId]: storedResult,
         },
         historicalTournamentResults: state.historicalTournamentResults ?? {},
-        events: [...state.events, ...newEvents, ...breakingEvents, ...pulseDevEvents],
+        circuitShifts: circuitShift
+          ? [...(state.circuitShifts ?? []).filter(shift => shift?.id !== circuitShift.id), circuitShift].slice(-120)
+          : (state.circuitShifts ?? []),
+        latestCircuitShift: circuitShift ?? state.latestCircuitShift ?? null,
+        circuitShock: nextCircuitShockState,
+        events: [...state.events, ...newEvents, ...breakingEvents, ...pulseDevEvents].slice(-1200),
         calendarIndex: nextCalendarIndex,
         seasonPulseState: seasonPulseResult.state.seasonPulseState,
         monthlyInterviews: monthlyInterviewArchive,
         grandSlamInterviews: grandSlamInterviewArchive,
+        radar: (() => {
+          const radar = state.radar ?? createRadarState();
+          const matchLog = [...(radar.matchLog ?? []), ...radarMatches].slice(-240);
+          const digest = buildRadarDigest({
+            followedPlayerIds: radar.followedPlayerIds ?? [],
+            players: [...relationalTourPlayers, ...(postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors)],
+            matchLog,
+            tournament,
+            year: state.year,
+            outcomes: pointMap,
+          });
+          const rawRadarAlerts = radarMatches.flatMap((match) => buildRadarAlerts(match, radar.followedPlayerIds ?? []));
+          const visibleRadarAlerts = radar.settings?.showMatchAlerts === false
+            ? []
+            : (radar.settings?.showMajorOnly ?? true)
+              ? rawRadarAlerts.filter((alert) => alert.weight >= 76)
+              : rawRadarAlerts;
+          const timelineEntries = buildRadarRankingTimeline({
+            followedPlayerIds: radar.followedPlayerIds ?? [],
+            tournament,
+            outcomes: pointMap,
+            beforePlayers: [...state.tourPlayers, ...(state.prospects ?? [])],
+            afterPlayers: [...relationalTourPlayers, ...(postMonitorJuniors.length ? postMonitorJuniors : updatedJuniors)],
+            year: state.year,
+          });
+          const rankTimeline = { ...(radar.rankTimeline ?? {}) };
+          for (const entry of timelineEntries) {
+            rankTimeline[entry.playerId] = [...(rankTimeline[entry.playerId] ?? []).filter((row) => row.id !== entry.id), entry].slice(-20);
+          }
+          return {
+            ...radar,
+            matchLog,
+            rankTimeline,
+            weeklyDigest: digest ? [...(radar.weeklyDigest ?? []), digest].slice(-80) : (radar.weeklyDigest ?? []),
+            alerts: radarMatches.length
+              ? [...(radar.alerts ?? []), ...visibleRadarAlerts].slice(-120)
+              : (radar.alerts ?? []),
+          };
+        })(),
       };
     }
 
@@ -3771,11 +4863,9 @@ function reducer(state, action) {
       const nextYear = state.year + 1;
       const agedJuniorsBase = (state.prospects ?? []).map((p, idx) => markAsJunior({
         ...p,
-        age: (p.age ?? O_OUTRO_MUNDO.JUNIOR_AGE_MAX) + 1,
-        birthYear: p.birthYear ?? (nextYear - ((p.age ?? O_OUTRO_MUNDO.JUNIOR_AGE_MAX) + 1)),
         rankPosition: p.rankPosition ?? (idx + 1),
         _ovrSeed: p._ovrSeed ?? overallRating(p.attrs),
-      }, nextYear));
+      }, nextYear)).map(p => ensurePlayerBirthDate(p, { year: nextYear, month: 1 }, nextYear));
 
       // -- 1. DESENVOLVIMENTO (atributos, decl—nio, alcunhas) ----
       // Mapeia category do calend—rio ? titleType do DevelopmentSystem
@@ -3852,7 +4942,7 @@ function reducer(state, action) {
         // Suporta tanto formato completo (bracket) quanto slim (res._slim)
         if (!bracket && !res?._slim) continue;
         const cat       = tournament?.category ?? '';
-        const surface   = tournament?.surface  ?? null;  // 'CLAY'|'GRASS'|'HARD'|'INDOOR'
+        const surface   = tournament?.surface  ?? null;  // 'CLAY'|'GRASS'|'HARD'|'STREET'|'CARPET'|'INDOOR'
         const isGS      = cat === 'GRAND_SLAM';
         const isMasters = cat === 'MASTERS_1000';
         const isIndoor  = surface === 'INDOOR';
@@ -3966,7 +5056,19 @@ function reducer(state, action) {
         }
       }
 
-      const { updatedPlayers: updatedTour, events: tourDevEvents } = advanceSeason(state.tourPlayers, state.year, 0, titleWinners, seasonMetrics, state.coachPool ?? []);
+      // Carga real de calendário: os slots já são atualizados quando a entrada
+      // é confirmada. Ela vira métrica anual para a trajetória, sem inferir
+      // participação por ranking ou por narrativa.
+      for (const [playerId, slots] of Object.entries(state.playerSeasonSlots ?? {})) {
+        const tournamentsPlayed = new Set(slots?.enrolledTournaments ?? []).size;
+        const activeWeeks = new Set(slots?.enrolledWeeks ?? []).size;
+        if (tournamentsPlayed === 0 && activeWeeks === 0) continue;
+        seasonMetrics[playerId] = seasonMetrics[playerId] ?? {};
+        seasonMetrics[playerId].tournamentsPlayed = tournamentsPlayed;
+        seasonMetrics[playerId].activeWeeks = activeWeeks;
+      }
+
+      const { updatedPlayers: updatedTour, events: tourDevEvents } = advanceSeason(state.tourPlayers, state.year, 0, titleWinners, seasonMetrics);
       const updatedJuniorsRaw = [];
       const prospDevEvents = [];
 
@@ -3983,6 +5085,14 @@ function reducer(state, action) {
       const styleMigEvents = [...(tourDevEvents ?? []), ...(prospDevEvents ?? [])]
         .filter(e => e.type === 'STYLE_MIGRATION')
         .map(e => ({ ...e, year: state.year }));
+      const trajectoryEvents = [...(tourDevEvents ?? []), ...(prospDevEvents ?? [])]
+        .filter(e => String(e.type ?? '').startsWith('CAREER_'))
+        .map(e => ({
+          ...e,
+          year: state.year,
+          text: e.text ?? `${e.player ?? 'Jogador'}: ${e.note ?? e.label ?? 'mudança de trajetória registrada.'}`,
+          icon: e.type === 'CAREER_OUTLOOK_CHANGED' ? '[traj]' : '[traj*]',
+        }));
 
       // -- Personalidade pr—-aquecimento para o sistema de patroc—nio ------
       // processPersonalityEvolution roda mais tarde (linha ~2068, precisa de finalTourPlayers).
@@ -4015,7 +5125,10 @@ function reducer(state, action) {
           _sponsorResult = runSponsorshipWindow({
             ...state,
             players: [...updatedTour],
-            year: state.year,
+            // A janela roda na abertura da nova temporada; assinatura e
+            // memória comercial precisam pertencer ao novo ano civil.
+            year: nextYear,
+            worldDate: createWorldDate(nextYear, 1),
           }, { includeTransferWindow: false });
           const _spMap = Object.fromEntries(
             (_sponsorResult.state.players ?? []).map(p => [p.id, p])
@@ -4040,7 +5153,7 @@ function reducer(state, action) {
             state.chronicleEngine._sponsorEvents = [
               ...(state.chronicleEngine._sponsorEvents ?? []),
               ..._sponsorResult.chronicleEvents,
-            ];
+            ].slice(-160);
             // FASE 2: chronicle events ELITE ? artigos no NewsEngine
             // (signings e terminations normais j— geram artigos via _buildSigningArticle;
             //  aqui cobrimos os milestones de carreira que s— existiam no chronicle)
@@ -4128,129 +5241,71 @@ function reducer(state, action) {
       const {
         promoted: promotedJuniors,
         agedOut: agedOutJuniors,
+        droppedOut: droppedOutJuniors,
         finalJuniors,
+        competitiveDensity: densityAfterJuniors,
       } = buildJuniorSeasonTransition({
         prospects: state.prospects ?? [],
         vacancies: tourVacancies,
         seasonYear: nextYear,
         poolOpts: newgenPoolOpts,
+        cohortUniverse: state.youthCohortUniverse,
+        competitiveDensity: state.competitiveDensity,
+        densityRoster: activePlayers,
       });
 
       const proNewgenCount = Math.max(0, tourVacancies - promotedJuniors.length);
-      const newTourEntrants = Array.from({ length: proNewgenCount }, () =>
-        generateNewgen(nextYear, { ageRange: [16, 23], ...newgenPoolOpts })
-      ).map(p => {
-        let np = migrateTournamentPreferences({ ...p });
+      let nextCompetitiveDensity = densityAfterJuniors;
+      const newTourEntrants = [];
+      for (let entrantIndex = 0; entrantIndex < proNewgenCount; entrantIndex += 1) {
+        const directive = nextCompetitiveDensity?.pendingDirectives?.[0] ?? null;
+        const blueprint = getCohortMaterializationBlueprint(state.youthCohortUniverse, nextYear, `pro-${entrantIndex}`, directive);
+        const entrantOptions = {
+          ageRange: blueprint.ageRange ? [Math.max(17, blueprint.ageRange[0]), Math.max(19, blueprint.ageRange[1])] : [17, 23],
+          nationality: blueprint.nationality,
+          forcePotential: blueprint.potential,
+          forceDevelopmentStyle: blueprint.developmentStyle,
+          ...newgenPoolOpts,
+        };
+        let np = generateNewgen(nextYear, entrantOptions);
+        newgenPoolOpts._poolState = entrantOptions._poolState;
+        np = materializeAlternativePathway(migrateTournamentPreferences({ ...np }), nextYear, { cohortUniverse: state.youthCohortUniverse, blueprint });
+        if (directive) {
+          const consumed = consumeCompetitiveDirective(nextCompetitiveDensity, np, nextYear);
+          nextCompetitiveDensity = consumed.state;
+          np = consumed.player;
+        }
         np = migrateLifeEventLog(np);
         np = migratePlayerLifeData(np);
-        return initPlayerFinance(np);
-      });
+        newTourEntrants.push(initPlayerFinance(np));
+      }
       const updatedImagePool = newgenPoolOpts._poolState;
 
       // -- 4. MONTAR ARRAYS FINAIS -------------------------------
       const finalTourPlayers = [...new Map(
         [...activePlayers, ...promotedJuniors, ...newTourEntrants].map(p => [p.id, p])
       ).values()].slice(0, UNIVERSE_TOUR_TARGET);
-      const allRetired = [...newlyRetired, ...agedOutJuniors];
+      const allRetired = [...newlyRetired, ...agedOutJuniors, ...droppedOutJuniors];
 
-      // -- COACHING: processCoachContracts ----------------------
       const prevRankMap = Object.fromEntries(
         state.tourPlayers.map(p => [p.id, p.rankPosition ?? 999])
       );
-      const allForContracts = finalTourPlayers;
-
-      // -- COACHING (Bloco B): Envelhecimento e aposentadoria de coaches --
-      // Envelhece todos os coaches e sorteia aposentadorias ANTES de
-      // processCoachContracts, para que pupilos liberados sejam reassigned nesta
-      // mesma passagem.
-      const {
-        pool:           poolAfterAging,
-        retiredCoaches: coachesRetiredThisSeason,
-        freedPupilIds:  coachRetirementFreedIds,
-      } = ageCoachPool(
-        state.coachPool ?? [],
-        state.year,
-        allForContracts,
-        titleWinners,
-      );
-
-      // Marca jogadores que perderam t—cnico por aposentadoria como coachless
-      const freedIdSet = new Set(coachRetirementFreedIds);
-      const allForContractsAfterAging = freedIdSet.size > 0
-        ? allForContracts.map(p => freedIdSet.has(p.id) ? { ...p, coach: null } : p)
-        : allForContracts;
-
-      // Gera not—cias de aposentadoria de coaches
-      // — tamb—m envia ao newsEngine como artigos completos
-      const coachRetirementArticles = coachesRetiredThisSeason.map(coach => {
-        const lastPupil = coach.currentPupilId
-          ? allForContracts.find(p => p.id === coach.currentPupilId) ?? null
-          : null;
-        const retType = getCoachRetirementType(coach);
-        return genCoachRetirement({ coach, lastPupil, retirementType: retType, year: state.year });
-      });
-      // Normaliza para o shape da timeline (text + icon) e marca como sem tournamentId
-      const coachRetirementNews = coachRetirementArticles.map(art => ({
-        type:       'retirement',
-        text:       art.headline,
-        year:       art.year ?? state.year,
-        icon:       '??',
-        playerId:   art.coach?.id ?? null,
-        playerName: art.coach?.name ?? null,
-        isCoach:    true,
-        _article:   art,   // artigo completo disponível para views que queiram mais detalhe
-      }));
-
-      const {
-        players: allAfterContracts,
-        coachPool: poolAfterContracts,
-        events: contractEvents,
-      } = processCoachContracts(
-        allForContractsAfterAging,
-        poolAfterAging,
-        state.year,
-        prevRankMap,
-        titleWinners,
-      );
-
-      // Re-separa tour e prospects após contratos
-      const allAfterMap = Object.fromEntries(allAfterContracts.map(p => [p.id, p]));
-      const tourAfterContracts      = finalTourPlayers.map(p => allAfterMap[p.id] ?? p);
-      const prospectsAfterContracts = finalJuniors;
-
-      // -- COACHING: initPartnership para jogadores que ganharam novo t—cnico --
-      // Qualquer jogador que mudou de t—cnico (contratEvents.COACH_HIRED) precisa
-      // de bond/goal inicializados para a nova parceria.
-      const coachMapForInit = Object.fromEntries(poolAfterContracts.map(c => [c.id, c]));
-      const allAfterInit = allAfterContracts.map(p => {
-        if (!p.coach) return p;
-        if (p.coach.bondScore !== undefined) return p;   // j— inicializado
-        const coach = coachMapForInit[p.coach.coachId];
-        return coach ? initPartnership(p, coach, state.year) : p;
-      });
-
-      // -- PARTNERSHIP: avalia metas, atualiza bonds, marcos e gera novas metas --
-      const {
-        players:   allAfterPartnership,
-        coachPool: poolAfterPartnership,
-        events:    partnershipEvents,
-      } = processAllPartnerships(
-        allAfterInit,
-        poolAfterContracts,
-        state.year,
+      const coachYearResult = runCoachMarketYear({
+        players: finalTourPlayers.map(stripOldCoachButKeepBancoVivo),
+        prospects: finalJuniors.map(stripOldCoachButKeepBancoVivo),
+        retiredPlayers: allRetired,
+        coachMarket: state.coachMarket,
+        year: state.year,
         seasonMetrics,
-        titleWinners,
         prevRankMap,
-      );
-
-      // Re-separa após parcerias
-      const allPartnerMap = Object.fromEntries(allAfterPartnership.map(p => [p.id, p]));
-      const tourAfterPartnership      = tourAfterContracts.map(p => allPartnerMap[p.id] ?? p);
-      const prospectsAfterPartnership = prospectsAfterContracts;
+      });
+      const tourWithoutCoaches = coachYearResult.players;
+      const prospectsWithoutCoaches = coachYearResult.prospects;
+      const coachYearEvents = coachYearResult.events ?? [];
 
       // -- 7. RANKINGS -------------------------------------------
       const ranked = computeRanking(newStore, finalTourPlayers.map(p => p.id));
-      const prospectRanked = computeProspectRanking(newStore, prospectsAfterPartnership.map(p => p.id));
+      const prospectRanked = computeProspectRanking(newStore, prospectsWithoutCoaches.map(p => p.id));
       const rankMap = Object.fromEntries(ranked.map(r => [r.playerId, r.position]));
       const prospectRankMap = Object.fromEntries(prospectRanked.map(r => [r.playerId, r.position]));
 
@@ -4258,8 +5313,8 @@ function reducer(state, action) {
       // Roda após rankMap calculado e após _seasonHistory atualizado.
       // Processa tour + prospects em um —nico passo.
       const allAfterPersonality = [
-        ...tourAfterPartnership,
-        ...prospectsAfterPartnership,
+        ...tourWithoutCoaches,
+        ...prospectsWithoutCoaches,
       ].map(p =>
         processPersonalityEvolution(p, {
           currentRank:   rankMap[p.id] ?? prospectRankMap[p.id] ?? 999,
@@ -4271,8 +5326,8 @@ function reducer(state, action) {
         })
       );
       const _personMap              = Object.fromEntries(allAfterPersonality.map(p => [p.id, p]));
-      const tourAfterPersonality    = tourAfterPartnership.map(p => _personMap[p.id] ?? p);
-      const prospectsAfterPersonality = prospectsAfterPartnership.map(p => _personMap[p.id] ?? p);
+      const tourAfterPersonality    = tourWithoutCoaches.map(p => _personMap[p.id] ?? p);
+      const prospectsAfterPersonality = prospectsWithoutCoaches.map(p => _personMap[p.id] ?? p);
 
       // -- 7.6 LIFE EVENTS --------------------------------------
       // Rola eventos de vida fora da quadra para cada jogador.
@@ -4315,6 +5370,15 @@ function reducer(state, action) {
             .filter(Boolean);
           if (lifeArticles.length > 0) state.newsEngine.append(lifeArticles);
         }
+      }
+
+      if (state.newsEngine && coachYearEvents.length > 0) {
+        const playerLookup = Object.fromEntries([...tourWithoutCoaches, ...prospectsWithoutCoaches].map(p => [p.id, p]));
+        const coachArticles = coachYearEvents
+          .filter(e => ['COACH_START', 'COACH_RUPTURE', 'COACH_ERA', 'COACH_BREAKTHROUGH', 'COACH_SLAM', 'COACH_TENSION', 'COACH_RENEWAL', 'COACH_CONTRACT_END'].includes(e.type))
+          .map(e => coachEventToNews(e, playerLookup[e.playerId], coachYearResult.coachMarket?.coachesById?.[e.coachId]))
+          .filter(Boolean);
+        if (coachArticles.length > 0) state.newsEngine.append(coachArticles);
       }
 
       // -- 7.8 TRAITS 2.0: progressão viva de temporada -------------------
@@ -4372,30 +5436,17 @@ function reducer(state, action) {
         ...(traitSeasonPass.events ?? []),
         ...promoEvents,
         ...agedOutEvents,
+        ...coachYearEvents.map(e => ({
+          ...e,
+          year: e.year ?? state.year,
+          icon: e.type === 'COACH_RUPTURE' ? '[t-]' : e.type === 'COACH_ERA' ? '[era]' : '[t+]',
+        })),
         // aged-out s— entra na timeline se o jogador era top-8 prospects
         // agedOutEvents removed
         // Migra——es de estilo por decl—nio f—sico
         ...styleMigEvents,
-        // Marcos e eventos de parceria t—cnico-jogador
-        ...partnershipEvents.filter(Boolean),
-        // Trocas de t—cnico relevantes (contrata——es tamb—m)
-        // Sintetiza text com nomes de jogador/t—cnico para NoticiasView
-        ...(contractEvents ?? []).filter(e =>
-          e.type === 'COACH_FIRED' || e.type === 'COACH_RENEWED' || e.type === 'COACH_HIRED'
-        ).map(e => {
-          const player = allAfterContracts.find(p => p.id === e.playerId);
-          const coach  = poolAfterContracts.find(c => c.id === e.coachId);
-          const pName  = player?.name ?? `Jogador ${e.playerId}`;
-          const cName  = coach?.name ?? coach?.fullName ?? `T—cnico ${e.coachId}`;
-          const text = e.type === 'COACH_HIRED'
-            ? `${pName} contrata ${cName} como novo t—cnico`
-            : e.type === 'COACH_FIRED'
-            ? `${pName} dispensa t—cnico ${cName}`
-            : `${pName} renova contrato com t—cnico ${cName}`;
-          return { ...e, text, year: state.year };
-        }),
-        // Aposentadorias de t—cnicos (Bloco B)
-        ...coachRetirementNews,
+        // Viradas de trajetória: causas e leitura da próxima fase
+        ...trajectoryEvents,
       ];
 
       // -- 9. RESUMO DE TEMPORADA (para modal) ------------------
@@ -4526,6 +5577,9 @@ function reducer(state, action) {
           juniorSeason: buildJuniorPromotionSnapshot(player, state.tournamentResults ?? {}, state.year),
         }));
 
+      const allRetiredForHof = [...(state.retiredPlayers ?? []), ...retiredAfterTraits]
+        .filter((p, i, arr) => p?.id && arr.findIndex(x => x?.id === p.id) === i);
+
       const yearSummary = {
         year: state.year,
         topGainers,
@@ -4545,7 +5599,7 @@ function reducer(state, action) {
               year: nextYear,
               tourPlayers: finalTourPlayers,
               prospects: finalJuniors,
-              retiredPlayers: retiredAfterTraits,
+              retiredPlayers: allRetiredForHof,
               tournamentResults: state.tournamentResults,
               historicalTournamentResults: state.historicalTournamentResults ?? {},
             };
@@ -4574,6 +5628,12 @@ function reducer(state, action) {
           }
         })(),
       };
+      yearSummary.radarYearbook = buildRadarSeasonRecap({
+        year: state.year,
+        followedPlayerIds: state.radar?.followedPlayerIds ?? [],
+        players: [...(state.tourPlayers ?? []), ...(state.prospects ?? []), ...(state.retiredPlayers ?? [])],
+        matchLog: state.radar?.matchLog ?? [],
+      });
 
       // Jogadores com rankPosition atualizado para o novo ano
       // Usa tourAfterTraits/prospectsAfterTraits (já com personalidade, life events e traits evoluídos)
@@ -4634,36 +5694,23 @@ function reducer(state, action) {
         updatedJuniors,
         newSeasonSlots,
         nextYear,
+        {
+          followedPlayerIds: state.radar?.followedPlayerIds ?? [],
+          rivalrySystem: state.rivalrySystem ?? null,
+        },
       );
       const seasonOpenPreparedTournamentPackage = seasonOpenPreparedBundle.currentPackage;
 
-      // -- CR—NICAS: gera entrada narrativa do ano antes de avan—ar --
-      if (state.chronicleEngine) {
-        state.chronicleEngine.generateYearEntry(state);
-      }
-
-      // -- COACHING: atualiza reputa——es dos coaches com resultados da temporada --
-      let updatedCoachPool = updateAllCoachReputations(
-        poolAfterPartnership,
-        allAfterPartnership,
-        titleWinners,
-        prevRankMap,
-      );
-      // Garante m—nimo de 20 coaches livres no pool
-      updatedCoachPool = replenishCoachPool(updatedCoachPool, nextYear, 20);
-
-      // -- COACHING (Fase 3): sincroniza reputationSnapshot nos jogadores ---
-      // Depois de updateAllCoachReputations, a reputa——o dos coaches mudou.
-      // O growthMultiplierForAttr l— player.coach.reputationSnapshot, que foi
-      // salvo no momento da contrata——o e nunca mais atualizado. Corrigimos aqui.
-      const _syncRepSnapshot = (players) => players.map(p => {
-        if (!p.coach?.coachId) return p;
-        const updatedC = updatedCoachPool.find(c => c.id === p.coach.coachId);
-        if (!updatedC) return p;
-        if (updatedC.reputation === (p.coach.reputationSnapshot ?? p.coach.reputation)) return p;
-        return { ...p, coach: { ...p.coach, reputationSnapshot: updatedC.reputation } };
-      });
-      // _syncRepSnapshot — aplicado no return abaixo sobre newTourPlayers e updatedJuniors
+      // -- CR—NICAS + LIVRO DAS ERAS: fecha o retrato factual do ano antes
+      // de avançar. A gravação é idempotente para simulações repetidas.
+      const seasonChronicle = state.chronicleEngine?.generateYearEntry(state) ?? null;
+      const seasonHistorySnapshot = buildAnnualHistorySnapshot(state, seasonChronicle);
+      const historyWithSnapshot = recordAnnualHistorySnapshot(state.historyBook, seasonHistorySnapshot);
+      const historyTrendAnalysis = analyzeHistoryTrends(historyWithSnapshot, state.year);
+      const historyWithTrends = recordHistoryTrendAnalysis(historyWithSnapshot, historyTrendAnalysis);
+      const historyWithEras = processEraSignals(historyWithTrends, historyTrendAnalysis);
+      const historyWithNarrative = writeHistoryNarrative(historyWithEras, historyTrendAnalysis);
+      const nextHistoryBook = calibrateHistoryBook(historyWithNarrative);
 
       // -- Fase 5: encerrar contratos de aposentados ----------------
       if (state.sponsorPool) {
@@ -4686,28 +5733,6 @@ function reducer(state, action) {
         }
       }
 
-      // -- COACHING (Fase 4): Ex-jogadores viram t—cnicos -----------
-      // 1. Para cada aposentado do tour: tenta criar coach RETIRED_PLAYER
-      const newCoachesFromRetired = [];
-      for (const retired of newlyRetired) {
-        const newCoach = tryBecomeCoach(retired, state.year);
-        if (newCoach) newCoachesFromRetired.push(newCoach);
-      }
-      if (newCoachesFromRetired.length > 0) {
-        updatedCoachPool = [...updatedCoachPool, ...newCoachesFromRetired];
-      }
-
-      // 2. Liberar coaches cujo pupilo se aposentou
-      //    (updateAllCoachReputations j— faz isso se pupilo não — encontrado,
-      //     mas essa passagem garante consist—ncia expl—cita para newlyRetired)
-      const retiredIds = new Set(newlyRetired.map(p => p.id));
-      updatedCoachPool = updatedCoachPool.map(c => {
-        if (c.availability === 'CONTRACTED' && retiredIds.has(c.currentPupilId)) {
-          return { ...c, availability: 'FREE', currentPupilId: null };
-        }
-        return c;
-      });
-
       // -- RIVALIDADES: notifica aposentadorias e poda rivalidades velhas --
       if (state.rivalrySystem) {
         for (const p of retiredAfterTraits) {
@@ -4728,11 +5753,27 @@ function reducer(state, action) {
       return {
         ...state,
         year: nextYear,
+        worldDate: createWorldDate(nextYear, 1),
         season: state.season + 1,
         newgenImagePool: updatedImagePool,
+        coachMarket: coachYearResult.coachMarket,
         rankingStore: newStore,
-        tourPlayers:  _syncRepSnapshot(newTourPlayers),
-        prospects:    updatedJuniors,
+        tourPlayers:  newTourPlayers.map(stripOldCoachButKeepBancoVivo),
+        prospects:    updatedJuniors.map(stripOldCoachButKeepBancoVivo),
+        youthExitArchive: [
+          ...(state.youthExitArchive ?? []),
+          ...agedOutJuniors.map(slimifyYouthExit),
+          ...droppedOutJuniors.map(slimifyYouthExit),
+        ].slice(-500),
+        youthCohortUniverse: advanceYouthCohortUniverse(
+          summarizeYouthSurvivalSeason(
+            summarizeYouthCircuitSeason(state.youthCohortUniverse, state.year, state.prospects?.length ?? 0),
+            state.year,
+          ),
+          nextYear,
+          updatedJuniors.length,
+        ),
+        competitiveDensity: nextCompetitiveDensity,
         retiredPlayers: (() => {
           // Slim os novos aposentados + os antigos j— no state
           // Mant—m apenas quem tem potencial HOF (=3 Grand Slams)
@@ -4749,21 +5790,23 @@ function reducer(state, action) {
             if (slim) allSlim[`${tid}_${state.year}`] = slim;
           }
 
-          // 2. Contar GS por jogador
+          // 2. Contar títulos grandes por jogador
           const gsCount = {};
+          const mastersCount = {};
           for (const res of Object.values(allSlim)) {
             const champId = res._slim ? res.champion?.id : res.bracket?.champion?.id;
             const cat = res.tournament?.category;
-            if (champId && cat === 'GRAND_SLAM') {
-              gsCount[champId] = (gsCount[champId] ?? 0) + 1;
-            }
+            if (!champId) continue;
+            if (cat === 'GRAND_SLAM') gsCount[champId] = (gsCount[champId] ?? 0) + 1;
+            if (cat === 'MASTERS_1000') mastersCount[champId] = (mastersCount[champId] ?? 0) + 1;
           }
 
-          // 3. Mesclar antigos + novos; slim e cull
+          // 3. Mesclar antigos + novos. Todo profissional aposentado continua
+          // no arquivo; o perfil slim evita que preservar memoria custe caro.
           const allRetiredMerged = [...(state.retiredPlayers ?? []), ...retiredAfterTraits];
           return allRetiredMerged
             .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i) // dedup
-            .filter(p => (gsCount[p.id] ?? 0) >= 3)   // s— potencial HOF
+            .filter(p => !p.retirementInfo?.isYouthExit && p.retirementInfo?.type !== 'PROSPECT_AGED_OUT')
             .map(p => p._isSlimRetired ? p : slimifyRetiredPlayer(p));
         })(),
         tournamentResults: {},
@@ -4782,9 +5825,22 @@ function reducer(state, action) {
         calendarIndex: 0,
         preparedTournamentPackage: seasonOpenPreparedTournamentPackage,
         preparedTournamentPackageCache: seasonOpenPreparedBundle.packageCache,
-        events: [...state.events, ...yearEvents],
+        // A memoria detalhada recente fica aqui; historia longa e marcos ja
+        // estao nos arquivos de carreira, cronicas, recordes e Livro das Eras.
+        events: compactWorldEventsPreservingMilestones([...state.events, ...yearEvents]),
         yearSummary,
+        radar: (() => {
+          const radar = state.radar ?? createRadarState();
+          return {
+            ...radar,
+            seasonRecaps: yearSummary.radarYearbook
+              ? [...(radar.seasonRecaps ?? []), yearSummary.radarYearbook].slice(-24)
+              : (radar.seasonRecaps ?? []),
+          };
+        })(),
         seasonPulseState: nextSeasonPulseState,
+        circuitShock: seasonOpenBreakingNext.directorState ?? state.circuitShock,
+        historyBook: nextHistoryBook,
         monthlyInterviews: state.monthlyInterviews ?? [],
         grandSlamInterviews: state.grandSlamInterviews ?? [],
         
@@ -4826,14 +5882,8 @@ function reducer(state, action) {
           if (state.newsEngine && nextSeasonPreviewArticles.length > 0) {
             state.newsEngine.append(nextSeasonPreviewArticles);
           }
-          // Aposentadorias de t—cnicos como artigos completos no Jornal
-          if (state.newsEngine && coachRetirementArticles.length > 0) {
-            state.newsEngine.append(coachRetirementArticles);
-          }
           return state.newsEngine;
         })(),
-        // -- Coaching (Fase 2): pool com reputa——es atualizadas ----
-        coachPool: updatedCoachPool,
 
         // -- Sponsorship (Fases 3—5) -------------------------------
         sponsorPool: _sponsorResult?.state?.sponsorPool ?? state.sponsorPool,
@@ -4865,101 +5915,6 @@ function reducer(state, action) {
 
     case 'DISMISS_SUMMARY':
       return { ...state, yearSummary: null };
-
-    // -- COACHING: Fase 2 -----------------------------------------
-    case 'HIRE_COACH': {
-      // action = { playerId, coachId, season }
-      const { playerId, coachId, season: hireSeason } = action;
-      const coach  = (state.coachPool ?? []).find(c => c.id === coachId);
-      const player = [...state.tourPlayers, ...state.prospects].find(p => p.id === playerId);
-      if (!coach || !player) return state;
-
-      // Valida——es
-      if (player.coach)                    return state; // j— tem t—cnico
-      if (coach.availability !== 'FREE')   return state; // não disponível
-
-      const updatedPlayer = {
-        ...player,
-        coach: {
-          coachId:            coach.id,
-          name:               coach.name,
-          fullName:           coach.fullName,
-          philosophy:         coach.philosophy,
-          specialty:          coach.specialty,
-          specialtySurface:   coach.specialtySurface ?? null,
-          startSeason:        hireSeason ?? state.year,
-          reputationSnapshot: coach.reputation, // snapshot para growthMultiplier
-        },
-        coachHistory: player.coachHistory ?? [],
-      };
-      const updatedCoach = {
-        ...coach,
-        availability:   'CONTRACTED',
-        currentPupilId: playerId,
-      };
-
-      const newCoachPool    = (state.coachPool ?? []).map(c => c.id === coachId ? updatedCoach : c);
-      const newTourPlayers  = state.tourPlayers.map(p  => p.id === playerId ? updatedPlayer : p);
-      const newJuniors    = [];
-
-      return { ...state, coachPool: newCoachPool, tourPlayers: newTourPlayers, prospects: newJuniors };
-    }
-
-    case 'FIRE_COACH': {
-      // action = { playerId, coachId, season, reason }
-      const { playerId: fPlayerId, coachId: fCoachId, season: fireSeason, reason = 'VOLUNTARY' } = action;
-      const fCoach  = (state.coachPool ?? []).find(c => c.id === fCoachId);
-      const fPlayer = [...state.tourPlayers, ...state.prospects].find(p => p.id === fPlayerId);
-      if (!fCoach || !fPlayer || !fPlayer.coach) return state;
-
-      const startSeason = fPlayer.coach.startSeason ?? fireSeason;
-
-      const historyEntry = {
-        coachId:          fCoach.id,
-        name:             fCoach.name,
-        fullName:         fCoach.fullName ?? fCoach.name,
-        philosophy:       fCoach.philosophy,
-        specialty:        fCoach.specialty ?? [],
-        specialtySurface: fCoach.specialtySurface ?? null,
-        startSeason,
-        endSeason:        fireSeason ?? state.year,
-        seasons:          (fireSeason ?? state.year) - startSeason,
-        titlesUnder:      (fPlayer._seasonHistory ?? []).filter(h => h.year >= startSeason && h.year <= (fireSeason ?? state.year) && h.titleWon).length,
-        peakRankUnder:    fPlayer.rankPosition ?? 999,
-        dismissalReason:  reason,
-        coachOrigin:      fCoach.origin ?? 'GENERATED',
-        coachRepAtFiring: fCoach.reputation,
-      };
-
-      const fUpdatedPlayer = {
-        ...fPlayer,
-        coach: null,
-        coachHistory: [...(fPlayer.coachHistory ?? []), historyEntry],
-      };
-
-      let newRep = fCoach.reputation;
-      if (reason === 'RESULTS')  newRep = Math.max(0, newRep - 8);
-      if (reason === 'CONFLICT') newRep = Math.max(0, newRep - 5);
-
-      const fUpdatedCoach = {
-        ...fCoach,
-        reputation:     newRep,
-        availability:   'FREE',
-        currentPupilId: null,
-        formerPupils:   [...(fCoach.formerPupils ?? []), {
-          playerId: fPlayerId, playerName: fPlayer.name,
-          startSeason, endSeason: fireSeason ?? state.year,
-          titlesUnder: historyEntry.titlesUnder, peakRankUnder: historyEntry.peakRankUnder,
-          dismissalReason: reason,
-        }],
-      };
-
-      const fNewCoachPool   = (state.coachPool ?? []).map(c => c.id === fCoachId ? fUpdatedCoach : c);
-      const fNewTourPlayers = state.tourPlayers.map(p => p.id === fPlayerId ? fUpdatedPlayer : p);
-      const fNewJuniors   = state.prospects.map(p   => p.id === fPlayerId ? fUpdatedPlayer : p);
-
-      return { ...state, coachPool: fNewCoachPool, tourPlayers: fNewTourPlayers, prospects: fNewJuniors };
-    }
 
     default:
       return state;
@@ -5084,10 +6039,17 @@ function rollTournamentMindset(player, tournament, seasonYear = null) {
 function applyTournamentMindsetToAttrs(attrs = {}, mindset = null) {
   const mult = mindset?.modifier ?? 1;
   if (!attrs || mult === 1) return attrs;
+  const impact = Math.max(-4, Math.min(4, (mult - 1) * 20));
+  return applyCompetitiveAttributeImpact(attrs, impact);
+}
+
+function applyLifeSimulationToAttrs(attrs = {}, player = null) {
+  const life = getLifeMatchModifiers(player);
+  if (!attrs || (!life.mentalidade && !life.regularidade && !life.resistencia)) return attrs;
   const next = { ...attrs };
-  for (const [key, value] of Object.entries(next)) {
-    if (typeof value !== 'number') continue;
-    next[key] = Math.max(1, Math.min(99, Math.round(value * mult)));
+  for (const [key, delta] of Object.entries(life)) {
+    if (key === 'injuryRisk' || typeof next[key] !== 'number' || !delta) continue;
+    next[key] = Math.max(1, Math.min(99, next[key] + delta));
   }
   return next;
 }
@@ -5106,9 +6068,13 @@ function applyTournamentContextModifiers(player, tournamentOrId) {
     : player;
   const afterForm = basePlayer.formPoints ? { ...basePlayer, attrs: applyFormModifier(basePlayer.attrs, basePlayer.formPoints) } : basePlayer;
   const afterBonus = applyTournamentBonus(afterForm, tournamentId);
+  const afterLife = { ...afterBonus, attrs: applyLifeSimulationToAttrs(afterBonus.attrs, basePlayer) };
   return {
-    ...afterBonus,
-    attrs: applyTournamentMindsetToAttrs(afterBonus.attrs, basePlayer.tournamentMindset),
+    ...afterLife,
+    attrs: applyTournamentMindsetToAttrs(afterLife.attrs, basePlayer.tournamentMindset),
+    // FastSimulation também sabe aplicar forma/mindset quando recebe um
+    // jogador cru. Este marcador impede a segunda aplicação no Universo.
+    _matchContextApplied: true,
   };
 }
 
@@ -5166,6 +6132,7 @@ function clonePreparedTournamentPackage(pkg) {
     directEntrants: [...(pkg.directEntrants ?? [])],
     mainDrawPlayers: [...(pkg.mainDrawPlayers ?? [])],
     qualRoundsData: [...(pkg.qualRoundsData ?? [])],
+    radarMatches: [...(pkg.radarMatches ?? [])],
     playerSeasonSlotsAfterSelection: Object.fromEntries(
       Object.entries(pkg.playerSeasonSlotsAfterSelection ?? {}).map(([key, value]) => [key, value ? { ...value } : value])
     ),
@@ -5193,13 +6160,25 @@ function isParallelWeekATPEvent(tournament) {
   );
 }
 
+function shouldPrebuildTournamentPackage(tournament) {
+  if (!tournament) return false;
+  return true;
+}
+
+function getPreparedOpeningStopSize(tournament) {
+  const category = tournament?.category ?? null;
+  if (category === 'ATP_250' || category === 'ATP_500') return 8;
+  if (category === 'MASTERS_1000' || category === 'GRAND_SLAM') return 16;
+  return null;
+}
+
 function isUnavailableForTournamentNow(player) {
   if (!player) return true;
   if (isPlayerUnavailableForTournament(player)) return true;
   return (player.injury?.slotsRemaining ?? 0) > 0;
 }
 
-function buildPreparedTournamentPackageBundle(tournament, tourPlayers, prospects, playerSeasonSlots = {}, seasonYear = null) {
+function buildPreparedTournamentPackageBundle(tournament, tourPlayers, prospects, playerSeasonSlots = {}, seasonYear = null, radarContext = {}) {
   if (!tournament) {
     return {
       currentPackage: null,
@@ -5214,6 +6193,9 @@ function buildPreparedTournamentPackageBundle(tournament, tourPlayers, prospects
       prospects,
       playerSeasonSlots,
       seasonYear,
+      false,
+      null,
+      radarContext,
     );
     return {
       currentPackage: singlePackage,
@@ -5232,18 +6214,49 @@ function buildPreparedTournamentPackageBundle(tournament, tourPlayers, prospects
     });
 
   const packageCache = {};
-  let slotsCursor = playerSeasonSlots;
-  for (const siblingTournament of siblingTournaments) {
-    const siblingPackage = buildPreparedTournamentPackage(
-      siblingTournament,
-      tourPlayers,
-      prospects,
-      slotsCursor,
-      seasonYear,
-      true,
+
+  // Sorteio conjunto: dividir o pool entre os dois torneios de uma vez.
+  // Garante que nenhum jogador apareça nos dois — a divisão é feita antes
+  // de qualquer chamada individual de seleção.
+  if (siblingTournaments.length === 2) {
+    const [tA, tB] = siblingTournaments;
+    const sorted = [...tourPlayers].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+    const sortedProspects = [...prospects].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+
+    const { A: selA, B: selB } = selectParallelPairPlayers(
+      tA, tB, sorted, sortedProspects, new Set(), playerSeasonSlots
     );
-    packageCache[siblingTournament.id] = siblingPackage;
-    slotsCursor = siblingPackage?.playerSeasonSlotsAfterSelection ?? slotsCursor;
+    const reservedAIds = new Set([...(selA.mainDraw ?? []), ...(selA.qualifying ?? []), ...(selA.fillerPool ?? [])].map(player => player.id));
+    const reservedBIds = new Set([...(selB.mainDraw ?? []), ...(selB.qualifying ?? []), ...(selB.fillerPool ?? [])].map(player => player.id));
+    const selAWithSiblingLock = { ...selA, siblingReservedIds: reservedBIds };
+    const selBWithSiblingLock = { ...selB, siblingReservedIds: reservedAIds };
+
+    // Atualizar slots para ambos antes de montar os packages
+    const slotsAfter = { ...playerSeasonSlots };
+    for (const p of [...selA.mainDraw, ...selA.qualifying]) {
+      if (!slotsAfter[p.id]) slotsAfter[p.id] = createSeasonSlots();
+      updateSeasonSlots(slotsAfter[p.id], p, tA);
+    }
+    for (const p of [...selB.mainDraw, ...selB.qualifying]) {
+      if (!slotsAfter[p.id]) slotsAfter[p.id] = createSeasonSlots();
+      updateSeasonSlots(slotsAfter[p.id], p, tB);
+    }
+
+    // Montar packages com os campos já definidos
+    const pkgA = buildPreparedTournamentPackage(tA, tourPlayers, prospects, slotsAfter, seasonYear, false, selAWithSiblingLock, radarContext);
+    const pkgB = buildPreparedTournamentPackage(tB, tourPlayers, prospects, slotsAfter, seasonYear, false, selBWithSiblingLock, radarContext);
+    packageCache[tA.id] = pkgA;
+    packageCache[tB.id] = pkgB;
+  } else {
+    // Fallback para grupos com != 2 torneios (não deveria acontecer no calendário padrão)
+    let slotsCursor = playerSeasonSlots;
+    for (const siblingTournament of siblingTournaments) {
+      const siblingPackage = buildPreparedTournamentPackage(
+        siblingTournament, tourPlayers, prospects, slotsCursor, seasonYear, true, null, radarContext,
+      );
+      packageCache[siblingTournament.id] = siblingPackage;
+      slotsCursor = siblingPackage?.playerSeasonSlotsAfterSelection ?? slotsCursor;
+    }
   }
 
   return {
@@ -5252,32 +6265,319 @@ function buildPreparedTournamentPackageBundle(tournament, tourPlayers, prospects
   };
 }
 
-function createFastPrepareMatchResolver(surface, bestOf, tournament = null) {
-  return (playerA, playerB) => {
-    const simA = applyTournamentContextModifiers(playerA, tournament);
-    const simB = applyTournamentContextModifiers(playerB, tournament);
-    const result = simulateMatchFast(simA, simB, surface, bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null });
+function createFastPrepareMatchResolver(surface, bestOf, tournament = null, radarContext = {}, radarMatches = []) {
+  return (playerA, playerB, matchContext = {}) => {
+    const roundLabel = matchContext.phase === 'pre_qualifying'
+      ? 'Pré-qualifying'
+      : matchContext.phase === 'qualifying'
+        ? 'Qualifying'
+        : matchContext.roundLabel ?? 'Partida';
+    const result = simulateRadarAwareFastMatch(
+      playerA,
+      playerB,
+      surface,
+      bestOf,
+      tournament,
+      roundLabel,
+      radarContext.followedPlayerIds ?? [],
+      radarContext.rivalrySystem ?? null,
+    );
     const winner = result.winner?.id === playerA.id ? playerA : playerB;
+    appendPreparedRadarMatch(radarMatches, playerA, playerB, result, tournament, roundLabel, radarContext.seasonYear ?? matchContext.seasonYear ?? null);
     return { winner, result };
   };
 }
 
-function buildPreparedTournamentPackage(tournament, tourPlayers, prospects, playerSeasonSlots = {}, seasonYear = null, applySeasonSlotTracking = false) {
+function simulatePreparedOpeningRounds(bracket, tournament, surface, bestOf, radarContext = {}, radarMatches = []) {
+  const stopSize = getPreparedOpeningStopSize(tournament);
+  if (!bracket || !stopSize) return bracket;
+
+  let currentBracket = {
+    ...bracket,
+    rounds: (bracket.rounds ?? []).map(round => round.map(match => ({ ...match }))),
+    currentRound: bracket.currentRound ?? 0,
+    isComplete: false,
+    champion: null,
+  };
+  const totalInitialPlayers = currentBracket.rounds?.[0]?.reduce((sum, match) =>
+    sum + (match.playerA ? 1 : 0) + (match.playerB ? 1 : 0), 0) ?? tournament?.draw ?? 0;
+
+  tournamentDebugLog('prepare:opening:start', {
+    tournamentId: tournament?.id,
+    category: tournament?.category,
+    initialPlayers: totalInitialPlayers,
+    stopSize,
+  });
+
+  let guard = 0;
+  while (!currentBracket.isComplete && guard < 12) {
+    guard++;
+    const roundIndex = currentBracket.currentRound ?? 0;
+    const round = currentBracket.rounds?.[roundIndex] ?? [];
+    const playersInRound = round.reduce((sum, match) =>
+      sum + (match.playerA ? 1 : 0) + (match.playerB ? 1 : 0), 0);
+
+    if (playersInRound <= stopSize) break;
+
+    const playedRound = round.map((match) => {
+      if (!match || match.winner || match.isBye || !match.playerA || !match.playerB) return match;
+      const roundLabel = roundIndexToLabel(roundIndex, Math.max(1, currentBracket.rounds?.length ?? 1));
+      const result = simulateRadarAwareFastMatch(
+        match.playerA,
+        match.playerB,
+        surface,
+        bestOf,
+        tournament,
+        roundLabel,
+        radarContext.followedPlayerIds ?? [],
+        radarContext.rivalrySystem ?? null,
+      );
+      const winner = result.winner?.id === match.playerA.id ? match.playerA : match.playerB;
+      appendPreparedRadarMatch(radarMatches, match.playerA, match.playerB, result, tournament, roundLabel, radarContext.seasonYear ?? null);
+      return { ...match, winner, result: slimMatchResult(result), isBye: false };
+    });
+
+    currentBracket = {
+      ...currentBracket,
+      rounds: currentBracket.rounds.map((existingRound, idx) => idx === roundIndex ? playedRound : existingRound),
+    };
+    currentBracket = advanceRound(currentBracket);
+
+    tournamentDebugLog('prepare:opening:round-done', {
+      tournamentId: tournament?.id,
+      roundIndex,
+      playersInRound,
+      nextRound: currentBracket.currentRound,
+      nextPlayers: currentBracket.rounds?.[currentBracket.currentRound]?.reduce((sum, match) =>
+        sum + (match.playerA ? 1 : 0) + (match.playerB ? 1 : 0), 0) ?? 0,
+    });
+  }
+
+  tournamentDebugLog('prepare:opening:done', {
+    tournamentId: tournament?.id,
+    currentRound: currentBracket.currentRound,
+    rounds: currentBracket.rounds?.length ?? 0,
+    isComplete: !!currentBracket.isComplete,
+    guard,
+  });
+
+  return currentBracket;
+}
+
+function runPreparedQualifyingFastLocal(players, spotsToFill, tournament, surface, bestOf, phaseLabel = 'qualifying', radarContext = {}, radarMatches = []) {
+  const active = [...(players ?? [])].filter(Boolean);
+  if (!active.length || spotsToFill <= 0) return { qualifiers: [], bracket: null, qualRoundsData: [] };
+  if (active.length <= spotsToFill) return { qualifiers: active.slice(0, spotsToFill), bracket: null, qualRoundsData: [] };
+
+  let current = active;
+  const rounds = [];
+  const qualRoundsData = [];
+  let roundIndex = 0;
+  let guard = 0;
+
+  while (current.length > spotsToFill && guard < 12) {
+    guard++;
+    const round = [];
+    const next = [];
+    for (let i = 0; i < current.length; i += 2) {
+      const playerA = current[i] ?? null;
+      const playerB = current[i + 1] ?? null;
+      if (!playerB) {
+        round.push({ matchId: `Q${roundIndex}_${i / 2}`, playerA, playerB: null, isBye: true, winner: playerA, result: null });
+        if (playerA) next.push(playerA);
+        continue;
+      }
+      const roundLabel = phaseLabel === 'pre_qualifying' ? 'Pré-qualifying' : phaseLabel === 'qualifying' ? 'Qualifying' : phaseLabel;
+      const result = simulateRadarAwareFastMatch(
+        playerA,
+        playerB,
+        surface,
+        bestOf,
+        tournament,
+        roundLabel,
+        radarContext.followedPlayerIds ?? [],
+        radarContext.rivalrySystem ?? null,
+      );
+      const winner = result.winner?.id === playerA.id ? playerA : playerB;
+      appendPreparedRadarMatch(radarMatches, playerA, playerB, result, tournament, roundLabel, radarContext.seasonYear ?? null);
+      const match = { matchId: `Q${roundIndex}_${i / 2}`, playerA, playerB, isBye: false, winner, result: slimMatchResult(result) };
+      round.push(match);
+      next.push(winner);
+      qualRoundsData.push({
+        playerA,
+        playerB,
+        winner,
+        surface,
+        sets: result?.sets ?? [0, 0],
+        phase: phaseLabel,
+      });
+    }
+    rounds.push(round);
+    current = next;
+    roundIndex++;
+  }
+
+  return {
+    qualifiers: current.slice(0, spotsToFill),
+    bracket: {
+      isQualifying: true,
+      qualifyOut: spotsToFill,
+      drawSize: active.length,
+      totalSlots: active.length,
+      rounds,
+      currentRound: Math.max(0, rounds.length - 1),
+      isComplete: true,
+      qualifiers: current.slice(0, spotsToFill),
+    },
+    qualRoundsData,
+  };
+}
+
+function buildPreparedAtpSmallPackage(tournament, tourPlayers, prospects, playerSeasonSlots = {}, seasonYear = null, applySeasonSlotTracking = false, preSelected = null, radarContext = {}) {
   const surface = courtKeyToSurface(tournament.courtKey ?? tournament.surface);
   const bestOf = tournament.bestOf ?? 3;
-  const prepared = prepareTournamentPackageSync({
-    tournament,
-    tourPlayers,
-    prospects,
-    playerSeasonSlots,
-    seasonYear,
-    matchResolver: createFastPrepareMatchResolver(surface, bestOf, tournament),
-    applySeasonSlotTracking,
+  const preparedRadarContext = { ...radarContext, seasonYear };
+  const radarMatches = [];
+  tournamentDebugLog('prepare:small-atp:start', {
+    tournamentId: tournament?.id,
+    category: tournament?.category,
+    draw: tournament?.draw,
   });
-  if (!prepared) return prepared;
-  const preparedWithMindsets = hydrateTournamentMindsets(prepared, tournament, seasonYear);
 
-  const field = [...(preparedWithMindsets.mainDrawPlayers ?? [])].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+  // sorted e sortedProspects sempre necessários — usados no fillerPool quando
+  // o torneio não veio de um sorteio conjunto de paralelos.
+  const sorted = [...(tourPlayers ?? [])].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+  const sortedProspects = [...(prospects ?? [])].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+
+  // preSelected: campo já dividido pelo sorteio conjunto de paralelos
+  // Se presente, pula o selectTournamentPlayers e usa diretamente
+  const selected = preSelected
+    ?? selectTournamentPlayers(tournament, sorted, sortedProspects, new Set(), playerSeasonSlots);
+  tournamentDebugLog('prepare:small-atp:selected', {
+    tournamentId: tournament?.id,
+    rawMain: selected.mainDraw?.length ?? 0,
+    rawQual: selected.qualifying?.length ?? 0,
+  });
+
+  const rawMainDraw = (selected.mainDraw ?? []).map(p => withTournamentMindset(p, tournament, seasonYear));
+  const rawQualifying = (selected.qualifying ?? []).map(p => withTournamentMindset(p, tournament, seasonYear));
+  const rawPreQualifying = (selected.preQualifying ?? []).map(p => withTournamentMindset(p, tournament, seasonYear));
+
+  if (applySeasonSlotTracking && ['ATP_500', 'ATP_250'].includes(tournament.category)) {
+    for (const player of [...rawMainDraw, ...rawQualifying]) {
+      if (!playerSeasonSlots[player.id]) playerSeasonSlots[player.id] = createSeasonSlots();
+      updateSeasonSlots(playerSeasonSlots[player.id], player, tournament);
+    }
+  }
+
+  const injuries = applyPreTournamentInjuries([...rawMainDraw, ...rawQualifying, ...rawPreQualifying], tournament, seasonYear);
+  const getPlayer = (player) => {
+    if (!player || injuries.injuryWithdrawals.has(player.id)) return null;
+    return applyInjuryToPlayer(injuries.updatedByInjury[player.id] ?? player);
+  };
+  const directEntrants = rawMainDraw.map(getPlayer).filter(Boolean);
+  const qualPool = rawQualifying.map(getPlayer).filter(Boolean);
+  const qualStage = runPreparedQualifyingFastLocal(qualPool, tournament.qualifyOut ?? 0, tournament, surface, bestOf, 'qualifying', preparedRadarContext, radarMatches);
+  const usedIds = new Set([...directEntrants, ...(qualStage.qualifiers ?? [])].map(p => p.id));
+  const siblingReservedIds = preSelected?.siblingReservedIds ?? new Set();
+  const fillerSource = preSelected
+    ? (preSelected.fillerPool ?? [])
+    : [...sorted, ...sortedProspects];
+  const fillerPool = fillerSource
+    .map(p => withTournamentMindset(p, tournament, seasonYear))
+    .map(getPlayer)
+    .filter(p => p && !usedIds.has(p.id) && !siblingReservedIds.has(p.id));
+  const mainDrawPlayers = [...directEntrants, ...(qualStage.qualifiers ?? [])];
+  for (const filler of fillerPool) {
+    if (mainDrawPlayers.length >= (tournament.draw ?? 32)) break;
+    mainDrawPlayers.push(filler);
+    usedIds.add(filler.id);
+  }
+  mainDrawPlayers.sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+
+  const bracket = simulatePreparedOpeningRounds(
+    generateBracket(tournament, mainDrawPlayers.slice(0, tournament.draw ?? 32)),
+    tournament,
+    surface,
+    bestOf,
+    preparedRadarContext,
+    radarMatches,
+  );
+
+  tournamentDebugLog('prepare:small-atp:done', {
+    tournamentId: tournament?.id,
+    directEntrants: directEntrants.length,
+    qualifiers: qualStage.qualifiers?.length ?? 0,
+    mainDraw: mainDrawPlayers.length,
+    currentRound: bracket?.currentRound ?? null,
+  });
+
+  return {
+    tournamentId: tournament.id,
+    seasonYear,
+    surface,
+    courtKey: tournament.courtKey ?? tournament.surface,
+    bestOf,
+    format: tournament.format ?? null,
+    directEntrants,
+    rawMainDraw,
+    rawQualifying,
+    rawPreQualifying,
+    preQualWinners: [],
+    qualifiers: qualStage.qualifiers ?? [],
+    preQualBracket: null,
+    qualifyingBracket: qualStage.bracket,
+    mainDrawPlayers: mainDrawPlayers.slice(0, tournament.draw ?? 32),
+    bracket,
+    injuryWithdrawals: injuries.injuryWithdrawals ?? new Set(),
+    injuryEvents: injuries.injuryEvents ?? [],
+    updatedByInjury: injuries.updatedByInjury ?? {},
+    qualRoundsData: qualStage.qualRoundsData ?? [],
+    radarMatches,
+    radarFollowSignature: radarFollowSignature(preparedRadarContext.followedPlayerIds),
+    wildcards: [],
+    playerSeasonSlotsAfterSelection: Object.fromEntries(
+      Object.entries(playerSeasonSlots ?? {}).map(([key, value]) => [key, value ? { ...value } : value])
+    ),
+  };
+}
+
+function buildPreparedTournamentPackage(tournament, tourPlayers, prospects, playerSeasonSlots = {}, seasonYear = null, applySeasonSlotTracking = false, preSelected = null, radarContext = {}) {
+  const surface = courtKeyToSurface(tournament.courtKey ?? tournament.surface);
+  const bestOf = tournament.bestOf ?? 3;
+  const preparedRadarContext = { ...radarContext, seasonYear };
+  const radarMatches = [];
+  tournamentDebugLog('prepare:package:start', {
+    tournamentId: tournament?.id,
+    tournamentName: tournament?.name,
+    category: tournament?.category,
+    draw: tournament?.draw,
+  });
+  const prepared = (tournament?.category === 'ATP_250' || tournament?.category === 'ATP_500')
+    ? buildPreparedAtpSmallPackage(tournament, tourPlayers, prospects, playerSeasonSlots, seasonYear, applySeasonSlotTracking, preSelected, preparedRadarContext)
+    : prepareTournamentPackageSync({
+        tournament,
+        tourPlayers,
+        prospects,
+        playerSeasonSlots,
+        seasonYear,
+        matchResolver: createFastPrepareMatchResolver(surface, bestOf, tournament, preparedRadarContext, radarMatches),
+        applySeasonSlotTracking,
+      });
+  if (!prepared) return prepared;
+  tournamentDebugLog('prepare:package:sync-done', {
+    tournamentId: tournament?.id,
+    mainDraw: prepared.mainDrawPlayers?.length ?? 0,
+    qualifiers: prepared.qualifiers?.length ?? 0,
+    qualRounds: prepared.qualRoundsData?.length ?? 0,
+  });
+  const preparedWithMindsets = hydrateTournamentMindsets(prepared, tournament, seasonYear);
+  const preparedWithOpening = {
+    ...preparedWithMindsets,
+    bracket: simulatePreparedOpeningRounds(preparedWithMindsets.bracket, tournament, surface, bestOf, preparedRadarContext, radarMatches),
+  };
+
+  const field = [...(preparedWithOpening.mainDrawPlayers ?? [])].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
   const topSeeds = field.slice(0, 8);
   const rankedField = field.map((player, index) => ({ playerId: player.id, position: index + 1 }));
   const pressuredFavorites = topSeeds
@@ -5325,9 +6625,16 @@ function buildPreparedTournamentPackage(tournament, tourPlayers, prospects, play
         : null,
     ].filter(Boolean),
   };
+  tournamentDebugLog('prepare:package:done', {
+    tournamentId: tournament?.id,
+    currentRound: preparedWithOpening.bracket?.currentRound ?? null,
+    bracketRounds: preparedWithOpening.bracket?.rounds?.length ?? 0,
+  });
   return {
-    ...preparedWithMindsets,
+    ...preparedWithOpening,
     calendarContext,
+    radarMatches: [...(preparedWithOpening.radarMatches ?? []), ...radarMatches],
+    radarFollowSignature: radarFollowSignature(preparedRadarContext.followedPlayerIds),
   };
 }
 
@@ -5341,8 +6648,15 @@ function buildPreparedTournamentPackage(tournament, tourPlayers, prospects, play
 
  * @param {object}   playerSeasonSlots  { playerId ? SeasonSlots } — contadores de slots
  */
-async function runTournament(tournament, tourPlayers, prospects, onProgress, playerSeasonSlots = {}, partialStateRef = null, seasonYear = null, rivalrySystem = null, preparedPackage = null) {
-  const SURFACE_COURT = { CLAY: 'ROLAND_GARROS', GRASS: 'WIMBLEDON', HARD: 'US_OPEN', INDOOR: 'O2_ARENA' };
+async function runTournament(tournament, tourPlayers, prospects, onProgress, playerSeasonSlots = {}, partialStateRef = null, seasonYear = null, rivalrySystem = null, preparedPackage = null, followedPlayerIds = []) {
+  tournamentDebugLog('runTournament:start', {
+    tournamentId: tournament?.id,
+    tournamentName: tournament?.name,
+    category: tournament?.category,
+    draw: tournament?.draw,
+    prepared: !!preparedPackage,
+  });
+  const SURFACE_COURT = { CLAY: 'ROLAND_GARROS', GRASS: 'WIMBLEDON', HARD: 'US_OPEN', STREET: 'URBAN_COURT', CARPET: 'CARPET_COURT', INDOOR: 'O2_ARENA' };
   const courtKey  = SURFACE_COURT[tournament.surface] ?? 'US_OPEN';
   const bestOf    = tournament.bestOf ?? 3;
   const prepared = preparedPackage ? clonePreparedTournamentPackage(preparedPackage) : null;
@@ -5352,12 +6666,18 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
   const injuryWithdrawals = prepared?.injuryWithdrawals ?? new Set();
   const injuryEvents = prepared?.injuryEvents ?? [];
   const updatedByInjury = prepared?.updatedByInjury ?? {};
+  const radarMatches = [...(prepared?.radarMatches ?? [])];
   let qualRoundsData = [...(prepared?.qualRoundsData ?? [])];
   const currentPlayersById = new Map(
     [...tourPlayers, ...prospects].filter(Boolean).map((player) => [player.id, player])
   );
 
   if (!prepared) {
+    tournamentDebugLog('runTournament:prepare-field:start', {
+      tournamentId: tournament?.id,
+      tourPlayers: tourPlayers?.length ?? 0,
+      prospects: prospects?.length ?? 0,
+    });
     const { qualifyOut = 0, preQualIn = 0 } = tournament;
     const pqOut = tournament.preQualOut ?? Math.ceil(preQualIn / 2);
     const sorted = [...tourPlayers].sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
@@ -5377,6 +6697,13 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
     }
 
     const injuries = applyPreTournamentInjuries([...mainWithMindset, ...qualWithMindset, ...preQualWithMindset], tournament, seasonYear);
+    tournamentDebugLog('runTournament:prepare-field:done', {
+      tournamentId: tournament?.id,
+      mainDraw: rawMain.length,
+      qualifying: rawQual.length,
+      preQualifying: rawPreQual.length,
+      injuryWithdrawals: injuries.injuryWithdrawals?.size ?? 0,
+    });
     qualRoundsData = [];
     const getPlayer = (player) => {
       if (injuries.injuryWithdrawals.has(player.id)) return null;
@@ -5387,7 +6714,7 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
     if (rawPreQual.length > 0 && pqOut > 0) {
       const pool = preQualWithMindset.map(getPlayer).filter(Boolean);
       if (pool.length > 0) {
-        builtPreQualWinners = await runQualifyingAsync(pool, pqOut, courtKey, bestOf, onProgress, tournament);
+        builtPreQualWinners = await runQualifyingAsync(pool, pqOut, courtKey, bestOf, onProgress, tournament, followedPlayerIds, rivalrySystem, radarMatches, seasonYear, 'Pré-qualifying');
       }
     }
 
@@ -5395,7 +6722,7 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
     if ((rawQual.length > 0 || builtPreQualWinners.length > 0) && qualifyOut > 0) {
       const pool = [...qualWithMindset.map(getPlayer).filter(Boolean), ...builtPreQualWinners];
       if (pool.length > 0) {
-        builtQualifiers = await runQualifyingAsync(pool, qualifyOut, courtKey, bestOf, onProgress, tournament);
+        builtQualifiers = await runQualifyingAsync(pool, qualifyOut, courtKey, bestOf, onProgress, tournament, followedPlayerIds, rivalrySystem, radarMatches, seasonYear, 'Qualifying');
       }
     }
 
@@ -5409,6 +6736,12 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
   }
 
   if (prepared) {
+    tournamentDebugLog('runTournament:prepared-package', {
+      tournamentId: tournament?.id,
+      mainDraw: allMainDraw.length,
+      qualifiers: qualifiers.length,
+      preQualWinners: preQualWinners.length,
+    });
     const unavailableIds = new Set(
       [...currentPlayersById.values()]
         .filter((player) => isUnavailableForTournamentNow(player))
@@ -5438,9 +6771,28 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
     tournament,
     rivalrySystem,
     prepared?.bracket ?? null,
+    followedPlayerIds,
   );
 
-  return { bracket, qualifiers, preQualWinners, wildcards: [], injuryWithdrawals, injuryEvents, updatedByInjury, qualRoundsData };
+  tournamentDebugLog('runTournament:done', {
+    tournamentId: tournament?.id,
+    champion: bracket?.champion?.name ?? null,
+    rounds: bracket?.rounds?.length ?? 0,
+    matches: bracket?.rounds?.reduce((sum, round) => sum + (round?.length ?? 0), 0) ?? 0,
+  });
+
+  return {
+    bracket,
+    qualifiers,
+    preQualWinners,
+    wildcards: [],
+    injuryWithdrawals,
+    injuryEvents,
+    updatedByInjury,
+    qualRoundsData,
+    radarMatches,
+    playerSeasonSlotsAfterSelection: prepared?.playerSeasonSlotsAfterSelection ?? playerSeasonSlots,
+  };
 }
 /**
  * Simula qualifying: pool de N jogadores ? M classificados.
@@ -5455,15 +6807,17 @@ async function runTournament(tournament, tourPlayers, prospects, onProgress, pla
  * Para preQual: 64 jogadores ? 1 rodada ? 32 passam.
  * Para qualify: 64 (32 diretos + 32 do preQual) ? 1 rodada ? 32 qualificados.
  */
-async function runQualifyingAsync(players, spotsToFill, courtKey, bestOf, onProgress, tournament = null) {
+async function runQualifyingAsync(players, spotsToFill, courtKey, bestOf, onProgress, tournament = null, followedPlayerIds = [], rivalrySystem = null, radarMatches = [], seasonYear = null, phaseLabel = 'Qualifying') {
   if (!players?.length || spotsToFill <= 0) return [];
 
   const surface = courtKeyToSurface(courtKey);
 
   const fastSim = (a, b) => {
-    const sA = applyTournamentContextModifiers(a, tournament);
-    const sB = applyTournamentContextModifiers(b, tournament);
-    const res = simulateMatchFast(sA, sB, surface, bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null });
+    const res = simulateRadarAwareFastMatch(a, b, surface, bestOf, tournament, 'Qualifying', followedPlayerIds, rivalrySystem);
+    if (res.simulationSource === 'FOLLOWED_HEADLESS') {
+      const winner = res.winner?.id === a.id ? a : b;
+      radarMatches.push(buildRadarMatchRecord({ playerA:a, playerB:b, winner, result:res, tournament, roundLabel:phaseLabel, year:seasonYear }));
+    }
     return res.winner.id === a.id ? a : b;
   };
 
@@ -5496,18 +6850,144 @@ async function runQualifyingAsync(players, spotsToFill, courtKey, bestOf, onProg
  * Suporta chaves de qualquer tamanho, aplica BYE para completar pot—ncia de 2.
  */
 
-// Seleciona engine headless de acordo com categoria do torneio e fase.
-// Helper: ATP 250 e ATP 500 agora ficam sempre no slim (1/30) para acelerar
-// a temporada inteira. Masters 1000 e Grand Slam preservam a logica antiga,
-// mantendo 1/120 nas fases finais e 1/60/1/30 conforme o tamanho da chave.
+// Decide quando o main draw ainda pode usar FastSimulation.
+// ATP 250/500: fastsim antes da QF; QF em diante usa mid (1/60).
+// Masters/GS: fastsim antes da R16; R16 em diante usa mid (1/60).
+// Qualifying, base circuit e juniors continuam no caminho FastSimulation,
+// exceto partidas do Radar, que são sempre promovidas ao Headless completo.
+function shouldUseFastMainDrawRound(tournament = null, playersInRound = 0) {
+  const category = tournament?.category ?? null;
+  if (category === 'ATP_250' || category === 'ATP_500') return playersInRound > 8;
+  if (category === 'MASTERS_1000' || category === 'GRAND_SLAM') return playersInRound > 16;
+  return false;
+}
+
 function pickHeadlessEngine(drawSize, playersInRound, tournament = null) {
-  if (shouldUseSlimHeadlessTournament(tournament)) return simulateMatchSlim;
-  if (playersInRound <= 8) return simulateMatchHeadless;
-  if (drawSize >= 128)     return simulateMatchSlim;
+  const category = tournament?.category ?? null;
+  if (category === 'SLAM_CLASH') return playersInRound <= 8 ? simulateMatchHeadless : simulateMatchSlim;
   return simulateMatchMid;
 }
 
-async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRef = null, tournament = null, rivalrySystem = null, preparedBracketTemplate = null) {
+async function runPreparedBracketRemainderAsync(preparedBracket, courtKey, bestOf, onProgress, snapshotRef = null, tournament = null, rivalrySystem = null, followedPlayerIds = []) {
+  const rounds = (preparedBracket?.rounds ?? []).map(round => round.map(match => ({ ...match })));
+  let currentRoundIndex = preparedBracket?.currentRound ?? 0;
+  const totalSlots = preparedBracket?.totalSlots ?? preparedBracket?.draw ?? 0;
+  const byeCount = preparedBracket?.byeCount ?? 0;
+  const drawSize = preparedBracket?.draw ?? totalSlots;
+
+  tournamentDebugLog('bracket:prepared-resume:start', {
+    tournamentId: tournament?.id,
+    currentRoundIndex,
+    rounds: rounds.length,
+    drawSize,
+  });
+
+  const saveSnapshot = () => {
+    if (!snapshotRef) return;
+    snapshotRef.current = {
+      rounds: rounds.map(r => [...r]),
+      currentRound: currentRoundIndex,
+      isComplete: false,
+      champion: null,
+      totalSlots,
+      byeCount,
+      drawSize,
+    };
+  };
+
+  while (currentRoundIndex < rounds.length) {
+    const roundMatches = rounds[currentRoundIndex] ?? [];
+    saveSnapshot();
+    const playersInRound = roundMatches.reduce((sum, match) =>
+      sum + (match.playerA ? 1 : 0) + (match.playerB ? 1 : 0), 0);
+    tournamentDebugLog('bracket:prepared-round:start', {
+      tournamentId: tournament?.id,
+      roundIndex: currentRoundIndex,
+      playersInRound,
+    });
+
+    const next = [];
+    for (let i = 0; i < roundMatches.length; i++) {
+      const { playerA: a, playerB: b } = roundMatches[i];
+      let winner = roundMatches[i].winner ?? (!b ? a : null);
+      let matchResult = roundMatches[i].result ?? null;
+
+      if (a && b && !winner) {
+        const simA = applyTournamentContextModifiers(a, tournament);
+        const simB = applyTournamentContextModifiers(b, tournament);
+        const sz = playersInRound;
+        const rl = sz === 2 ? 'F' : sz === 4 ? 'SF' : sz === 8 ? 'QF' : sz === 16 ? 'R16' : sz === 32 ? 'R32' : sz === 64 ? 'R64' : sz === 128 ? 'R128' : `R${sz}`;
+        const rlFull = { F:'Final', SF:'Semifinal', QF:'Quartas de Final', R16:'Oitavas', R32:'3— Rodada', R64:'2— Rodada', R128:'1— Rodada' }[rl] ?? rl;
+        const res = shouldUseFastMainDrawRound(tournament, sz) && !isRadarMatch(a, b, followedPlayerIds)
+          ? simulateMatchFast(simA, simB, courtKeyToSurface(courtKey), bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null, roundLabel: rl })
+          : (isRadarMatch(a, b, followedPlayerIds) ? simulateMatchHeadless : pickHeadlessEngine(drawSize, sz, tournament))({ playerData: simA }, { playerData: simB }, courtKey, bestOf, rivalrySystem, tournament?.isSlam ?? false, { category: tournament?.category, round: rl, format: tournament?.format ?? null, isSlamClash: !!tournament?.isSlamClash, radarFollowed: isRadarMatch(a, b, followedPlayerIds) });
+        const aWon = res.sets[0] > res.sets[1];
+        if (isRadarMatch(a, b, followedPlayerIds)) res.simulationSource = 'FOLLOWED_HEADLESS';
+        winner = aWon ? a : b;
+        matchResult = slimMatchResult(res);
+        try {
+          const surfKey = (tournament?.surface ?? 'HARD').toUpperCase();
+          matchResult.narration = narrateMatchLight(aWon ? a : b, aWon ? b : a, res, surfKey);
+        } catch { /* silencioso */ }
+        if (onProgress) await onProgress({
+          phase: 'main',
+          roundIndex: currentRoundIndex,
+          roundLabel: rl,
+          roundLabelFull: rlFull,
+          playerA: a,
+          playerB: b,
+          result: res,
+          winner: aWon ? a : b,
+          loser: aWon ? b : a,
+        });
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      roundMatches[i] = { playerA: a, playerB: b, winner, isBye: !b, result: matchResult };
+      if (winner) next.push(winner);
+      saveSnapshot();
+    }
+
+    if (next.length <= 1) {
+      const champion = next[0] ?? null;
+      tournamentDebugLog('bracket:prepared-resume:done', {
+        tournamentId: tournament?.id,
+        champion: champion?.name ?? null,
+        rounds: rounds.length,
+      });
+      return { rounds, champion, totalSlots, byeCount, drawSize };
+    }
+
+    currentRoundIndex++;
+    const nextMatches = [];
+    for (let i = 0; i < next.length; i += 2) {
+      const a = next[i];
+      const b = next[i + 1] ?? null;
+      nextMatches.push({ playerA: a, playerB: b, winner: !b ? a : null, isBye: !b, result: null });
+    }
+    if (rounds[currentRoundIndex]) {
+      rounds[currentRoundIndex] = rounds[currentRoundIndex].map((match, idx) => nextMatches[idx] ? { ...match, ...nextMatches[idx] } : match);
+    } else {
+      rounds.push(nextMatches);
+    }
+  }
+
+  return { rounds, champion: null, totalSlots, byeCount, drawSize };
+}
+
+async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRef = null, tournament = null, rivalrySystem = null, preparedBracketTemplate = null, followedPlayerIds = []) {
+  if ((preparedBracketTemplate?.currentRound ?? 0) > 0) {
+    return runPreparedBracketRemainderAsync(preparedBracketTemplate, courtKey, bestOf, onProgress, snapshotRef, tournament, rivalrySystem, followedPlayerIds);
+  }
+  tournamentDebugLog('bracket:start', {
+    tournamentId: tournament?.id,
+    tournamentName: tournament?.name,
+    category: tournament?.category,
+    players: players?.length ?? 0,
+    courtKey,
+    bestOf,
+    preparedTemplate: !!preparedBracketTemplate,
+  });
   // Pr—xima pot—ncia de 2
   let totalSlots = preparedBracketTemplate?.totalSlots ?? 1;
   while (totalSlots < players.length) totalSlots *= 2;
@@ -5519,6 +6999,12 @@ async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRe
     ? preparedBracketTemplate.rounds[0].map(match => ({ ...match, result: null }))
     : buildATPFirstRound(seeded, totalSlots);
   const totalMatches = r1Template.length;
+  tournamentDebugLog('bracket:r1-built', {
+    tournamentId: tournament?.id,
+    totalSlots,
+    byeCount,
+    r1Matches: totalMatches,
+  });
 
   const rounds = [];
 
@@ -5551,9 +7037,11 @@ async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRe
     if (a && b) {
       const simA = applyTournamentContextModifiers(a, tournament);
       const simB = applyTournamentContextModifiers(b, tournament);
-      const _engineR1 = pickHeadlessEngine(players.length, players.length, tournament);
-      const res = _engineR1({ playerData: simA }, { playerData: simB }, courtKey, bestOf, rivalrySystem, tournament?.isSlam ?? false, { category: tournament?.category, round: 'R64', format: tournament?.format ?? null, isSlamClash: !!tournament?.isSlamClash });
+      const res = shouldUseFastMainDrawRound(tournament, players.length) && !isRadarMatch(a, b, followedPlayerIds)
+        ? simulateMatchFast(simA, simB, courtKeyToSurface(courtKey), bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null, roundLabel: 'R64' })
+        : (isRadarMatch(a, b, followedPlayerIds) ? simulateMatchHeadless : pickHeadlessEngine(players.length, players.length, tournament))({ playerData: simA }, { playerData: simB }, courtKey, bestOf, rivalrySystem, tournament?.isSlam ?? false, { category: tournament?.category, round: 'R64', format: tournament?.format ?? null, isSlamClash: !!tournament?.isSlamClash, radarFollowed: isRadarMatch(a, b, followedPlayerIds) });
       const aWon = res.sets[0] > res.sets[1];
+      if (isRadarMatch(a, b, followedPlayerIds)) res.simulationSource = 'FOLLOWED_HEADLESS';
       winner = aWon ? a : b;
       matchResult = slimMatchResult(res);
       // -- Narra——o leve para enriquecer artigos do NewsEngine --
@@ -5584,6 +7072,14 @@ async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRe
   let currentRoundIndex = 1;
 
   while (current.length > 1) {
+    tournamentDebugLog('bracket:round:start', {
+      tournamentId: tournament?.id,
+      roundIndex: currentRoundIndex,
+      playersInRound: current.length,
+      engine: shouldUseFastMainDrawRound(tournament, current.length)
+        ? 'fast'
+        : (pickHeadlessEngine(players.length, current.length, tournament) === simulateMatchHeadless ? 'headless' : 'mid/slim'),
+    });
     // Inicializa round com matches pendentes para snapshot imediato
     const roundMatches = [];
     for (let i = 0; i < current.length; i += 2) {
@@ -5606,9 +7102,11 @@ async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRe
         const sz = current.length;
         const rl = sz === 2 ? 'F' : sz === 4 ? 'SF' : sz === 8 ? 'QF' : sz === 16 ? 'R16' : sz === 32 ? 'R32' : sz === 64 ? 'R64' : `R${sz}`;
         const rlFull = { F:'Final', SF:'Semifinal', QF:'Quartas de Final', R16:'Oitavas', R32:'3— Rodada', R64:'2— Rodada' }[rl] ?? rl;
-        const _engineRound = pickHeadlessEngine(players.length, sz, tournament);
-        const res = _engineRound({ playerData: simA }, { playerData: simB }, courtKey, bestOf, rivalrySystem, tournament?.isSlam ?? false, { category: tournament?.category, round: rl, format: tournament?.format ?? null, isSlamClash: !!tournament?.isSlamClash });
+        const res = shouldUseFastMainDrawRound(tournament, sz) && !isRadarMatch(a, b, followedPlayerIds)
+          ? simulateMatchFast(simA, simB, courtKeyToSurface(courtKey), bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null, roundLabel: rl })
+          : (isRadarMatch(a, b, followedPlayerIds) ? simulateMatchHeadless : pickHeadlessEngine(players.length, sz, tournament))({ playerData: simA }, { playerData: simB }, courtKey, bestOf, rivalrySystem, tournament?.isSlam ?? false, { category: tournament?.category, round: rl, format: tournament?.format ?? null, isSlamClash: !!tournament?.isSlamClash, radarFollowed: isRadarMatch(a, b, followedPlayerIds) });
         const aWon = res.sets[0] > res.sets[1];
+        if (isRadarMatch(a, b, followedPlayerIds)) res.simulationSource = 'FOLLOWED_HEADLESS';
         winner = aWon ? a : b;
         matchResult = slimMatchResult(res);
         // -- Narra——o leve (SF e F recebem narra——o completa via NewsEngine;
@@ -5637,10 +7135,21 @@ async function runBracketAsync(players, courtKey, bestOf, onProgress, snapshotRe
     }
 
     current = next;
+    tournamentDebugLog('bracket:round:done', {
+      tournamentId: tournament?.id,
+      roundIndex: currentRoundIndex,
+      survivors: current.length,
+      survivorNames: current.slice(0, 4).map(p => p?.name).filter(Boolean),
+    });
     currentRoundIndex++;
   }
 
   const champion = current[0] ?? null;
+  tournamentDebugLog('bracket:done', {
+    tournamentId: tournament?.id,
+    champion: champion?.name ?? null,
+    rounds: rounds.length,
+  });
 
   return {
     rounds,
@@ -5893,6 +7402,8 @@ function SeasonDashboard({ state, dispatch, onBack }) {
         null,
         state.year,
         state.rivalrySystem ?? null,
+        null,
+        state.radar?.followedPlayerIds ?? [],
       );
 
       dispatch({
@@ -6399,13 +7910,13 @@ const _EY_CSS = `
 @keyframes _ey_count { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 ._ey_overlay {
   position:fixed;inset:0;z-index:9998;
-  background:#02040A;
+  background:#e7ddc5;
   display:flex;flex-direction:column;overflow:hidden;
   animation:_ey_zoom .5s cubic-bezier(.16,1,.3,1);
   font-family:'Barlow Condensed','Barlow Condensed',sans-serif;
 }
 ._ey_stars {
-  position:absolute;inset:0;pointer-events:none;overflow:hidden;
+  position:absolute;inset:0;pointer-events:none;overflow:hidden;opacity:.14;
 }
 ._ey_star_dot {
   position:absolute;border-radius:50%;background:white;
@@ -6439,12 +7950,22 @@ const _EY_CSS = `
   font-family:'Space Mono',monospace;font-size:8px;letter-spacing:2px;text-transform:uppercase;
   color:rgba(255,255,255,.45);
 }
+/* Arquivo anual: a cerimônia tem a mesma matéria física das fichas.  Isto
+   neutraliza o tema escuro herdado das abas antigas sem apagar os acentos que
+   continuam úteis em filetes, barras e bordas. */
+._ey_overlay, ._ey_overlay * { text-shadow:none !important; }
+._ey_overlay [style] { color:#3B2F21 !important; }
+._ey_overlay button { color:#3B2F21 !important; }
+._ey_overlay ._ey_card, ._ey_overlay ._ey_award_card { background:rgba(255,255,255,.26);border-color:rgba(79,59,35,.20); }
+._ey_overlay ._ey_tab_btn.active { border-bottom-color:#B9784A;color:#3B2F21 !important;font-weight:800; }
+._ey_overlay ._ey_tab_btn:hover { background:rgba(79,59,35,.07); }
 `;
 
 function _ey_injectCSS() {
-  if (document.getElementById('_ey_styles')) return;
+  if (document.getElementById('_ey_styles_v2')) return;
+  document.getElementById('_ey_styles')?.remove();
   const s = document.createElement('style');
-  s.id = '_ey_styles'; s.textContent = _EY_CSS;
+  s.id = '_ey_styles_v2'; s.textContent = _EY_CSS;
   document.head.appendChild(s);
 }
 
@@ -6578,6 +8099,9 @@ const CAT_META = {
   ATP_500:       { color:'#4DD0E1', label:'ATP 500',      short:'500',    icon:'🎾' },
   ATP_250:       { color:'#81C784', label:'ATP 250',      short:'250',    icon:'🎾' },
   ATP_PROSPECTS: { color:'#FF8A65', label:'Juniors',    short:'PROS',   icon:'🎾' },
+  JUNIOR_50:      { color:'#B7B3B0', label:'Junior 50',  short:'J50',    icon:'🎾' },
+  JUNIOR_100:     { color:'#FFB067', label:'Junior 100', short:'J100',   icon:'🎾' },
+  JUNIOR_SLAM:    { color:'#FFD166', label:'Junior Slam',short:'J-SLAM', icon:'🎾' },
   PROSPECTS_FINALS: { color:'#FF8A65', label:'Junior Finals', short:'PF', icon:'🎾' },
   ATP_100: { color:'#8D6E63', label:'ATP 100', short:'100', icon:'🎾' },
   ATP_75: { color:'#A1887F', label:'ATP 75', short:'75', icon:'🎾' },
@@ -6590,6 +8114,8 @@ const SURF_META = {
   CLAY:   { color:'#C4572A', label:'Saibro' },
   GRASS:  { color:'#2E7D32', label:'Grama' },
   HARD:   { color:'#1565C0', label:'Dura' },
+  STREET: { color:'#B45309', label:'Asfalto' },
+  CARPET: { color:'#8B1A3A', label:'Veludo' },
   INDOOR: { color:'#6A1B9A', label:'Indoor' },
 };
 
@@ -7881,26 +9407,117 @@ function TabGala({ summary, allPlayers, onDismiss }) {
   );
 }
 
+function normalizeYearSurface(surface) {
+  const key = String(surface ?? 'HARD').toUpperCase();
+  if (key.includes('CLAY') || key.includes('ROLAND')) return 'CLAY';
+  if (key.includes('GRASS') || key.includes('WIMBLEDON')) return 'GRASS';
+  if (key.includes('INDOOR') || key.includes('O2')) return 'INDOOR';
+  if (key.includes('STREET') || key.includes('URBAN')) return 'STREET';
+  if (key.includes('CARPET') || key.includes('VELVET')) return 'CARPET';
+  return 'HARD';
+}
+
+function TabSurfaceAlmanac({ summary }) {
+  const groups = Object.entries(SURF_META).map(([key, meta]) => {
+    const titles = (summary.champions ?? []).filter(entry => normalizeYearSurface(entry.tournament?.surface) === key);
+    const wins = titles.reduce((acc, item) => {
+      const id = item.champion?.id ?? item.champion?.name;
+      if (!id) return acc;
+      acc[id] = { player:item.champion, count:(acc[id]?.count ?? 0) + 1 };
+      return acc;
+    }, {});
+    const leader = Object.values(wins).sort((a,b) => b.count - a.count || a.player.name.localeCompare(b.player.name))[0] ?? null;
+    const marquee = titles.filter(item => ['GRAND_SLAM','SLAM_CLASH','FINALS','MASTERS_1000'].includes(item.tournament?.category)).slice(0, 3);
+    const copy = leader
+      ? leader.count > 1
+        ? `${leader.player.name} foi a assinatura deste piso: ${leader.count} títulos e uma presença que mudou a leitura da temporada.`
+        : `${leader.player.name} levou o principal capítulo, mas ${new Set(titles.map(item => item.champion?.id)).size} nomes dividiram o território.`
+      : 'Nenhuma campanha registrada neste piso nesta temporada.';
+    return { key, meta, titles, leader, marquee, copy };
+  }).filter(group => group.titles.length > 0);
+
+  return (
+    <div style={{ padding:'28px 32px 42px' }}>
+      <div style={{ maxWidth:960, marginBottom:25 }}>
+        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.28em', textTransform:'uppercase', color:'#6D5B43', marginBottom:10 }}>dossiê editorial · temporada {summary.year}</div>
+        <h2 style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(34px,5vw,58px)', lineHeight:.9, margin:0, textTransform:'uppercase' }}>O ano contado por cada piso.</h2>
+        <p style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:18, lineHeight:1.55, margin:'13px 0 0' }}>Não são só troféus: é onde cada jogador construiu autoridade, onde a hierarquia rachou e onde a próxima rivalidade começou a aparecer.</p>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(330px,1fr))', gap:14 }}>
+        {groups.map((group, index) => (
+          <article key={group.key} style={{ minHeight:270, padding:'18px 19px 20px', background:'rgba(255,255,255,.28)', border:'1px solid rgba(79,59,35,.20)', borderTop:`4px solid ${group.meta.color}`, animation:`_ey_in .35s ease ${index * .05}s both` }}>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'baseline' }}>
+              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.22em', textTransform:'uppercase', color:'#6D5B43' }}>caderno de superfície</div>
+              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.14em', color:'#6D5B43' }}>{group.titles.length} título{group.titles.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:34, fontWeight:900, lineHeight:1, textTransform:'uppercase', marginTop:9 }}>{group.meta.label}</div>
+            <div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:15.5, lineHeight:1.55, marginTop:10 }}>{group.copy}</div>
+            {group.leader && <div style={{ marginTop:14, padding:'10px 12px', borderLeft:`3px solid ${group.meta.color}`, background:`${group.meta.color}14` }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.18em', textTransform:'uppercase', color:'#6D5B43' }}>figura do piso</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:22, fontWeight:900, textTransform:'uppercase', lineHeight:1, marginTop:5 }}>{group.leader.player.name}</div></div>}
+            {group.marquee.length > 0 && <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:13 }}>{group.marquee.map((entry, i) => <span key={`${entry.tournament.id}-${i}`} style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.08em', padding:'4px 6px', border:'1px solid rgba(79,59,35,.18)', background:'rgba(255,255,255,.24)' }}>{entry.tournament.name}: {entry.champion.name}</span>)}</div>}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TabProspectWatch({ summary, allPlayers = [] }) {
+  const promoted = summary.juniorPromotionSpotlight ?? [];
+  const promotedIds = new Set(promoted.map(player => player.id));
+  const youngTour = allPlayers.filter(player => (player.age ?? 99) <= 22 && !promotedIds.has(player.id)).sort((a,b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
+  const prospects = [...promoted, ...youngTour].slice(0, 8);
+  return (
+    <div style={{ padding:'28px 32px 42px' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(250px,.38fr)', gap:22, borderBottom:'2px solid #B9784A', paddingBottom:22, marginBottom:22 }}>
+        <div><div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.28em', textTransform:'uppercase', color:'#6D5B43', marginBottom:10 }}>observatório · próxima geração</div><h2 style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(34px,5vw,58px)', lineHeight:.9, margin:0, textTransform:'uppercase' }}>Quem entra no próximo ano para mudar o roteiro.</h2><p style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:18, lineHeight:1.55, margin:'13px 0 0' }}>A turma promovida e os jovens que já deixaram de ser promessa. Cada ficha aponta o argumento que eles levam para a temporada {summary.year + 1}.</p></div>
+        <div style={{ border:'1px solid rgba(79,59,35,.22)', background:'rgba(255,255,255,.26)', padding:'14px 16px', alignSelf:'end' }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.18em', textTransform:'uppercase', color:'#6D5B43' }}>subidas confirmadas</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:48, fontWeight:900, lineHeight:.82, marginTop:9 }}>{promoted.length}</div><div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:14, lineHeight:1.45, marginTop:8 }}>juniores já carimbados para o Tour.</div></div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(255px,1fr))', gap:12 }}>
+        {prospects.map((player, index) => {
+          const ovr = overallRating(player.attrs ?? {});
+          const strengths = topStrengths(player.attrs ?? {}, 2).map(item => item.label).join(' · ') || 'perfil em maturação';
+          const junior = player.juniorSeason;
+          const status = promotedIds.has(player.id) ? `promovido do junior #${junior?.juniorRank ?? '—'}` : `já no tour · #${player.rankPosition ?? '—'}`;
+          const hook = promotedIds.has(player.id)
+            ? `${junior?.titles ?? 0} título(s), ${junior?.wins ?? 0} vitórias e uma vaga conquistada com campanha própria.`
+            : `Aos ${player.age ?? '—'} anos, já tem ranking para transformar expectativa em pressão real.`;
+          return <article key={player.id ?? index} style={{ padding:'16px 16px 18px', minHeight:208, background:'rgba(255,255,255,.27)', border:'1px solid rgba(79,59,35,.20)', borderTop:`4px solid ${index < promoted.length ? '#5A8E5D' : '#7A9AB0'}` }}><div style={{ display:'flex', justifyContent:'space-between', gap:10 }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.16em', textTransform:'uppercase', color:'#6D5B43' }}>{status}</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, lineHeight:.9 }}>{ovrTier(ovr).grade}</div></div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:27, fontWeight:900, lineHeight:1, textTransform:'uppercase', marginTop:13 }}>{player.name}</div><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.12em', color:'#6D5B43', marginTop:6 }}>{player.nationality ?? '—'} · {player.age ?? '—'} anos · #{player.rankPosition ?? 'novo'}</div><div style={{ marginTop:13, fontFamily:"'Crimson Pro',Georgia,serif", fontSize:15, lineHeight:1.52 }}>{hook}</div><div style={{ marginTop:13, paddingTop:10, borderTop:'1px solid rgba(79,59,35,.15)', fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.1em', textTransform:'uppercase', color:'#6D5B43' }}>armas: {strengths}</div></article>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function YearCoverPage({ summary }) {
+  const awards = summary.awards ?? {};
+  const headline = awards.noOne?.name
+    ? `${awards.noOne.name} fecha ${summary.year} no topo.`
+    : `O circuito encerra ${summary.year}.`;
+  return <div style={{ minHeight:'100%', display:'grid', placeItems:'center', padding:'clamp(34px,7vw,92px) 32px', background:'radial-gradient(circle at 72% 16%, rgba(185,120,74,.22), transparent 28%), linear-gradient(160deg, rgba(255,255,255,.3), transparent)' }}><div style={{ width:'min(980px,100%)', borderTop:'5px solid #B9784A', borderBottom:'1px solid rgba(79,59,35,.25)', padding:'26px 0 34px' }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:9, letterSpacing:'.38em', textTransform:'uppercase', color:'#6D5B43' }}>a redação do circuito apresenta</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:'clamp(72px,14vw,180px)', letterSpacing:'-.035em', lineHeight:.72, textTransform:'uppercase', marginTop:22 }}>O ANO<br/>{summary.year}</div><div style={{ maxWidth:700, fontFamily:"'Crimson Pro',Georgia,serif", fontSize:'clamp(20px,2.2vw,28px)', lineHeight:1.38, marginTop:28 }}>{headline} Esta é a edição que guarda os nomes, os pisos, as promessas e os adeuses que mudaram o circuito.</div><div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10, marginTop:34 }}>{[['títulos narrados', summary.champions?.length ?? 0], ['novas subidas', summary.juniorPromotionSpotlight?.length ?? 0], ['despedidas', summary.retired?.filter(p => p?.retirementInfo?.type !== 'PROSPECT_AGED_OUT').length ?? 0]].map(([label,value]) => <div key={label} style={{ padding:'12px 14px', background:'rgba(255,255,255,.25)', border:'1px solid rgba(79,59,35,.2)' }}><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:34, fontWeight:900, lineHeight:.9 }}>{value}</div><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.14em', textTransform:'uppercase', color:'#6D5B43', marginTop:6 }}>{label}</div></div>)}</div></div></div>;
+}
+
+function YearFinalPage({ summary, onDismiss }) {
+  const leader = summary.awards?.noOne?.name ?? 'O novo número um';
+  return <div style={{ minHeight:'100%', display:'grid', placeItems:'center', padding:'clamp(34px,7vw,92px) 32px', background:'radial-gradient(circle at 18% 80%, rgba(90,142,93,.16), transparent 28%), linear-gradient(160deg, rgba(255,255,255,.28), transparent)' }}><div style={{ width:'min(860px,100%)', textAlign:'center', borderTop:'4px solid #5A8E5D', paddingTop:26 }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.3em', textTransform:'uppercase', color:'#6D5B43' }}>última página · {summary.year}</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(48px,8vw,94px)', fontWeight:900, lineHeight:.84, textTransform:'uppercase', marginTop:18 }}>A edição fecha.<br/>O circuito não.</div><p style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:21, lineHeight:1.5, margin:'24px auto', maxWidth:680 }}>{leader} entra em {summary.year + 1} com o alvo nas costas. Os nomes desta edição agora deixam de ser retrospecto — viram a pressão do próximo capítulo.</p><button onClick={onDismiss} style={{ padding:'14px 23px', cursor:'pointer', background:'rgba(90,142,93,.14)', border:'1px solid rgba(56,95,59,.45)', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.18em', textTransform:'uppercase' }}>abrir temporada {summary.year + 1} →</button></div></div>;
+}
+
 function YearSummaryModal({ summary, onDismiss, allPlayers }) {
   React.useEffect(() => { _ey_injectCSS(); }, []);
-  const [tab, setTab] = React.useState('gala');
+  const [page, setPage] = React.useState(0);
   if (!summary) return null;
 
   const { year } = summary;
   const nextYear = year + 1;
-  const isGalaTab = tab === 'gala';
-
-  const TABS = [
-    { id: 'gala',       label: 'Gala',       icon: '🏆' },
-    { id: 'temporada',  label: 'Temporada',  icon: '🏆' },
-    { id: 'premiacoes', label: 'Premia——es',  icon: '🎾' },
-    { id: 'campeoes',   label: 'Campe—es',    icon: '🏆' },
-    { id: 'aposentados',label: 'Aposentados', icon: '🎾' },
-    { id: 'novidades',  label: 'Novidades',   icon: '🎾' },
-    { id: 'revelacoes', label: 'Talent Hunter', icon: '🎾' },
-    { id: 'lesoes',     label: 'Les—es',      icon: '🎾' },
-    { id: 'ratings',    label: 'Ratings',     icon: '🎾' },
+  const PAGES = [
+    { label:'Capa', kicker:'edição anual', render:() => <YearCoverPage summary={summary} /> },
+    { label:'A Coroação', kicker:'os melhores do ano', render:() => <TabGala summary={summary} allPlayers={allPlayers} onDismiss={onDismiss} /> },
+    { label:'O Reino dos Pisos', kicker:'o circuito por superfície', render:() => <TabSurfaceAlmanac summary={summary} /> },
+    { label:'Novos Donos', kicker:'próxima geração', render:() => <TabProspectWatch summary={summary} allPlayers={allPlayers} /> },
+    { label:'O Ano em Movimento', kicker:'ascensões e mudanças', render:() => <TabNovidades summary={summary} /> },
+    { label:'Quem Ficou', kicker:'memória e despedidas', render:() => <TabAposentados summary={summary} /> },
+    { label:'Próximo Capítulo', kicker:'a porta para o novo ano', render:() => <YearFinalPage summary={summary} onDismiss={onDismiss} /> },
   ];
+  const currentPage = PAGES[page] ?? PAGES[0];
 
   return (
     <div className="_ey_overlay" style={{ zIndex: 9999 }}>
@@ -7911,23 +9528,23 @@ function YearSummaryModal({ summary, onDismiss, allPlayers }) {
         position: 'relative', zIndex: 1,
         width: '100%', height: '100%',
         display: 'flex', flexDirection: 'column',
-        background: 'linear-gradient(180deg, #02040A 0%, #05090F 100%)',
+        background: 'linear-gradient(180deg, #eee5d1 0%, #e2d4b7 100%)',
       }}>
 
         {/* -- CINEMATIC HEADER -- */}
         <div style={{
           flexShrink: 0, position: 'relative', overflow: 'hidden',
-          background: 'linear-gradient(135deg, #050B14 0%, #02040A 60%)',
-          borderBottom: '1px solid rgba(255,215,0,.12)',
+          background: 'linear-gradient(135deg, #f3ebd8 0%, #e5d7ba 60%)',
+          borderBottom: '1px solid rgba(79,59,35,.22)',
           padding: '20px 32px 16px',
         }}>
           {/* Gold accent line */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, #FFD700, #FFD70066, transparent)' }} />
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #B9784A, #B9784A88, transparent)' }} />
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontFamily: "'Space Mono',monospace", fontSize: 8, letterSpacing: 6, color: 'rgba(255,215,0,.5)', textTransform: 'uppercase', marginBottom: 6 }}>
-                {isGalaTab ? 'Night Of Tennis' : 'Encerramento Oficial da Temporada'}
+                {currentPage.kicker}
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
                 <div style={{
@@ -7936,59 +9553,45 @@ function YearSummaryModal({ summary, onDismiss, allPlayers }) {
                   color: '#FFD700', lineHeight: .9, letterSpacing: -1,
                   textShadow: '0 0 30px rgba(255,215,0,.25)',
                 }}>
-                  {isGalaTab ? `GALA ${year}` : `TEMPORADA ${year}`}
+                  {currentPage.label}
                 </div>
                 <div style={{
                   fontFamily: "'Space Mono',monospace", fontSize: 10, letterSpacing: 3,
                   color: 'rgba(255,255,255,.2)', alignSelf: 'flex-end', paddingBottom: 4,
                 }}>
-                  {isGalaTab ? 'AWARDS' : 'FIM'}
+                  {String(page + 1).padStart(2, '0')}/{String(PAGES.length).padStart(2, '0')}
                 </div>
               </div>
             </div>
             <button onClick={onDismiss} style={{
-              background: 'linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,215,0,.08))',
-              border: '1px solid rgba(255,215,0,.3)',
-              color: '#FFD700', cursor: 'pointer',
+              background: 'rgba(185,120,74,.12)',
+              border: '1px solid rgba(126,79,47,.42)',
+              color: '#3B2F21', cursor: 'pointer',
               fontFamily: "'Barlow Condensed','Barlow Condensed',sans-serif",
               fontSize: 14, fontWeight: 700, letterSpacing: 4, textTransform: 'uppercase',
               padding: '12px 28px', transition: 'all .2s',
             }}
-              onMouseEnter={e => { e.target.style.background = 'rgba(255,215,0,.25)'; }}
-              onMouseLeave={e => { e.target.style.background = 'linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,215,0,.08))'; }}
+              onMouseEnter={e => { e.target.style.background = 'rgba(185,120,74,.22)'; }}
+              onMouseLeave={e => { e.target.style.background = 'rgba(185,120,74,.12)'; }}
             >
               Iniciar {nextYear} ?
             </button>
           </div>
         </div>
 
-        {/* -- TAB BAR -- */}
-        <div style={{
-          flexShrink: 0, display: 'flex',
-          background: '#030608',
-          borderBottom: '1px solid rgba(255,255,255,.06)',
-        }}>
-          {TABS.map(t => (
-            <button key={t.id} className={`_ey_tab_btn${tab === t.id ? ' active' : ''}`}
-              onClick={() => setTab(t.id)}
-              style={{ color: tab === t.id ? '#FFD700' : 'rgba(255,255,255,.3)' }}
-            >
-              <span style={{ marginRight: 5 }}>{t.icon}</span>{t.label}
-            </button>
-          ))}
+        <div style={{ flexShrink:0, padding:'10px 32px', display:'flex', alignItems:'center', gap:8, borderBottom:'1px solid rgba(79,59,35,.18)', background:'rgba(255,255,255,.22)' }}>
+          {PAGES.map((item, index) => <div key={item.label} style={{ height:3, flex:1, background:index === page ? '#B9784A' : index < page ? 'rgba(185,120,74,.42)' : 'rgba(79,59,35,.16)' }} />)}
         </div>
 
-        {/* -- SCROLLABLE CONTENT -- */}
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,215,0,.2) transparent' }}>
-          {tab === 'gala'        && <TabGala        summary={summary} allPlayers={allPlayers} onDismiss={onDismiss} />}
-          {tab === 'temporada'   && <TabTemporada   summary={summary} />}
-          {tab === 'premiacoes'  && <TabPremiacoes  summary={summary} />}
-          {tab === 'campeoes'    && <TabCampeoes    summary={summary} />}
-          {tab === 'aposentados' && <TabAposentados summary={summary} />}
-          {tab === 'novidades'   && <TabNovidades   summary={summary} />}
-          {tab === 'revelacoes'  && <TabRevelacoes  summary={summary} allPlayers={allPlayers} />}
-          {tab === 'lesoes'      && <TabLesoes      summary={summary} />}
-          {tab === 'ratings'     && <TabRatings     allPlayers={allPlayers} />}
+        {/* -- PÁGINA EDITORIAL -- */}
+        <div key={currentPage.label} style={{ flex:1, overflowY:'auto', scrollbarWidth:'thin', scrollbarColor:'rgba(126,79,47,.45) transparent', animation:'_ey_in .32s ease' }}>
+          {currentPage.render()}
+        </div>
+
+        <div style={{ flexShrink:0, display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:14, alignItems:'center', padding:'12px 32px 14px', borderTop:'1px solid rgba(79,59,35,.22)', background:'rgba(255,255,255,.26)' }}>
+          <button disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))} style={{ justifySelf:'start', padding:'9px 13px', cursor:page === 0 ? 'default' : 'pointer', opacity:page === 0 ? .36 : 1, background:'transparent', border:'1px solid rgba(79,59,35,.27)', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.14em', textTransform:'uppercase' }}>← página anterior</button>
+          <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.18em', textTransform:'uppercase', color:'#6D5B43' }}>edição {year} · {currentPage.label}</div>
+          {page < PAGES.length - 1 ? <button onClick={() => setPage(value => Math.min(PAGES.length - 1, value + 1))} style={{ justifySelf:'end', padding:'9px 13px', cursor:'pointer', background:'rgba(185,120,74,.14)', border:'1px solid rgba(126,79,47,.42)', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.14em', textTransform:'uppercase' }}>próxima página →</button> : <button onClick={onDismiss} style={{ justifySelf:'end', padding:'9px 13px', cursor:'pointer', background:'rgba(90,142,93,.14)', border:'1px solid rgba(56,95,59,.42)', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.14em', textTransform:'uppercase' }}>começar {nextYear} →</button>}
         </div>
       </div>
     </div>
@@ -8232,25 +9835,57 @@ const _CER_CSS = `
 
 ._cer_overlay{
   position:fixed;inset:0;z-index:9999;
-  background:rgba(0,0,0,.94) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,.015)'/%3E%3C/svg%3E");
+  background:rgba(43,33,23,.58);
   display:flex;align-items:center;justify-content:center;
+  padding:18px;
+  box-sizing:border-box;
   animation:_cer_fadein .35s ease;overflow:hidden;
 }
 ._cer_panel{
-  position:relative;width:min(97vw,1100px);max-height:94vh;
-  background:linear-gradient(160deg,#0d110d,#090c09);
-  border:1px solid rgba(255,255,255,.08);
-  outline:1px solid rgba(255,255,255,.03);
+  position:relative;width:min(96vw,1840px);height:min(95vh,960px);max-height:95vh;
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--cer-sc) 14%, transparent), transparent 34%),
+    linear-gradient(160deg,#eee5d1,#e3d6ba 58%,#d8c7a6);
+  border:1px solid rgba(76,57,35,.27);
+  outline:1px solid rgba(76,57,35,.12);
   outline-offset:4px;
   display:flex;flex-direction:column;overflow:hidden;
   animation:_cer_zoom .45s cubic-bezier(.16,1,.3,1);
+}
+._cer_side_rail{
+  min-width:0;align-self:start;display:grid;gap:14px;
+  padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(117,91,56,.06));
+  border:1px solid rgba(79,59,35,.20);animation:_cer_rise .42s ease .08s backwards;
+}
+._cer_recap_layout{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(310px,350px);gap:18px;align-items:start;
+}
+._cer_recap_main{min-width:0;}
+._cer_hero_grid{
+  display:grid;grid-template-columns:minmax(330px,.78fr) minmax(500px,1.22fr);
+  gap:18px;align-items:stretch;margin-bottom:18px;
+}
+._cer_stat_grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;}
+._cer_category_grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px;margin-bottom:13px;}
+._cer_surface_grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;}
+._cer_editorial_grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.62fr);gap:18px;}
+._cer_press_grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+@media (max-width: 1500px){
+  ._cer_recap_layout{grid-template-columns:minmax(0,1fr) 300px;gap:14px;}
+  ._cer_category_grid{grid-template-columns:repeat(4,minmax(0,1fr));}
+  ._cer_surface_grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width: 1340px){
+  ._cer_recap_layout{grid-template-columns:1fr;}
+  ._cer_side_rail{grid-template-columns:repeat(3,minmax(0,1fr));}
+  ._cer_side_rail > div:first-child{grid-column:1/-1;}
 }
 ._cer_confetti_piece{
   position:absolute;top:-16px;pointer-events:none;border-radius:2px;
   animation:_cer_confetti linear infinite;
 }
 ._cer_photo_winner{
-  width:clamp(110px,14vw,160px);height:clamp(110px,14vw,160px);
+  width:clamp(86px,10vw,122px);height:clamp(86px,10vw,122px);
   border-radius:50%;overflow:hidden;flex-shrink:0;
   border:3px solid var(--cer-sc);
   animation:_cer_glow 3s ease-in-out infinite;
@@ -8280,7 +9915,7 @@ const _CER_CSS = `
   border-bottom:2px solid transparent;
 }
 ._cer_tab.active{border-bottom-color:var(--cer-sc);color:var(--cer-sc);}
-._cer_tab:not(.active){color:rgba(255,255,255,.32);}
+._cer_tab:not(.active){color:rgba(59,47,33,.62);}
 ._cer_fact{
   padding:14px 18px;
   border-left:2px solid var(--cer-sc);
@@ -8293,6 +9928,29 @@ const _CER_CSS = `
   padding:14px 16px;background:rgba(255,255,255,.03);
   border:1px solid rgba(255,255,255,.06);
 }
+._cer_mag_grid{
+  flex:1;display:grid;
+  grid-template-columns:minmax(0,1.02fr) minmax(0,.82fr) minmax(280px,.74fr);
+  min-height:0;overflow:hidden;
+}
+._cer_mag_grid > div{min-width:0;}
+._cer_panel_card{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.014));
+  border:1px solid rgba(255,255,255,.07);
+}
+._cer_metric_tile{
+  min-width:0;padding:11px 12px;
+  background:rgba(255,255,255,.025);
+  border:1px solid rgba(255,255,255,.06);
+}
+._cer_route_row{
+  display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:9px 11px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055);
+}
+._cer_news_card{
+  padding:12px 14px;background:rgba(255,255,255,.026);
+  border:1px solid rgba(255,255,255,.06);border-left:3px solid var(--cer-sc);
+}
 ._cer_btn_close{
   position:absolute;top:12px;right:14px;z-index:20;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
@@ -8303,14 +9961,47 @@ const _CER_CSS = `
 ._cer_btn_close:hover{background:rgba(255,255,255,.14);color:#fff;}
 ._cer_section_hd{
   font-family:'Space Mono',monospace;font-size:7px;letter-spacing:.5em;
-  text-transform:uppercase;color:rgba(255,255,255,.28);margin-bottom:12px;
+  text-transform:uppercase;color:rgba(59,47,33,.62);margin-bottom:12px;
+}
+/* O caderno pós-torneio compartilha a paleta de arquivo da ficha.  A regra
+   intencionalmente vence os estilos legados do antigo painel escuro: nada de
+   texto branco/amarelo sobre o papel. As cores de superfície permanecem em
+   bordas, barras e fundos, não como fonte de baixo contraste. */
+._cer_panel [style]{color:#3B2F21 !important;text-shadow:none !important;}
+._cer_panel button{color:#3B2F21 !important;}
+._cer_panel [style*="background"]{ }
+._cer_panel ._cer_tab.active{color:#3B2F21 !important;border-bottom-color:var(--cer-sc);font-weight:800;}
+._cer_panel ._cer_btn_close{background:rgba(59,47,33,.06);border-color:rgba(59,47,33,.22);}
+._cer_panel ._cer_btn_close:hover{background:rgba(59,47,33,.13);color:#3B2F21 !important;}
+@media (max-width: 1240px){
+  ._cer_overlay{padding:0 1vw;justify-content:center;}
+  ._cer_panel{width:98vw;height:94vh;}
+  ._cer_recap_layout{grid-template-columns:1fr;}
+  ._cer_side_rail{grid-template-columns:repeat(3,minmax(0,1fr));}
+  ._cer_side_rail > div:first-child{grid-column:1/-1;}
+  ._cer_mag_grid{grid-template-columns:1fr;overflow-y:auto;}
+  ._cer_mag_grid > div{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.06);}
+}
+@media (max-width: 900px){
+  ._cer_hero_grid,._cer_editorial_grid{grid-template-columns:1fr;}
+  ._cer_press_grid{grid-template-columns:1fr;}
+}
+@media (max-width: 820px){
+  ._cer_side_rail{grid-template-columns:1fr;}
+  ._cer_stat_grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  ._cer_category_grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  ._cer_surface_grid{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 `;
 
 function _cerInjectCSS() {
-  if (document.getElementById('_cer_css_v2')) return;
+  if (document.getElementById('_cer_css_v6')) return;
+  document.getElementById('_cer_css_v5')?.remove();
+  document.getElementById('_cer_css_v4')?.remove();
+  document.getElementById('_cer_css_v3')?.remove();
+  document.getElementById('_cer_css_v2')?.remove();
   const s = document.createElement('style');
-  s.id = '_cer_css_v2'; s.textContent = _CER_CSS;
+  s.id = '_cer_css_v6'; s.textContent = _CER_CSS;
   document.head.appendChild(s);
 }
 
@@ -8522,7 +10213,7 @@ function _jTotalGames(setsDetail) {
 }
 
 function _jHasTiebreak(setsDetail) {
-  return (setsDetail ?? []).some(([a, b]) => (a === 7 && b === 6) || (a === 6 && b === 7));
+  return (setsDetail ?? []).some(([a, b]) => isTiebreakSetScore(a, b));
 }
 
 function _jRoundName(fromEnd) {
@@ -8620,7 +10311,7 @@ function _buildJournalistReport(tournament, bracket, state) {
   for (const { match, fromEnd } of allMatches) {
     const sd    = match.result?.setsDetail ?? [];
     const total = _jTotalGames(sd);
-    const tbs   = sd.filter(([a, b]) => (a === 7 && b === 6) || (a === 6 && b === 7)).length;
+    const tbs   = sd.filter(([a, b]) => isTiebreakSetScore(a, b)).length;
     const score = total + tbs * 8 + (sd.length >= 3 ? 15 : 0);
     if (score > epicScore) {
       epicScore = score;
@@ -9010,9 +10701,165 @@ function _JournalistReport({ report, sc }) {
   );
 }
 
-function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null, state, onClose }) {
+function CircuitShiftEdition({ shift, onDismiss, onOpenNext }) {
+  if (!shift) return null;
+  const accent = shift.tournamentSurface === 'CLAY' ? '#D76A3D'
+    : shift.tournamentSurface === 'GRASS' ? '#58C98A'
+    : shift.tournamentSurface === 'INDOOR' ? '#B18CFF' : '#66C7FF';
+  const dominantLabel = {
+    STATUS_ASCENT: 'MUDANÇA DE STATUS', UPSET: 'O FATO DA SEMANA', RIVALRY: 'TENSÃO QUE FICA',
+  }[shift.dominantStory] ?? 'EDIÇÃO ESPECIAL';
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10020, overflowY:'auto', background:'#050709', color:'#F2EDE4', fontFamily:"'Barlow',sans-serif" }}>
+      <div style={{ position:'fixed', inset:0, pointerEvents:'none', background:`radial-gradient(circle at 82% 8%, ${accent}24, transparent 30%), radial-gradient(circle at 12% 88%, #E8C84A12, transparent 32%)` }} />
+      <div style={{ position:'relative', width:'min(1180px, 94vw)', margin:'0 auto', padding:'clamp(34px,6vw,82px) 0 52px' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:18, paddingBottom:16, borderBottom:'1px solid rgba(255,255,255,.11)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ width:8, height:8, borderRadius:'50%', background:'#FF5A5A', boxShadow:'0 0 16px #FF5A5A', animation:'_cer_glow 1.4s ease infinite' }} />
+            <span style={{ fontFamily:"'Space Mono',monospace", fontSize:9, letterSpacing:'.3em', color:'rgba(242,237,228,.6)' }}>EDIÇÃO ESPECIAL · PÓS-TORNEIO</span>
+          </div>
+          <button onClick={onDismiss} style={{ border:'1px solid rgba(255,255,255,.14)', background:'rgba(255,255,255,.04)', color:'rgba(255,255,255,.62)', padding:'9px 12px', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.16em', cursor:'pointer' }}>PULAR EDIÇÃO</button>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.5fr) minmax(300px,.65fr)', gap:28, padding:'clamp(32px,5vw,62px) 0 30px' }}>
+          <section>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:9, color:accent, letterSpacing:'.28em', marginBottom:16 }}>{dominantLabel} · {shift.tournamentName?.toUpperCase()}</div>
+            <h1 style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(54px,8vw,116px)', lineHeight:.83, letterSpacing:'.025em', margin:0, textTransform:'uppercase', maxWidth:820 }}>{shift.headline}</h1>
+            <p style={{ maxWidth:720, margin:'26px 0 0', fontSize:'clamp(17px,2vw,23px)', lineHeight:1.5, color:'rgba(242,237,228,.65)' }}>{shift.deck}</p>
+            <div style={{ marginTop:32, padding:'18px 20px', borderLeft:`3px solid ${accent}`, background:`linear-gradient(90deg, ${accent}18, transparent)`, fontFamily:"'Barlow Condensed',sans-serif", fontSize:22, letterSpacing:'.02em', color:'#fff' }}>
+              {shift.champion?.name} é o campeão da semana. O que muda é o tamanho do alvo.
+            </div>
+          </section>
+          <aside style={{ alignSelf:'start', border:'1px solid rgba(255,255,255,.1)', background:'linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.012))', padding:22 }}>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.25em', color:'rgba(255,255,255,.36)', marginBottom:18 }}>O CAMPEÃO SAI ASSIM</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:40, lineHeight:.9, textTransform:'uppercase', color:'#E8C84A' }}>{shift.champion?.name}</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:9, marginTop:18 }}>
+              <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:52, color:'#fff' }}>#{shift.champion?.rank ?? '—'}</span>
+              <span style={{ fontFamily:"'Space Mono',monospace", fontSize:8, color:'rgba(255,255,255,.38)', letterSpacing:'.18em' }}>RANKING ATUAL</span>
+            </div>
+            <div style={{ marginTop:20, paddingTop:14, borderTop:'1px solid rgba(255,255,255,.08)', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.16em', color:accent }}>{shift.tournamentCategory?.replace(/_/g, ' ')}</div>
+          </aside>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))', gap:12, marginTop:8 }}>
+          {(shift.shifts ?? []).map((item, index) => (
+            <div key={`${item.type}-${item.playerId}-${index}`} style={{ minHeight:170, padding:'18px 18px 20px', border:'1px solid rgba(255,255,255,.09)', borderTop:`3px solid ${item.accent}`, background:'rgba(255,255,255,.025)', animation:`_cer_rise .45s ease ${index * .08}s backwards` }}>
+              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, color:item.accent, letterSpacing:'.22em', textTransform:'uppercase' }}>{item.label}</div>
+              <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:25, color:'#fff', letterSpacing:'.03em', textTransform:'uppercase', margin:'15px 0 8px' }}>{item.playerName}</div>
+              <div style={{ fontSize:14, lineHeight:1.55, color:'rgba(242,237,228,.62)' }}>{item.text}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop:28, padding:'24px clamp(18px,3vw,34px)', border:`1px solid ${accent}55`, background:`linear-gradient(100deg, ${accent}1c, rgba(255,255,255,.025))`, display:'grid', gridTemplateColumns:'minmax(0,1fr) auto', gap:22, alignItems:'center' }}>
+          <div>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, color:accent, letterSpacing:'.3em', marginBottom:10 }}>PRÓXIMO CAPÍTULO · {shift.nextHook?.tournamentName?.toUpperCase() ?? 'CALENDÁRIO'}</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(23px,3vw,36px)', color:'#fff', lineHeight:1.05, textTransform:'uppercase' }}>{shift.nextHook?.text}</div>
+          </div>
+          <div style={{ display:'flex', gap:9, flexWrap:'wrap' }}>
+            <button onClick={onDismiss} style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.16em', padding:'13px 15px', border:'1px solid rgba(255,255,255,.16)', color:'rgba(255,255,255,.74)', background:'transparent', cursor:'pointer' }}>VOLTAR À CENTRAL</button>
+            <button onClick={onOpenNext} style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.16em', padding:'13px 15px', border:`1px solid ${accent}`, color:'#071014', background:accent, cursor:'pointer', fontWeight:700 }}>VER O PRÓXIMO CAPÍTULO</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TournamentTurningPointsPage({ bracket, champion, runner, getDisplayRank, accent }) {
+  const matches = React.useMemo(() => (bracket?.rounds ?? []).flatMap((round, roundIndex) => round
+    .filter(match => match?.winner && !match?.isBye)
+    .map(match => ({ ...match, roundIndex, fromEnd:(bracket?.rounds?.length ?? 1) - 1 - roundIndex }))), [bracket]);
+  const roundLabel = (fromEnd) => fromEnd === 0 ? 'Final' : fromEnd === 1 ? 'Semifinal' : fromEnd === 2 ? 'Quartas' : fromEnd === 3 ? 'Oitavas' : 'Rodadas iniciais';
+  const resolveLoser = (match) => match.playerA?.id === match.winner?.id ? match.playerB : match.playerA;
+  const surprises = matches.map(match => {
+    const loser = resolveLoser(match);
+    const winnerRank = getDisplayRank(match.winner) ?? match.winner?.rankPosition ?? 999;
+    const loserRank = getDisplayRank(loser) ?? loser?.rankPosition ?? 999;
+    const ovrSwing = overallRating(loser?.attrs ?? {}) - overallRating(match.winner?.attrs ?? {});
+    return { match, winner:match.winner, loser, score:(winnerRank - loserRank) + Math.max(0, ovrSwing) * .7 + (match.fromEnd * .6), rankGap:winnerRank - loserRank };
+  }).filter(item => item.winner && item.loser).sort((a,b) => b.score - a.score);
+  const surprise = surprises[0] ?? null;
+  const disappointments = matches.map(match => {
+    const loser = resolveLoser(match);
+    const winnerRank = getDisplayRank(match.winner) ?? match.winner?.rankPosition ?? 999;
+    const loserRank = getDisplayRank(loser) ?? loser?.rankPosition ?? 999;
+    const expectation = Math.max(0, loserRank <= winnerRank ? winnerRank - loserRank : 0) + Math.max(0, overallRating(loser?.attrs ?? {}) - overallRating(match.winner?.attrs ?? {})) * .55;
+    return { match, winner:match.winner, loser, score:expectation + match.fromEnd * .45 };
+  }).filter(item => item.loser && item.loser.id !== champion?.id).sort((a,b) => b.score - a.score);
+  const disappointment = disappointments[0] ?? null;
+  const campaign = (player) => matches.filter(match => match.winner?.id === player?.id).sort((a,b) => a.roundIndex - b.roundIndex);
+  const campaignLine = (player) => campaign(player).map(match => {
+    const opponent = match.playerA?.id === player?.id ? match.playerB : match.playerA;
+    const isA = match.playerA?.id === player?.id;
+    const score = (match.result?.setsDetail ?? []).map(([a,b]) => `${isA ? a : b}-${isA ? b : a}`).join(' ') || 'W/O';
+    return { label:roundLabel(match.fromEnd), opponent, score };
+  });
+  const StoryCard = ({ type, item, fallback, color }) => {
+    const player = item?.winner ?? fallback;
+    const isFallback = !item;
+    const run = campaignLine(player);
+    const headline = type === 'surpresa'
+      ? isFallback ? `${player?.name ?? 'O campeão'} confirmou o favoritismo.` : `${player?.name} virou a leitura do torneio.`
+      : isFallback ? `${runner?.name ?? 'A finalista'} foi a campanha que mais ficou curta.` : `${item.loser?.name} saiu antes do roteiro esperado.`;
+    const copy = type === 'surpresa'
+      ? isFallback ? 'Sem zebra estatística grande: o campeão foi quem sustentou a pressão até o troféu.' : `${player?.name} derrubou ${item.loser?.name} em ${roundLabel(item.match.fromEnd).toLowerCase()} e abriu uma das páginas mais improváveis da semana.`
+      : isFallback ? 'A final é onde a ambição de quase todo torneio encontra seu limite.' : `${item.loser?.name} caiu diante de ${item.winner?.name}; uma saída que reposiciona expectativa, ranking e o próximo torneio.`;
+    return <article style={{ padding:'20px 20px 18px', border:'1px solid rgba(79,59,35,.22)', borderTop:`5px solid ${color}`, background:'rgba(255,255,255,.28)', minHeight:360 }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.22em', textTransform:'uppercase', color:'#6D5B43' }}>{type}</div><div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(28px,3vw,40px)', fontWeight:900, textTransform:'uppercase', lineHeight:.94, marginTop:14 }}>{headline}</div><div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:16, lineHeight:1.56, marginTop:13 }}>{copy}</div><div style={{ marginTop:18, paddingTop:12, borderTop:'1px solid rgba(79,59,35,.16)' }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.18em', textTransform:'uppercase', color:'#6D5B43', marginBottom:8 }}>campanha que explica</div>{run.length ? <div style={{ display:'grid', gap:5 }}>{run.map((step, index) => <div key={`${step.label}-${index}`} style={{ display:'grid', gridTemplateColumns:'90px 1fr auto', gap:9, alignItems:'center', padding:'7px 8px', background:'rgba(255,255,255,.22)', borderLeft:`2px solid ${color}` }}><span style={{ fontFamily:"'Space Mono',monospace", fontSize:7, color:'#6D5B43', textTransform:'uppercase' }}>{step.label}</span><span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:17, fontWeight:800, textTransform:'uppercase' }}>{step.opponent?.name ?? '—'}</span><span style={{ fontFamily:"'Space Mono',monospace", fontSize:8 }}>{step.score}</span></div>)}</div> : <div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:15 }}>A história se decidiu em uma única partida que mudou o peso da semana.</div>}</div></article>;
+  };
+  return <div style={{ flex:1, overflowY:'auto', padding:'28px 28px 34px', background:`radial-gradient(circle at 84% 4%, ${accent}20, transparent 27%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 45%)` }}><div style={{ maxWidth:850, marginBottom:24 }}><div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.28em', textTransform:'uppercase', color:'#6D5B43', marginBottom:10 }}>o lado que o troféu não conta</div><h2 style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(35px,5vw,60px)', fontWeight:900, lineHeight:.88, textTransform:'uppercase', margin:0 }}>Quem mudou a lógica da semana.</h2><p style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:18, lineHeight:1.55, margin:'14px 0 0' }}>Todo torneio deixa duas marcas: quem excedeu o próprio tamanho e quem saiu antes de transformar expectativa em campanha.</p></div><div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:14 }}><StoryCard type="surpresa" item={surprise?.score > .5 ? surprise : null} fallback={champion} color={accent} /><StoryCard type="decepção" item={disappointment?.score > .5 ? disappointment : null} fallback={runner} color="#B05D4C" /></div></div>;
+}
+
+function TournamentCircuitTab({ shift, accent }) {
+  if (!shift) return null;
+  const storyLabel = {
+    STATUS_ASCENT: 'mudança de status',
+    UPSET: 'o fato da semana',
+    RIVALRY: 'tensão que fica',
+  }[shift.dominantStory] ?? 'edição especial';
+  return (
+    <div style={{ flex:1, overflowY:'auto', padding:'26px 28px 32px', background:`radial-gradient(circle at 85% 3%, ${accent}20, transparent 30%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 40%)` }}>
+      <div style={{ borderBottom:`2px solid ${accent}`, paddingBottom:20, marginBottom:20 }}>
+        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.32em', textTransform:'uppercase', color:'#6D5B43', marginBottom:12 }}>arquivo do circuito · pós-torneio</div>
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(230px,.38fr)', gap:24, alignItems:'end' }}>
+          <div>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.22em', textTransform:'uppercase', color:'#6D5B43', marginBottom:9 }}>{storyLabel} · {shift.tournamentName}</div>
+            <h2 style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'clamp(34px,5vw,64px)', lineHeight:.9, letterSpacing:'.015em', textTransform:'uppercase', margin:0 }}>{shift.headline}</h2>
+            <p style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:18, lineHeight:1.55, maxWidth:760, margin:'16px 0 0' }}>{shift.deck}</p>
+          </div>
+          <div style={{ border:`1px solid ${accent}66`, borderTop:`4px solid ${accent}`, background:'rgba(255,255,255,.28)', padding:'15px 16px' }}>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.2em', textTransform:'uppercase', color:'#6D5B43' }}>campeão após a semana</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:29, fontWeight:900, lineHeight:1, textTransform:'uppercase', marginTop:11 }}>{shift.champion?.name ?? 'campeão'}</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:8, marginTop:14 }}>
+              <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:46, fontWeight:900, lineHeight:.8 }}>#{shift.champion?.rank ?? '—'}</span>
+              <span style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.15em', textTransform:'uppercase', color:'#6D5B43' }}>ranking atual</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.24em', textTransform:'uppercase', color:'#6D5B43', marginBottom:10 }}>o que mudou nesta semana</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))', gap:11 }}>
+        {(shift.shifts ?? []).map((item, index) => (
+          <article key={`${item.type}-${item.playerId}-${index}`} style={{ minHeight:164, padding:'17px 18px 19px', border:'1px solid rgba(79,59,35,.22)', borderTop:`4px solid ${item.accent ?? accent}`, background:'rgba(255,255,255,.22)' }}>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.2em', textTransform:'uppercase', color:'#6D5B43' }}>{item.label}</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:25, fontWeight:900, lineHeight:1, letterSpacing:'.02em', textTransform:'uppercase', margin:'14px 0 8px' }}>{item.playerName}</div>
+            <div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:15, lineHeight:1.55 }}>{item.text}</div>
+          </article>
+        ))}
+      </div>
+
+      <div style={{ marginTop:22, padding:'18px 20px', borderLeft:`4px solid ${accent}`, borderTop:'1px solid rgba(79,59,35,.2)', borderRight:'1px solid rgba(79,59,35,.2)', borderBottom:'1px solid rgba(79,59,35,.2)', background:`linear-gradient(90deg, ${accent}1A, rgba(255,255,255,.16))` }}>
+        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.22em', textTransform:'uppercase', color:'#6D5B43', marginBottom:8 }}>próximo capítulo · {shift.nextHook?.tournamentName ?? 'calendário'}</div>
+        <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:25, fontWeight:800, lineHeight:1.05, textTransform:'uppercase' }}>{shift.nextHook?.text ?? 'O circuito segue para o próximo torneio.'}</div>
+      </div>
+    </div>
+  );
+}
+
+function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null, state, circuitShift = null, onClose }) {
   _cerInjectCSS();
-  const [tab, setTab] = React.useState('recap');
+  const [page, setPage] = React.useState(0);
   const [expandedId, setExpandedId] = React.useState(null);
 
   const sc = _cerSurface(tournament?.courtKey ?? tournament?.surface ?? 'US_OPEN');
@@ -9031,8 +10878,200 @@ function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null
   const styleRunner = PLAY_STYLES[runner?.styleId];
   const champOvr = champion ? overallRating(champion.attrs ?? {}) : 0;
   const runnerOvr = runner ? overallRating(runner.attrs ?? {}) : 0;
-  const ct = champion?.careerTitles ?? {};
-  const totalTitles = (ct.gs ?? 0) + (ct.slamClash ?? 0) + (ct.masters ?? 0) + (ct.finals ?? 0) + (ct.atp500 ?? 0) + (ct.atp250 ?? 0);
+  const officialRankById = React.useMemo(() => {
+    const map = new Map();
+    for (const row of state?.rankingStore?.ranked ?? []) {
+      if (row?.playerId && Number.isFinite(row.position)) map.set(row.playerId, row.position);
+    }
+    for (const row of state?.rankingStore?.prospectRanked ?? []) {
+      if (row?.playerId && Number.isFinite(row.position)) map.set(row.playerId, row.position);
+    }
+    for (const player of [...(state?.tourPlayers ?? []), ...(state?.prospects ?? [])]) {
+      if (player?.id && !map.has(player.id) && Number.isFinite(player.rankPosition)) {
+        map.set(player.id, player.rankPosition);
+      }
+    }
+    return map;
+  }, [state?.rankingStore, state?.tourPlayers, state?.prospects]);
+  const getDisplayRank = React.useCallback((player) => {
+    if (!player?.id) return null;
+    const official = officialRankById.get(player.id);
+    if (Number.isFinite(official)) return official;
+    return Number.isFinite(player.rankPosition) ? player.rankPosition : null;
+  }, [officialRankById]);
+  const PAGES = [
+    { id:'recap', label:'Capa e troféu', kicker:'a edição do campeão' },
+    { id:'turning', label:'O ponto de virada', kicker:'surpresa e decepção' },
+    { id:'stats', label:'Os números', kicker:'estatísticas que chamam atenção' },
+    { id:'draw', label:'As campanhas', kicker:'os caminhos do torneio' },
+    ...(circuitShift ? [{ id:'circuit', label:'A consequência', kicker:'rota do circuito' }] : []),
+    { id:'press', label:'A redação', kicker:'o arquivo da semana' },
+  ];
+  const tab = PAGES[page]?.id ?? 'recap';
+  const currentPage = PAGES[page] ?? PAGES[0];
+  const freshChampion = React.useMemo(() => {
+    if (!champion?.id) return champion;
+    return [
+      ...(state?.tourPlayers ?? []),
+      ...(state?.prospects ?? []),
+      ...(state?.retiredPlayers ?? []),
+    ].find(p => p?.id === champion.id) ?? champion;
+  }, [champion?.id, state?.tourPlayers, state?.prospects, state?.retiredPlayers]);
+
+  const instantTitleSnapshot = React.useMemo(() => {
+    const baseCt = freshChampion?.careerTitles ?? champion?.careerTitles ?? {};
+    const baseSurface = freshChampion?.surfaceStats ?? champion?.surfaceStats ?? {};
+    const categoryToKey = (category) => {
+      if (category === 'GRAND_SLAM') return 'gs';
+      if (category === 'SLAM_CLASH') return 'slamClash';
+      if (category === 'MASTERS_1000') return 'masters';
+      if (category === 'FINALS' || category === 'PROSPECTS_FINALS') return 'finals';
+      if (category === 'ATP_500') return 'atp500';
+      if (category === 'ATP_250') return 'atp250';
+      if (category === 'ATP_100') return 'atp100';
+      return 'atp250';
+    };
+    const currentYear = state?.year ?? tournament?.year ?? tournament?.season ?? null;
+    const currentKey = `${tournament?.id ?? tournament?.name ?? 'current'}|${currentYear ?? 'now'}`;
+    const categoryCounts = {
+      gs: 0, slamClash: 0, masters: 0, finals: 0,
+      atp500: 0, atp250: 0, atp100: 0,
+    };
+    const surfaceCounts = {
+      HARD: 0, CLAY: 0, GRASS: 0, STREET: 0, CARPET: 0, INDOOR: 0,
+    };
+    const seen = new Set();
+    const addTitle = (tour, champ, year) => {
+      if (!champion?.id || champ?.id !== champion.id) return;
+      const key = `${tour?.id ?? tour?.name ?? 'unknown'}|${year ?? tour?.season ?? 'unknown'}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const catKey = categoryToKey(tour?.category);
+      categoryCounts[catKey] = (categoryCounts[catKey] ?? 0) + 1;
+      const surface = String(tour?.surface ?? tour?.courtKey ?? 'HARD').toUpperCase();
+      const normalizedSurface = surface.includes('CLAY') || surface.includes('ROLAND') ? 'CLAY'
+        : surface.includes('GRASS') || surface.includes('WIMBLEDON') ? 'GRASS'
+        : surface.includes('INDOOR') || surface.includes('O2') ? 'INDOOR'
+        : surface.includes('STREET') || surface.includes('URBAN') ? 'STREET'
+        : surface.includes('CARPET') || surface.includes('SILK') ? 'CARPET'
+        : 'HARD';
+      surfaceCounts[normalizedSurface] = (surfaceCounts[normalizedSurface] ?? 0) + 1;
+    };
+
+    for (const res of Object.values(state?.historicalTournamentResults ?? {})) {
+      if (!res) continue;
+      const resTour = res.tournament ?? null;
+      const resChamp = res._slim ? res.champion : res.bracket?.champion;
+      addTitle(resTour, resChamp, res._season ?? resTour?.season ?? null);
+    }
+    addTitle(tournament, champion, currentYear);
+    seen.add(currentKey);
+
+    const ctInstant = {
+      ...baseCt,
+      gs: Math.max(baseCt.gs ?? 0, categoryCounts.gs ?? 0),
+      slamClash: Math.max(baseCt.slamClash ?? 0, categoryCounts.slamClash ?? 0),
+      masters: Math.max(baseCt.masters ?? 0, categoryCounts.masters ?? 0),
+      finals: Math.max(baseCt.finals ?? 0, categoryCounts.finals ?? 0),
+      atp500: Math.max(baseCt.atp500 ?? 0, categoryCounts.atp500 ?? 0),
+      atp250: Math.max(baseCt.atp250 ?? 0, categoryCounts.atp250 ?? 0),
+      atp100: Math.max(baseCt.atp100 ?? 0, categoryCounts.atp100 ?? 0),
+      olympic: baseCt.olympic ?? {},
+    };
+    const surfaceInstant = Object.fromEntries(['HARD', 'CLAY', 'GRASS', 'STREET', 'CARPET', 'INDOOR'].map(surface => [
+      surface,
+      Math.max(baseSurface?.[surface]?.titlesWon ?? 0, surfaceCounts[surface] ?? 0),
+    ]));
+    return { careerTitles: ctInstant, surfaceTitles: surfaceInstant };
+  }, [champion?.id, freshChampion, tournament, state?.historicalTournamentResults, state?.year]);
+
+  const ct = instantTitleSnapshot.careerTitles;
+  const surfaceTitleCounts = instantTitleSnapshot.surfaceTitles;
+  const totalTitles = (ct.gs ?? 0) + (ct.slamClash ?? 0) + (ct.masters ?? 0) + (ct.finals ?? 0) + (ct.atp500 ?? 0) + (ct.atp250 ?? 0) + (ct.atp100 ?? 0);
+  const legacyRankings = React.useMemo(() => {
+    const byId = new Map();
+    const eventTitlesById = new Map();
+    const eventEditionsSeen = new Set();
+    for (const player of [
+      ...(state?.tourPlayers ?? []),
+      ...(state?.prospects ?? []),
+      ...(state?.retiredPlayers ?? []),
+      champion,
+      freshChampion,
+    ]) {
+      if (!player?.id) continue;
+      byId.set(player.id, { ...(byId.get(player.id) ?? {}), ...player });
+    }
+    const normalizeEventName = value => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const sameTournament = candidate => {
+      if (!candidate) return false;
+      if (candidate.id && tournament?.id) return candidate.id === tournament.id;
+      return normalizeEventName(candidate.name) === normalizeEventName(tournament?.name);
+    };
+    const registerEventTitle = (resultTournament, winner, year) => {
+      if (!winner?.id || !sameTournament(resultTournament)) return;
+      const editionKey = `${resultTournament?.id ?? normalizeEventName(resultTournament?.name)}|${year ?? resultTournament?.season ?? 'unknown'}`;
+      if (eventEditionsSeen.has(editionKey)) return;
+      eventEditionsSeen.add(editionKey);
+      eventTitlesById.set(winner.id, (eventTitlesById.get(winner.id) ?? 0) + 1);
+      byId.set(winner.id, { ...(byId.get(winner.id) ?? {}), ...winner });
+    };
+    for (const result of Object.values(state?.historicalTournamentResults ?? {})) {
+      const resultTournament = result?.tournament ?? null;
+      const winner = result?._slim ? result?.champion : result?.bracket?.champion;
+      registerEventTitle(resultTournament, winner, result?._season ?? resultTournament?.season ?? null);
+    }
+    registerEventTitle(tournament, champion, state?.year ?? tournament?.year ?? tournament?.season ?? null);
+    if (champion?.id) {
+      const current = byId.get(champion.id) ?? champion;
+      byId.set(champion.id, {
+        ...current,
+        careerTitles: ct,
+        surfaceStats: Object.fromEntries(Object.entries(surfaceTitleCounts ?? {}).map(([surface, n]) => [
+          surface,
+          { ...(current.surfaceStats?.[surface] ?? {}), titlesWon: n },
+        ])),
+      });
+    }
+
+    const titleTotal = (player) => {
+      const t = player?.careerTitles ?? {};
+      return (t.gs ?? 0) + (t.slamClash ?? 0) + (t.masters ?? 0) + (t.finals ?? 0) + (t.atp500 ?? 0) + (t.atp250 ?? 0) + (t.atp100 ?? 0);
+    };
+    const surfaceTotal = (player) => {
+      if (player?.id === champion?.id) return surfaceTitleCounts?.[sc.key] ?? 0;
+      return player?.surfaceStats?.[sc.key]?.titlesWon ?? 0;
+    };
+    const eventTotal = player => eventTitlesById.get(player?.id) ?? 0;
+    const sortRows = (metric) => [...byId.values()]
+      .map(player => ({
+        id: player.id,
+        name: player.name ?? 'Jogador',
+        value: metric(player),
+        rank: null,
+      }))
+      .filter(row => row.value > 0)
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+    const buildView = (ranked) => {
+      const champIdx = ranked.findIndex(row => row.id === champion?.id);
+      const leaders = ranked.slice(0, 5);
+      if (champIdx < 0 || champIdx < 5) return { rows: leaders, championRank: champIdx >= 0 ? ranked[champIdx]?.rank : null };
+      const context = ranked.slice(Math.max(0, champIdx - 1), Math.min(ranked.length, champIdx + 2));
+      const rows = [...ranked.slice(0, 3), ...context]
+        .filter((row, index, list) => list.findIndex(item => item.id === row.id) === index)
+        .slice(0, 5);
+      return {
+        rows,
+        championRank: ranked[champIdx]?.rank ?? null,
+      };
+    };
+    return {
+      overall: buildView(sortRows(titleTotal)),
+      surface: buildView(sortRows(surfaceTotal)),
+      event: buildView(sortRows(eventTotal)),
+    };
+  }, [state?.tourPlayers, state?.prospects, state?.retiredPlayers, state?.historicalTournamentResults, state?.year, champion?.id, freshChampion, ct, surfaceTitleCounts, sc.key, tournament]);
 
   const facts = React.useMemo(() =>
     _cerFacts(tournament, champion, runner, finalMatch, bracket),
@@ -9069,6 +11108,225 @@ function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null
     .map(m => m.playerA?.id === m.winner?.id ? m.playerB : m.playerA)
     .filter(p => p && p.id !== champion?.id && p.id !== runner?.id)
     .slice(0, 2);
+
+  const finalScoreText = sd.length
+    ? sd.map(([a, b]) => champIsA ? `${a}-${b}` : `${b}-${a}`).join(' ')
+    : 'sem placar';
+  const totalGamesFinal = sd.reduce((sum, [a, b]) => sum + a + b, 0);
+  const setsWon = sd.filter(([a, b]) => champIsA ? a > b : b > a).length;
+  const setsLost = sd.filter(([a, b]) => champIsA ? a < b : b < a).length;
+  const identityChamp = React.useMemo(() => {
+    try { return champion ? buildPlayerIdentity(champion, { surfaceKey: sc.key }) : null; }
+    catch { return null; }
+  }, [champion?.id, sc.key]);
+
+  const championRoute = React.useMemo(() => {
+    if (!champion?.id) return [];
+    return rounds.map((round, ri) => {
+      const m = round.find(match => match?.winner?.id === champion.id && !match.isBye);
+      if (!m) return null;
+      const fromEnd = rounds.length - 1 - ri;
+      const roundLabel = fromEnd === 0 ? 'Final' : fromEnd === 1 ? 'Semi' : fromEnd === 2 ? 'Quartas' : fromEnd === 3 ? 'Oitavas' : `R${round.filter(x => !x.isBye).length * 2}`;
+      const opponent = m.playerA?.id === champion.id ? m.playerB : m.playerA;
+      const isA = m.playerA?.id === champion.id;
+      const ownStats = isA ? m.result?.stats?.a : m.result?.stats?.b;
+      const oppStats = isA ? m.result?.stats?.b : m.result?.stats?.a;
+      const sets = m.result?.setsDetail ?? [];
+      const score = sets.length ? sets.map(([a, b]) => `${isA ? a : b}-${isA ? b : a}`).join(' ') : 'W/O';
+      const setsFor = sets.filter(([a, b]) => isA ? a > b : b > a).length;
+      const setsAgainst = sets.filter(([a, b]) => isA ? a < b : b < a).length;
+      const heat = m.result?.heat?.score ?? m.result?.heat?.peak ?? null;
+      const games = sets.reduce((s, [a, b]) => s + a + b, 0);
+      return { roundLabel, opponent, score, setsFor, setsAgainst, heat, games, fromEnd, stats: ownStats ?? null, oppStats: oppStats ?? null };
+    }).filter(Boolean).reverse();
+  }, [champion?.id, rounds]);
+
+  const campaignStats = React.useMemo(() => {
+    const wins = championRoute.length;
+    const allSets = championRoute.flatMap(route => {
+      const match = rounds.flatMap(r => r).find(m => {
+        const opp = m.playerA?.id === champion?.id ? m.playerB : m.playerA;
+        return m.winner?.id === champion?.id && opp?.id === route.opponent?.id;
+      });
+      return match?.result?.setsDetail ?? [];
+    });
+    const setDiff = allSets.reduce((acc, [a, b]) => {
+      const matchA = a > b ? 1 : 0;
+      const matchB = b > a ? 1 : 0;
+      return acc + matchA - matchB;
+    }, 0);
+    const heatVals = championRoute.map(r => r.heat).filter(v => v != null);
+    const avgHeat = heatVals.length ? Math.round(heatVals.reduce((s, v) => s + v, 0) / heatVals.length) : null;
+    const games = championRoute.reduce((s, r) => s + (r.games ?? 0), 0);
+    const winners = championRoute.reduce((s, r) => s + (r.stats?.winners ?? 0), 0);
+    const aces = championRoute.reduce((s, r) => s + (r.stats?.aces ?? 0), 0);
+    const unforcedErrors = championRoute.reduce((s, r) => s + (r.stats?.unforcedErrors ?? 0), 0);
+    const setsPlayed = championRoute.reduce((s, r) => s + (r.setsFor ?? 0) + (r.setsAgainst ?? 0), 0);
+    const gamesHeld = championRoute.reduce((s, r) => s + (r.stats?.gamesHeld ?? 0), 0);
+    const gamesServed = championRoute.reduce((s, r) => s + (r.stats?.gamesServed ?? 0), 0);
+    const gamesConverted = championRoute.reduce((s, r) => s + (r.stats?.gamesConverted ?? 0), 0);
+    const gamesReturned = championRoute.reduce((s, r) => s + (r.stats?.gamesReturned ?? 0), 0);
+    const oppBreaks = championRoute.reduce((s, r) => s + (r.oppStats?.gamesConverted ?? 0), 0);
+    const oppReturnGames = championRoute.reduce((s, r) => s + (r.oppStats?.gamesReturned ?? 0), 0);
+    const oppGamesHeld = championRoute.reduce((s, r) => s + (r.oppStats?.gamesHeld ?? 0), 0);
+    const oppGamesServed = championRoute.reduce((s, r) => s + (r.oppStats?.gamesServed ?? 0), 0);
+    const servePointsWon = championRoute.reduce((s, r) => s + (r.stats?.pointsWonServing ?? 0), 0);
+    const servePointsLost = championRoute.reduce((s, r) => s + (r.stats?.pointsLostServing ?? 0), 0);
+    const returnPointsWon = championRoute.reduce((s, r) => s + (r.stats?.pointsWonReturning ?? 0), 0);
+    const returnPointsLost = championRoute.reduce((s, r) => s + (r.stats?.pointsLostReturning ?? 0), 0);
+    const winnersPerSet = setsPlayed ? Math.round((winners / setsPlayed) * 10) / 10 : null;
+    const avgAces = wins ? Math.round((aces / wins) * 10) / 10 : null;
+    const errorsPerSet = setsPlayed ? Math.round((unforcedErrors / setsPlayed) * 10) / 10 : null;
+    const directHoldPct = gamesServed ? Math.round((gamesHeld / gamesServed) * 100) : null;
+    const breakHoldPct = oppReturnGames ? Math.round(((oppReturnGames - oppBreaks) / oppReturnGames) * 100) : null;
+    const servePointPct = (servePointsWon + servePointsLost) ? Math.round((servePointsWon / (servePointsWon + servePointsLost)) * 100) : null;
+    const returnPointPct = (returnPointsWon + returnPointsLost) ? Math.round((returnPointsWon / (returnPointsWon + returnPointsLost)) * 100) : null;
+    const directBreakPct = gamesReturned ? Math.round((gamesConverted / gamesReturned) * 100) : null;
+    const oppServiceBreakPct = oppGamesServed ? Math.round(((oppGamesServed - oppGamesHeld) / oppGamesServed) * 100) : null;
+    const breakPct = directBreakPct != null
+      ? directBreakPct
+      : oppServiceBreakPct;
+    const holdPct = directHoldPct ?? breakHoldPct;
+    return {
+      wins, setDiff, avgHeat, games, setsPlayed, winnersPerSet, avgAces, errorsPerSet,
+      holdPct, breakPct, servePointPct, returnPointPct,
+      hasServiceGames: gamesServed > 0 || gamesReturned > 0,
+    };
+  }, [championRoute, rounds, champion?.id]);
+
+  const tournamentBenchmarks = React.useMemo(() => {
+    const totals = {
+      matches: 0, playerMatches: 0, playerSets: 0,
+        winners: 0, aces: 0, unforcedErrors: 0,
+        gamesHeld: 0, gamesServed: 0, gamesConverted: 0, gamesReturned: 0,
+        pointsWonServing: 0, pointsLostServing: 0,
+        pointsWonReturning: 0, pointsLostReturning: 0,
+    };
+    for (const match of rounds.flatMap(round => round)) {
+      if (!match?.winner || match.isBye || !match.result) continue;
+      const setsPlayed = match.result?.setsDetail?.length ?? 0;
+      const sides = [match.result?.stats?.a, match.result?.stats?.b].filter(Boolean);
+      if (!sides.length) continue;
+      totals.matches += 1;
+      for (const stats of sides) {
+        totals.playerMatches += 1;
+        totals.playerSets += setsPlayed;
+        totals.winners += stats.winners ?? 0;
+        totals.aces += stats.aces ?? 0;
+        totals.unforcedErrors += stats.unforcedErrors ?? 0;
+        totals.gamesHeld += stats.gamesHeld ?? 0;
+        totals.gamesServed += stats.gamesServed ?? 0;
+        totals.gamesConverted += stats.gamesConverted ?? 0;
+        totals.gamesReturned += stats.gamesReturned ?? 0;
+        totals.pointsWonServing += stats.pointsWonServing ?? 0;
+        totals.pointsLostServing += stats.pointsLostServing ?? 0;
+        totals.pointsWonReturning += stats.pointsWonReturning ?? 0;
+        totals.pointsLostReturning += stats.pointsLostReturning ?? 0;
+      }
+    }
+    const oneDecimal = value => Math.round(value * 10) / 10;
+    return {
+      winnersPerSet: totals.playerSets ? oneDecimal(totals.winners / totals.playerSets) : null,
+      acesPerMatch: totals.playerMatches ? oneDecimal(totals.aces / totals.playerMatches) : null,
+      errorsPerSet: totals.playerSets ? oneDecimal(totals.unforcedErrors / totals.playerSets) : null,
+      holdPct: totals.gamesServed ? Math.round((totals.gamesHeld / totals.gamesServed) * 100) : null,
+      breakPct: totals.gamesReturned ? Math.round((totals.gamesConverted / totals.gamesReturned) * 100) : null,
+      servePointPct: (totals.pointsWonServing + totals.pointsLostServing)
+        ? Math.round((totals.pointsWonServing / (totals.pointsWonServing + totals.pointsLostServing)) * 100)
+        : null,
+      returnPointPct: (totals.pointsWonReturning + totals.pointsLostReturning)
+        ? Math.round((totals.pointsWonReturning / (totals.pointsWonReturning + totals.pointsLostReturning)) * 100)
+        : null,
+      hasServiceGames: totals.gamesServed > 0 || totals.gamesReturned > 0,
+    };
+  }, [rounds]);
+
+  const pressCards = React.useMemo(() => {
+    const headline = journalistReport?.headline ?? `${champion?.name ?? 'Campeão'} transforma ${tournament?.name ?? 'o torneio'} em declaração de força`;
+    const deck = journalistReport?.deck ?? facts[0] ?? `A campanha terminou com ${finalScoreText}, mas o impacto vai além do placar.`;
+    const body = journalistReport?.body ?? facts.slice(1, 3).join(' ');
+    return [
+      { label:'Manchete', tone:sc.color, title:headline, text:deck },
+      { label:'Leitura', tone:'#5BB8E4', title:'O que decidiu', text:body || `A final teve ${totalGamesFinal || 'poucos'} games e controle nos pontos que realmente importavam.` },
+      { label:'Próximo capítulo', tone:'#E8C84A', title:'Consequência no circuito', text:`${champion?.name?.split(' ')[0] ?? 'O campeão'} sai com ${totalTitles} título(s) de carreira e uma narrativa mais pesada para o próximo torneio.` },
+    ];
+  }, [journalistReport, champion?.id, tournament?.id, facts, finalScoreText, totalGamesFinal, totalTitles, sc.color]);
+
+  const championStartRank = bracket?.entryRanks?.[champion?.id]
+    ?? (Number.isFinite(champion?.rankPosition) ? champion.rankPosition : null);
+  const championEndRank = getDisplayRank(freshChampion ?? champion);
+  const serviceGameMetrics = campaignStats.hasServiceGames || tournamentBenchmarks.hasServiceGames;
+  const statTiles = [
+    { label:'Winners / set', raw:campaignStats.winnersPerSet, value:campaignStats.winnersPerSet ?? '—', average:tournamentBenchmarks.winnersPerSet, averageSuffix:'', color:sc.color },
+    { label:'Aces / partida', raw:campaignStats.avgAces, value:campaignStats.avgAces ?? '—', average:tournamentBenchmarks.acesPerMatch, averageSuffix:'', color:'#B88A12' },
+    serviceGameMetrics
+      ? { label:'Hold', raw:campaignStats.holdPct, value:campaignStats.holdPct != null ? `${campaignStats.holdPct}%` : '—', average:tournamentBenchmarks.holdPct, averageSuffix:'%', color:'#D36B2C' }
+      : { label:'Pts ganhos no saque', raw:campaignStats.servePointPct, value:campaignStats.servePointPct != null ? `${campaignStats.servePointPct}%` : '—', average:tournamentBenchmarks.servePointPct, averageSuffix:'%', color:'#D36B2C' },
+    serviceGameMetrics
+      ? { label:'Break rate', raw:campaignStats.breakPct, value:campaignStats.breakPct != null ? `${campaignStats.breakPct}%` : '—', average:tournamentBenchmarks.breakPct, averageSuffix:'%', color:'#397FA8' }
+      : { label:'Pts ganhos na devolução', raw:campaignStats.returnPointPct, value:campaignStats.returnPointPct != null ? `${campaignStats.returnPointPct}%` : '—', average:tournamentBenchmarks.returnPointPct, averageSuffix:'%', color:'#397FA8' },
+    { label:'Erros não forçados / set', raw:campaignStats.errorsPerSet, value:campaignStats.errorsPerSet ?? '—', average:tournamentBenchmarks.errorsPerSet, averageSuffix:'', color:'#A34E4E', lowerBetter:true },
+    { label:'Ranking', value:championEndRank ? `#${championEndRank}` : '—', startRank:championStartRank, endRank:championEndRank, color:'#43855D', ranking:true },
+  ];
+
+  const categoryPalette = [
+    ['Grand Slam', 'GS', ct.gs ?? 0, '#FFD700'],
+    ['Clash Slam', 'CS', ct.slamClash ?? 0, '#FF8A3D'],
+    ['Masters 1000', 'M1000', ct.masters ?? 0, '#E8C84A'],
+    ['ATP Finals', 'FIN', ct.finals ?? 0, '#C84FEB'],
+    ['ATP 500', '500', ct.atp500 ?? 0, '#4A90D9'],
+    ['ATP 250', '250', ct.atp250 ?? 0, '#2ECC71'],
+    ['ATP 100', '100', ct.atp100 ?? 0, '#9CA3AF'],
+    ['Ouro Olímpico', 'OLY', ct.olympic?.gold ?? 0, '#1976D2'],
+  ];
+  const surfacePalette = [
+    ['Hard', 'HARD', '#4A90D9'],
+    ['Saibro', 'CLAY', '#C4572A'],
+    ['Grama', 'GRASS', '#2ECC71'],
+    ['Street', 'STREET', '#EF9F27'],
+    ['Carpet', 'CARPET', '#C4426A'],
+    ['Indoor', 'INDOOR', '#C84FEB'],
+  ];
+  const renderLegacyRankingPanel = (title, data, color, unitLabel) => {
+    const Row = ({ row, tone = color }) => {
+      const isChamp = row.id === champion?.id;
+      return (
+        <div style={{
+          display:'grid',
+          gridTemplateColumns:'38px minmax(0,1fr) auto',
+          gap:10,
+          alignItems:'center',
+          padding:'10px 11px',
+          border:`1px solid ${isChamp ? tone+'66' : 'rgba(79,59,35,.14)'}`,
+          borderLeft:`3px solid ${isChamp ? tone : 'transparent'}`,
+          background:isChamp ? `${tone}16` : 'rgba(255,255,255,.20)',
+          minWidth:0,
+        }}>
+          <div style={{ fontFamily:"'Space Mono',monospace", fontSize:10, fontWeight:700, color:isChamp ? tone : '#8A765A', letterSpacing:'.04em' }}>#{row.rank}</div>
+          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:18, color:'#3B2F21', textTransform:'uppercase', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{row.name}</div>
+          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:16, color:isChamp ? tone : '#6D5B43', whiteSpace:'nowrap' }}>{row.value} <span style={{ fontFamily:"'Space Mono',monospace", fontSize:7, fontWeight:500 }}>{unitLabel}</span></div>
+        </div>
+      );
+    };
+    return (
+      <section style={{ minWidth:0, overflow:'hidden', border:`1px solid ${color}4A`, background:`linear-gradient(155deg, ${color}12, rgba(255,255,255,.26) 52%, rgba(117,91,56,.07))`, padding:'16px 14px 14px' }}>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, marginBottom:12 }}>
+          <div>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:9, fontWeight:700, color, letterSpacing:'.19em', textTransform:'uppercase', lineHeight:1.35 }}>{title}</div>
+            <div style={{ fontFamily:"'Barlow',sans-serif", fontSize:10, color:'#7D6A50', marginTop:4 }}>arquivo histórico · campeão em destaque</div>
+          </div>
+          <div style={{ minWidth:42, textAlign:'center', padding:'5px 7px', border:`1px solid ${color}55`, background:`${color}12` }}>
+            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6, letterSpacing:'.12em', color:'#7D6A50', textTransform:'uppercase' }}>posição</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, color, lineHeight:1, marginTop:2 }}>#{data.championRank ?? '—'}</div>
+          </div>
+        </div>
+        <div style={{ display:'grid', gap:4 }}>
+          {(data.rows ?? []).map(row => <Row key={`${title}-${row.id}`} row={row} />)}
+          {!(data.rows ?? []).length && <div style={{ padding:'16px 10px', fontFamily:"'Barlow',sans-serif", fontSize:12, color:'#8A765A', textAlign:'center' }}>Ainda não há campeões registrados.</div>}
+        </div>
+      </section>
+    );
+  };
 
   const CSS_VAR = { '--cer-sc': sc.color };
 
@@ -9116,193 +11374,181 @@ function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null
           <div style={{ fontSize: 38, animation: '_cer_trophy 2.5s ease-in-out infinite' }}>??</div>
         </div>
 
-        {/* -- TAB BAR -- */}
-        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.25)', flexShrink: 0 }}>
-          {[['recap', '?? P—DIO'], ['stats', '?? STATS'], ['draw', 'BRACKET'], ['press', '?? JORNALISMO']].map(([id, label]) => (
-            <button key={id} className={`_cer_tab${tab === id ? ' active' : ''}`}
-              onClick={() => setTab(id)}>{label}</button>
-          ))}
+        <div style={{ display:'flex', gap:7, padding:'10px 28px', borderBottom:'1px solid rgba(79,59,35,.22)', background:'rgba(255,255,255,.2)', flexShrink:0 }}>
+          {PAGES.map((item, index) => <div key={item.id} style={{ height:3, flex:1, background:index === page ? sc.color : index < page ? `${sc.color}66` : 'rgba(79,59,35,.15)' }} />)}
         </div>
 
         {/* -- CONTENT -- */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
-          {/* ---------- TAB: P—DIO ---------- */}
+          {/* ---------- TAB: PÓDIO PREMIUM ---------- */}
           {tab === 'recap' && (
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-              {/* CAMPE—O */}
-              <div style={{
-                flex: '0 0 clamp(240px,36%,360px)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', padding: '28px 24px',
-                background: `linear-gradient(170deg, ${sc.color}14, transparent 65%)`,
-                borderRight: '1px solid rgba(255,255,255,.06)',
-                position: 'relative', overflow: 'hidden',
-              }}>
-                <div style={{
-                  position: 'absolute', top: '50%', left: '50%',
-                  transform: 'translate(-50%,-50%)',
-                  width: 280, height: 280, borderRadius: '50%',
-                  background: `radial-gradient(circle, ${sc.color}18 0%, transparent 70%)`,
-                  pointerEvents: 'none',
-                }} />
-                <div style={{
-                  fontFamily: "'Space Mono',monospace", fontSize: 7, letterSpacing: '.55em',
-                  color: `${sc.color}88`, textTransform: 'uppercase', marginBottom: 18,
-                  animation: '_cer_rise .5s ease backwards',
-                }}>?? Campeão</div>
-                <div style={{ animation: '_cer_zoom .6s cubic-bezier(.16,1,.3,1) .1s backwards' }}>
-                  <_CerPhoto player={champion} winner sc={sc.color} />
-                </div>
-                <div style={{
-                  fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900,
-                  fontSize: 'clamp(18px,2.4vw,24px)', color: '#fff', letterSpacing: '.05em',
-                  textTransform: 'uppercase', textAlign: 'center', marginTop: 16, lineHeight: 1.1,
-                  animation: '_cer_rise .5s ease .2s backwards',
-                }}>{champion?.name}</div>
-                <div style={{
-                  display: 'flex', gap: 8, marginTop: 7, alignItems: 'center', justifyContent: 'center',
-                  flexWrap: 'wrap', animation: '_cer_rise .5s ease .3s backwards',
-                }}>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 9, color: 'rgba(255,255,255,.45)' }}>
-                    {champion?.nationality}
-                  </span>
-                  {styleChamp && <>
-                    <span style={{ color: 'rgba(255,255,255,.2)' }}>—</span>
-                    <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 9, color: `${sc.color}cc` }}>
-                      {styleChamp.icon} {styleChamp.label}
-                    </span>
-                  </>}
-                </div>
-                <div style={{
-                  marginTop: 12, padding: '5px 16px',
-                  background: `${sc.color}22`, border: `1px solid ${sc.color}55`,
-                  fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800,
-                  fontSize: 16, color: sc.color, letterSpacing: '.1em',
-                  animation: '_cer_zoom .5s ease .35s backwards',
-                }}>{ovrTier(champOvr).grade}</div>
-                {sd.length > 0 && (
-                  <div style={{ marginTop: 22, animation: '_cer_rise .5s ease .4s backwards' }}>
-                    <div style={{
-                      fontFamily: "'Space Mono',monospace", fontSize: 6, letterSpacing: '.4em',
-                      color: 'rgba(255,255,255,.25)', textAlign: 'center', marginBottom: 8,
-                    }}>RESULTADO FINAL</div>
-                    <div style={{ display: 'flex', gap: 4, marginBottom: 4, justifyContent: 'center' }}>
-                      {sd.map(([a, b], si) => {
-                        const v = champIsA ? a : b;
-                        const ov = champIsA ? b : a;
-                        const won = v > ov;
-                        return (
-                          <div key={si} className="_cer_set_w" style={{
-                            animationDelay: `${.45 + si * .09}s`,
-                            background: won ? `${sc.color}28` : 'rgba(255,255,255,.04)',
-                            border: `1px solid ${won ? sc.color + '77' : 'rgba(255,255,255,.1)'}`,
-                            color: won ? sc.color : 'rgba(255,255,255,.5)',
-                          }}>{v}</div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                      {sd.map(([a, b], si) => {
-                        const v = champIsA ? b : a;
-                        return <div key={si} className="_cer_set_l" style={{ animationDelay: `${.5 + si * .09}s` }}>{v}</div>;
-                      })}
+            <div style={{ flex:1, overflowY:'auto', padding:'22px 24px 26px', background:`radial-gradient(circle at 20% 0%, ${sc.color}14, transparent 34%), linear-gradient(180deg, rgba(255,255,255,.018), transparent 30%)` }}>
+              <div className="_cer_recap_layout">
+              <main className="_cer_recap_main">
+              <div className="_cer_hero_grid">
+                <section style={{ position:'relative', minHeight:360, overflow:'hidden', border:`1px solid ${sc.color}30`, background:`linear-gradient(145deg, ${sc.color}12, rgba(255,255,255,.018) 42%, rgba(0,0,0,.28))`, padding:'28px 28px 24px' }}>
+                  <div style={{ position:'absolute', inset:'auto -12% -34% auto', width:360, height:360, borderRadius:'50%', background:`radial-gradient(circle, ${sc.color}22, transparent 70%)`, pointerEvents:'none' }} />
+                  <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.48em', color:`${sc.color}B5`, textTransform:'uppercase', marginBottom:22 }}>Edição de campeão</div>
+                  <div style={{ display:'flex', gap:24, alignItems:'center', position:'relative', zIndex:1 }}>
+                    <_CerPhoto player={champion} winner sc={sc.color} />
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:'clamp(26px,3.25vw,44px)', color:'#fff', lineHeight:.9, textTransform:'uppercase', letterSpacing:'.01em', textShadow:`0 0 34px ${sc.color}18`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'min(420px,42vw)' }}>{champion?.name}</div>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:15 }}>
+                        {[champion?.nationality, styleChamp?.label, identityChamp?.archetype?.label ?? identityChamp?.archetype?.name, `${champOvr} OVR`, ovrTier(champOvr).grade].filter(Boolean).map((tag, i) => (
+                          <span key={`${tag}-${i}`} style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.13em', textTransform:'uppercase', color:i >= 3 ? sc.color : 'rgba(255,255,255,.58)', border:`1px solid ${i >= 3 ? sc.color+'55' : 'rgba(255,255,255,.13)'}`, background:i >= 3 ? `${sc.color}17` : 'rgba(255,255,255,.04)', padding:'5px 8px' }}>{tag}</span>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
 
-              {/* VICE + SEMIS */}
-              <div style={{
-                flex: '0 0 clamp(160px,22%,240px)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                padding: '24px 16px', borderRight: '1px solid rgba(255,255,255,.06)',
-                overflowY: 'auto',
-              }}>
-                <div style={{
-                  fontFamily: "'Space Mono',monospace", fontSize: 7, letterSpacing: '.45em',
-                  color: 'rgba(255,255,255,.25)', textTransform: 'uppercase', marginBottom: 14,
-                  animation: '_cer_rise .5s ease .3s backwards',
-                }}>Vice</div>
-                <div style={{ animation: '_cer_zoom .6s cubic-bezier(.16,1,.3,1) .3s backwards' }}>
-                  <_CerPhoto player={runner} winner={false} sc={sc.color} />
-                </div>
-                <div style={{
-                  fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700,
-                  fontSize: 15, color: 'rgba(255,255,255,.6)', letterSpacing: '.04em',
-                  textTransform: 'uppercase', textAlign: 'center', marginTop: 12, lineHeight: 1.2,
-                  animation: '_cer_rise .5s ease .4s backwards',
-                }}>{runner?.name}</div>
-                <div style={{
-                  fontFamily: "'Space Mono',monospace", fontSize: 8,
-                  color: 'rgba(255,255,255,.28)', marginTop: 4,
-                  animation: '_cer_rise .5s ease .45s backwards',
-                }}>{runner?.nationality}</div>
-                {styleRunner && (
-                  <div style={{
-                    fontFamily: "'Space Mono',monospace", fontSize: 8,
-                    color: 'rgba(255,255,255,.25)', marginTop: 3,
-                    animation: '_cer_rise .5s ease .48s backwards',
-                  }}>{styleRunner.icon} {styleRunner.label}</div>
-                )}
-                <div style={{
-                  marginTop: 8, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 600,
-                  fontSize: 14, color: 'rgba(255,255,255,.35)',
-                  animation: '_cer_rise .5s ease .5s backwards',
-                }}>{ovrTier(runnerOvr).grade}</div>
-                {semiLosers.length > 0 && (
-                  <div style={{ width: '100%', marginTop: 24, animation: '_cer_rise .5s ease .6s backwards' }}>
-                    <div style={{
-                      fontFamily: "'Space Mono',monospace", fontSize: 6, letterSpacing: '.4em',
-                      color: 'rgba(255,255,255,.2)', textTransform: 'uppercase',
-                      marginBottom: 10, textAlign: 'center',
-                    }}>Semifinalistas</div>
-                    {semiLosers.map((p, i) => (
-                      <_CerSemiPlayerRow key={p?.id ?? i} p={p} />
-                    ))}
+                  <div style={{ marginTop:34, position:'relative', zIndex:1, padding:'16px 18px', border:`1px solid ${sc.color}40`, background:`${sc.color}0E`, textAlign:'center' }}>
+                    <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:24, color:'#fff', textTransform:'uppercase', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {champion?.name} <span style={{ color:sc.color }}>x</span> <span style={{ color:'rgba(255,255,255,.58)' }}>{runner?.name ?? '—'}</span>
+                    </div>
+                    <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:'clamp(24px,3.2vw,38px)', color:sc.color, lineHeight:.95, marginTop:10, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{finalScoreText}</div>
+                    <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, color:'rgba(255,255,255,.32)', letterSpacing:'.18em', marginTop:7 }}>{setsWon}-{setsLost} sets · {totalGamesFinal || '—'} games</div>
                   </div>
-                )}
-              </div>
+                </section>
 
-              {/* INFO COLUMN */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '24px 26px', display: 'flex', flexDirection: 'column', gap: 22 }}>
-                <div>
-                  <div className="_cer_section_hd" style={{ color: `${sc.color}88` }}>? Destaques</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {facts.map((f, i) => (
-                      <div key={i} className="_cer_fact" style={{ animationDelay: `${.15 + i * .08}s` }}>{f}</div>
-                    ))}
+                <section style={{ display:'grid', gridTemplateRows:'auto 1fr', gap:12, minHeight:360 }}>
+                  <div className="_cer_stat_grid">
+                    {statTiles.map(tile => {
+                      const delta = Number.isFinite(tile.raw) && Number.isFinite(tile.average)
+                        ? Math.round((tile.raw - tile.average) * 10) / 10
+                        : null;
+                      const favorable = delta == null ? null : tile.lowerBetter ? delta < 0 : delta > 0;
+                      const level = delta == null || Math.abs(delta) < 0.05
+                        ? 'na média'
+                        : `${Math.abs(delta)} ${delta > 0 ? 'acima' : 'abaixo'}`;
+                      const rankGain = tile.ranking && Number.isFinite(tile.startRank) && Number.isFinite(tile.endRank)
+                        ? tile.startRank - tile.endRank
+                        : null;
+                      return (
+                        <div key={tile.label} style={{ padding:'14px 14px 12px', minWidth:0, border:`1px solid ${tile.color}42`, borderTop:`3px solid ${tile.color}`, background:`linear-gradient(155deg, ${tile.color}13, rgba(255,255,255,.20))` }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'baseline' }}>
+                            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7.5, fontWeight:700, color:'#6D5B43', letterSpacing:'.12em', textTransform:'uppercase' }}>{tile.label}</div>
+                            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6.5, color:'#8A765A', textTransform:'uppercase' }}>campeão</div>
+                          </div>
+                          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:36, color:tile.color, lineHeight:.9, marginTop:9, whiteSpace:'nowrap' }}>{tile.value}</div>
+                          <div style={{ height:1, background:'rgba(79,59,35,.17)', margin:'11px 0 8px' }} />
+                          {tile.ranking ? (
+                            <div>
+                              <div style={{ fontFamily:"'Barlow',sans-serif", fontSize:10.5, color:'#6D5B43' }}>Entrada <b>{tile.startRank ? `#${tile.startRank}` : '—'}</b> → final <b>{tile.endRank ? `#${tile.endRank}` : '—'}</b></div>
+                              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, fontWeight:700, color:tile.color, marginTop:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{rankGain == null ? 'variação indisponível' : rankGain > 0 ? `↑ subiu ${rankGain} ${rankGain === 1 ? 'posição' : 'posições'}` : rankGain < 0 ? `↓ caiu ${Math.abs(rankGain)} ${rankGain === -1 ? 'posição' : 'posições'}` : '→ manteve a posição'}</div>
+                            </div>
+                          ) : (
+                            <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'end' }}>
+                              <div>
+                                <div style={{ fontFamily:"'Barlow',sans-serif", fontSize:9.5, color:'#7D6A50' }}>Média do torneio</div>
+                                <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:18, color:'#574832', lineHeight:1, marginTop:2 }}>{tile.average != null ? `${tile.average}${tile.averageSuffix}` : '—'}</div>
+                              </div>
+                              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6.5, fontWeight:700, color:favorable == null ? '#8A765A' : favorable ? '#43855D' : '#A34E4E', textTransform:'uppercase', textAlign:'right', maxWidth:78, lineHeight:1.35 }}>{level}</div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-                {totalTitles > 0 && (
-                  <div>
-                    <div className="_cer_section_hd">Palmar—s de {champion?.name?.split(' ')[0]}</div>
-                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                      {[
-                        ['?', 'GS', ct.gs ?? 0, '#FFD700'],
-                        ['??', 'CS', ct.slamClash ?? 0, '#FF8A3D'],
-                        ['??', 'M1000', ct.masters ?? 0, '#E8C84A'],
-                        ['??', 'Finals', ct.finals ?? 0, '#C84FEB'],
-                        ['???', 'A500', ct.atp500 ?? 0, '#4A90D9'],
-                        ['???', 'A250', ct.atp250 ?? 0, '#2ECC71'],
-                        ['??', 'Ouro OLY', ct.olympic?.gold ?? 0, '#1976D2'],
-                      ].filter(([,,n]) => n > 0).map(([icon, label, n, color]) => (
-                        <div key={label} style={{
-                          padding: '9px 14px', background: `${color}0e`,
-                          border: `1px solid ${color}33`, textAlign: 'center', minWidth: 58,
-                          clipPath: 'polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)',
-                        }}>
-                          <div style={{ fontSize: 14, marginBottom: 4 }}>{icon}</div>
-                          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 24, color, lineHeight: 1 }}>{n}</div>
-                          <div style={{ fontFamily: "'Space Mono',monospace", fontSize: 6, color: `${color}88`, letterSpacing: '.25em', marginTop: 3, textTransform: 'uppercase' }}>{label}</div>
+
+                  <div style={{ border:'1px solid rgba(255,255,255,.075)', background:'rgba(255,255,255,.022)', padding:'16px 16px 15px', minHeight:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'baseline', marginBottom:12 }}>
+                      <div className="_cer_section_hd" style={{ marginBottom:0, color:`${sc.color}AA` }}>Palmarés do campeão</div>
+                      <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, color:'rgba(255,255,255,.3)', letterSpacing:'.18em', textTransform:'uppercase' }}>{totalTitles} títulos totais</div>
+                    </div>
+                    <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6.5, color:'rgba(255,255,255,.28)', letterSpacing:'.2em', textTransform:'uppercase', marginBottom:8 }}>Categorias</div>
+                    <div className="_cer_category_grid">
+                      {categoryPalette.map(([label, abbr, n, color]) => (
+                        <div key={label} style={{ minWidth:0, padding:'10px 6px', textAlign:'center', border:`1px solid ${color}30`, background:`linear-gradient(180deg, ${color}14, rgba(255,255,255,.012))` }}>
+                          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:24, color, lineHeight:1 }}>{n}</div>
+                          <div style={{ fontFamily:"'Space Mono',monospace", fontSize:5.5, color:`${color}AA`, letterSpacing:'.08em', textTransform:'uppercase', marginTop:5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{abbr}</div>
+                          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:8.5, color:'rgba(255,255,255,.36)', textTransform:'uppercase', lineHeight:1, marginTop:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6.5, color:'rgba(255,255,255,.28)', letterSpacing:'.2em', textTransform:'uppercase', marginBottom:8 }}>Terrenos</div>
+                    <div className="_cer_surface_grid">
+                      {surfacePalette.map(([label, key, color]) => (
+                        <div key={key} style={{ minWidth:0, padding:'9px 7px', border:`1px solid ${color}2B`, background:`${color}0D` }}>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                            <span style={{ fontFamily:"'Space Mono',monospace", fontSize:6, color:`${color}A0`, letterSpacing:'.11em', textTransform:'uppercase', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
+                            <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color, lineHeight:1 }}>{surfaceTitleCounts[key] ?? 0}</span>
+                          </div>
+                          <div style={{ height:4, marginTop:8, background:'rgba(255,255,255,.055)', overflow:'hidden' }}>
+                            <div style={{ height:'100%', width:`${Math.min(100, (surfaceTitleCounts[key] ?? 0) * 12)}%`, background:color }} />
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
+                </section>
+              </div>
+
+              <section style={{ border:'1px solid rgba(255,255,255,.075)', background:'rgba(255,255,255,.018)', padding:'16px 18px', marginBottom:18 }}>
+                <div className="_cer_section_hd" style={{ color:`${sc.color}AA` }}>Caminho até o troféu</div>
+                <div style={{ display:'grid', gridTemplateColumns:`repeat(${Math.max(1, championRoute.length)}, minmax(92px,1fr))`, gap:8 }}>
+                  {championRoute.map((r, i) => {
+                    const photo = getPlayerPhoto(r.opponent);
+                    const initials = r.opponent?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() ?? '?';
+                    const opponentRank = getDisplayRank(r.opponent);
+                    return (
+                      <div key={`${r.roundLabel}-${r.opponent?.id ?? i}`} style={{ minWidth:0, padding:'11px 9px', textAlign:'center', border:`1px solid ${i === championRoute.length - 1 ? sc.color+'48' : 'rgba(255,255,255,.07)'}`, background:i === championRoute.length - 1 ? `${sc.color}10` : 'rgba(255,255,255,.025)' }}>
+                        <div style={{ width:42, height:42, margin:'0 auto 8px', borderRadius:'50%', overflow:'hidden', border:`1px solid ${i === championRoute.length - 1 ? sc.color+'99' : 'rgba(255,255,255,.18)'}`, background:'rgba(255,255,255,.04)' }}>
+                          {photo ? <img src={photo} alt={r.opponent?.name ?? ''} style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top center' }} /> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Bebas Neue',sans-serif", fontSize:17, color:'rgba(255,255,255,.48)' }}>{initials}</div>}
+                        </div>
+                        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6, color:i === championRoute.length - 1 ? sc.color : 'rgba(255,255,255,.34)', letterSpacing:'.14em', textTransform:'uppercase' }}>{r.roundLabel}</div>
+                        <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:13, color:'#fff', textTransform:'uppercase', lineHeight:1, marginTop:5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {r.opponent?.name?.split(' ').slice(-1)[0] ?? 'BYE'}{opponentRank ? <span style={{ color:'rgba(255,255,255,.42)', marginLeft:4 }}>#{opponentRank}</span> : null}
+                        </div>
+                        <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:15, color:sc.color, lineHeight:1, marginTop:7, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.score}</div>
+                        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:5.5, color:'rgba(255,255,255,.28)', marginTop:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.setsFor}-{r.setsAgainst} sets · heat {r.heat ?? '—'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <div className="_cer_editorial_grid">
+                <section style={{ border:'1px solid rgba(255,255,255,.075)', background:'rgba(255,255,255,.018)', padding:'16px 18px' }}>
+                  <div className="_cer_section_hd" style={{ color:`${sc.color}AA` }}>Leitura do torneio</div>
+                  <div className="_cer_press_grid">
+                    {pressCards.map((card, i) => (
+                      <div key={card.label} style={{ padding:'14px 15px', background:'rgba(255,255,255,.026)', border:`1px solid ${card.tone}28`, borderTop:`3px solid ${card.tone}` }}>
+                        <div style={{ fontFamily:"'Space Mono',monospace", fontSize:6.5, color:card.tone, letterSpacing:'.22em', textTransform:'uppercase', marginBottom:7 }}>{card.label}</div>
+                        <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, color:'#fff', textTransform:'uppercase', lineHeight:1.05 }}>{card.title}</div>
+                        <div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:13.5, color:'rgba(242,237,228,.66)', lineHeight:1.55, marginTop:8 }}>{card.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section style={{ border:'1px solid rgba(255,255,255,.075)', background:'rgba(255,255,255,.018)', padding:'16px 18px' }}>
+                  <div className="_cer_section_hd">Destaques rápidos</div>
+                  <div style={{ display:'grid', gap:8 }}>
+                    {facts.slice(0, 4).map((f, i) => <div key={i} className="_cer_fact" style={{ padding:'11px 13px', animationDelay:`${.08 + i * .05}s` }}>{f}</div>)}
+                  </div>
+                </section>
+              </div>
+              </main>
+              <aside className="_cer_side_rail" style={CSS_VAR}>
+                <div style={{ padding:'2px 2px 4px' }}>
+                  <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:24, color:'#3B2F21', textTransform:'uppercase', lineHeight:1 }}>Livro dos campeões</div>
+                  <div style={{ fontFamily:"'Crimson Pro',Georgia,serif", fontSize:12.5, color:'#7D6A50', lineHeight:1.4, marginTop:5 }}>A conquista de hoje dentro da história do circuito, do piso e deste torneio.</div>
+                </div>
+                {renderLegacyRankingPanel('Títulos gerais', legacyRankings.overall, '#9A7613', 'tit.')}
+                {renderLegacyRankingPanel(`Títulos na ${sc.label}`, legacyRankings.surface, sc.color, 'tit.')}
+                {renderLegacyRankingPanel(`Títulos · ${tournament?.name ?? 'este torneio'}`, legacyRankings.event, '#397FA8', 'tit.')}
+              </aside>
               </div>
             </div>
+          )}
+
+          {tab === 'turning' && (
+            <TournamentTurningPointsPage bracket={bracket} champion={champion} runner={runner} getDisplayRank={getDisplayRank} accent={sc.color} />
+          )}
+
+          {tab === 'circuit' && (
+            <TournamentCircuitTab shift={circuitShift} accent={sc.color} />
           )}
 
           {/* ---------- TAB: STATS ---------- */}
@@ -9792,24 +12038,10 @@ function TournamentCeremony({ tournament, bracket, wrapData: wrapDataProp = null
 
         </div>{/* -- END CONTENT -- */}
 
-        {/* -- FOOTER -- */}
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,.06)',
-          padding: '10px 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'rgba(0,0,0,.3)', flexShrink: 0,
-        }}>
-          <div style={{ fontFamily: "'Space Mono',monospace", fontSize: 7, color: 'rgba(255,255,255,.2)', letterSpacing: '.3em' }}>
-            {tournament?.name?.toUpperCase()} — {state?.year} — {sc.label.toUpperCase()}
-          </div>
-          <button onClick={onClose} style={{
-            fontFamily: "'Space Mono',monospace", fontSize: 8, letterSpacing: '.4em',
-            textTransform: 'uppercase', padding: '8px 24px', cursor: 'pointer',
-            background: `${sc.color}22`, border: `1px solid ${sc.color}55`,
-            color: sc.color, transition: 'all .15s',
-          }}>
-            Continuar ?
-          </button>
+        <div style={{ borderTop:'1px solid rgba(79,59,35,.22)', padding:'11px 24px', display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:12, alignItems:'center', background:'rgba(255,255,255,.24)', flexShrink:0 }}>
+          <button disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))} style={{ justifySelf:'start', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.15em', textTransform:'uppercase', padding:'9px 12px', cursor:page === 0 ? 'default' : 'pointer', opacity:page === 0 ? .35 : 1, background:'transparent', border:'1px solid rgba(79,59,35,.25)' }}>← página anterior</button>
+          <div style={{ fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.18em', textTransform:'uppercase', color:'#6D5B43' }}>{currentPage.kicker} · {page + 1}/{PAGES.length}</div>
+          {page < PAGES.length - 1 ? <button onClick={() => setPage(value => Math.min(PAGES.length - 1, value + 1))} style={{ justifySelf:'end', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.15em', textTransform:'uppercase', padding:'9px 12px', cursor:'pointer', background:`${sc.color}16`, border:`1px solid ${sc.color}66` }}>próxima página →</button> : <button onClick={onClose} style={{ justifySelf:'end', fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.15em', textTransform:'uppercase', padding:'9px 12px', cursor:'pointer', background:`${sc.color}16`, border:`1px solid ${sc.color}66` }}>fechar edição →</button>}
         </div>
       </div>
     </div>
@@ -9985,13 +12217,140 @@ function clipIsDecidingSetV2(clip, result) {
   return clipSetNumberV2(clip) >= Math.max(1, totalSetsPlayed);
 }
 
+function clipPlayerNameV2(clip, idx) {
+  const player = clip?.gsSnapshot?.players?.[idx] ?? clip?.serveSnapshot?.players?.[idx];
+  return player?.name ?? (idx === clip?.serverIdx ? clip?.serverName : clip?.receiverName) ?? 'Jogador';
+}
+
+function clipOutcomeV2(clip) {
+  if (!clip) return 'neutral';
+  if (['FINAL_POINT', 'EPIC_RALLY', 'EPIC_RALLY_CLUTCH', 'TIEBREAK_CRITICAL', 'FIFTH_SET_OPENER'].includes(clip.type)) {
+    return 'neutral';
+  }
+  if (clip.pointWinnerIdx == null || clip.momentHolderIdx == null) return 'neutral';
+  return clip.pointWinnerIdx === clip.momentHolderIdx ? 'converted' : 'saved';
+}
+
+function clipOutcomeLineV2(clip) {
+  if (!clip) return null;
+  const outcome = clip._outcome ?? clipOutcomeV2(clip);
+  const holder = clipPlayerNameV2(clip, clip.momentHolderIdx);
+  const saver = clipPlayerNameV2(clip, clip.pointWinnerIdx);
+  if (clip.type === 'BREAK_POINT') {
+    return outcome === 'converted'
+      ? `Break point convertido por ${holder} - ${clip.score ?? ''}`.trim()
+      : `Break point salvo por ${saver} - ${clip.score ?? ''}`.trim();
+  }
+  if (clip.type === 'SET_POINT') {
+    return outcome === 'converted'
+      ? `Set point convertido por ${holder} - ${clip.score ?? ''}`.trim()
+      : `Set point salvo por ${saver} - ${clip.score ?? ''}`.trim();
+  }
+  if (clip.type === 'MATCH_POINT') {
+    return outcome === 'converted'
+      ? `Match point convertido por ${holder} - ${clip.score ?? ''}`.trim()
+      : `Match point salvo por ${saver} - ${clip.score ?? ''}`.trim();
+  }
+  return clip.contextLine ?? null;
+}
+
+function normalizeClipForReelV2(clip, reason = null) {
+  if (!clip) return null;
+  const outcome = clip._outcome ?? clipOutcomeV2(clip);
+  const contextLine = clipOutcomeLineV2({ ...clip, _outcome: outcome }) ?? clip.contextLine;
+  const labelSuffix = outcome === 'saved' ? ' SALVO' : outcome === 'converted' ? ' CONVERTIDO' : '';
+  const shouldSuffix = ['BREAK_POINT', 'SET_POINT', 'MATCH_POINT'].includes(clip.type) && !String(clip.label ?? '').includes(labelSuffix.trim());
+  return {
+    ...clip,
+    _outcome: outcome,
+    _selectionReason: reason ?? clip._selectionReason,
+    contextLine,
+    label: shouldSuffix ? `${clip.label}${labelSuffix}` : clip.label,
+  };
+}
+
+function normalizeClipListForReelV2(allClips) {
+  return (allClips ?? [])
+    .map((clip) => normalizeClipForReelV2(clip))
+    .filter(Boolean)
+    .sort((a, b) => (a.chronIdx ?? 0) - (b.chronIdx ?? 0));
+}
+
+// O headless entrega o que aconteceu ponto a ponto. Esta camada transforma
+// esses fatos em uma leitura editorial que o reel e o bracket podem reutilizar.
+function buildReelMatchStory(result, allClips, playerA, playerB, tournament = null) {
+  const clips = normalizeClipListForReelV2(allClips);
+  const directedStory = buildDynamicHighlightStory(clips, result, playerA, playerB);
+  const winnerIdx = getMatchWinnerIdxV2(result);
+  const winner = winnerIdx === 0 ? playerA : playerB;
+  const loser = winnerIdx === 0 ? playerB : playerA;
+  const details = result?.setsDetail ?? [];
+  const closeSets = details.filter(([a, b]) => Math.abs(a - b) <= 1).length;
+  const decidingSet = details.length >= 3 && details[details.length - 1];
+  const converted = clips.filter(c => (c._outcome ?? clipOutcomeV2(c)) === 'converted');
+  const winnerMoments = converted.filter(c => c.pointWinnerIdx === winnerIdx);
+  const swing = [...winnerMoments]
+    .filter(c => ['BREAK_POINT', 'SET_POINT', 'TIEBREAK_CRITICAL', 'EPIC_RALLY_CLUTCH'].includes(c.type))
+    .sort((a, b) => clipNarrativeScoreV2(b, result) - clipNarrativeScoreV2(a, result))[0] ?? null;
+  const rally = [...clips]
+    .filter(c => (c.rallyLength ?? 0) >= 8)
+    .sort((a, b) => (b.rallyLength ?? 0) - (a.rallyLength ?? 0))[0] ?? null;
+  const final = clips.findLast?.(c => c.type === 'FINAL_POINT') ?? clips[clips.length - 1] ?? null;
+  const scoreline = details.map(([a, b]) => `${a}–${b}`).join(', ');
+  const tournamentLabel = tournament?.name ? ` no ${tournament.name}` : '';
+  const tension = decidingSet || closeSets >= 2 || clips.some(c => c.type === 'TIEBREAK_CRITICAL')
+    ? 'uma partida que mudou de mão sob pressão'
+    : 'uma atuação que encontrou seu rumo cedo e sustentou a vantagem';
+  const turningLine = swing
+    ? `${winner?.name ?? 'O vencedor'} tomou a partida num ${String(swing.label ?? 'momento decisivo').toLowerCase()}${swing.contextLine ? `: ${swing.contextLine}` : ''}.`
+    : `${winner?.name ?? 'O vencedor'} construiu a vantagem sem conceder uma virada limpa.`;
+  const rallyLine = rally
+    ? `A assinatura foi um rally de ${rally.rallyLength} bolas, o ponto que deu corpo ao confronto.`
+    : 'A assinatura foi a capacidade de transformar os poucos pontos grandes em vantagem real.';
+  const headline = `${winner?.name ?? 'Vencedor'} vence ${loser?.name ?? 'o rival'}${tournamentLabel}`;
+
+  const topMoments = directedStory.chapters.map((chapter) => ({
+    type: chapter.kind,
+    title: chapter.title,
+    oneLine: chapter.resolution,
+    setup: chapter.setup,
+    weight: chapter.montage
+      ? 1 + Math.min(.25, Number(chapter.montage.weight ?? 0) / 500)
+      : chapter.kind === 'MATCH_POINT' ? 1 : chapter.kind === 'SET_POINT' ? .9 : .75,
+    clipChronIdx: chapter.chronIdx,
+  }));
+  const definingChapter = [...directedStory.chapters]
+    .filter((chapter) => chapter.montage?.playerIdx === winnerIdx)
+    .sort((a, b) => (b.montage?.weight ?? 0) - (a.montage?.weight ?? 0))[0] ?? null;
+
+  const dossier = {
+    headline,
+    thesis: definingChapter
+      ? `${winner?.name ?? 'O vencedor'} venceu depois de protagonizar o capítulo decisivo: ${definingChapter.title.toLowerCase()}.`
+      : `${winner?.name ?? 'O vencedor'} saiu com ${tension}.`,
+    fullReport: `${headline}. ${topMoments.map(moment => moment.oneLine).join(' ') || `${turningLine} ${rallyLine}`}`,
+    tags: [decidingSet ? 'DECISIVO' : null, closeSets ? 'TENSÃO' : null, rally ? 'RALLIES' : null].filter(Boolean),
+    heatScore: result?.heat?.peak ? Math.max(0, Math.min(1, result.heat.peak / 100)) : 0,
+    mode: 'sim-highlights',
+    topMoments,
+    meta: { scoreline, closeSets, hasDecidingSet: !!decidingSet, clipCount: directedStory.clips.length },
+  };
+  return {
+    ...result,
+    matchNarrativeDossier: dossier,
+    matchStoryCapsules: [{ type: 'headline', title: headline, oneLine: dossier.thesis, weight: 1 }, ...topMoments],
+  };
+}
+
 function clipNarrativeScoreV2(clip, result) {
   if (!clip) return -Infinity;
   let score = clip.priority ?? 0;
 
-  const converted = clip.pointWinnerIdx === clip.momentHolderIdx;
   const winnerIdx = getMatchWinnerIdxV2(result);
-  const winnerOwned = clip.pointWinnerIdx === winnerIdx;
+  const momentConverted = (clip._outcome ?? clipOutcomeV2(clip)) === 'converted';
+  const momentSaved = (clip._outcome ?? clipOutcomeV2(clip)) === 'saved';
+  const pointWonByMatchWinner = clip.pointWinnerIdx === winnerIdx;
+  const momentOwnedByMatchWinner = clip.momentHolderIdx === winnerIdx;
   const gamesTotal = clipGamesTotalV2(clip);
   const lateSet = gamesTotal >= 8;
   const veryLateSet = gamesTotal >= 10;
@@ -10000,8 +12359,10 @@ function clipNarrativeScoreV2(clip, result) {
     (clip.momentHolderIdx === 0 && (clip.s0 ?? 0) < (clip.s1 ?? 0)) ||
     (clip.momentHolderIdx === 1 && (clip.s1 ?? 0) < (clip.s0 ?? 0));
 
-  if (winnerOwned) score += 9;
-  if (converted) score += 7;
+  if (pointWonByMatchWinner) score += 5;
+  if (momentOwnedByMatchWinner) score += 4;
+  if (momentConverted) score += 8;
+  if (momentSaved) score += clip.type === 'MATCH_POINT' ? 10 : 2;
   if (lateSet) score += 7;
   if (veryLateSet) score += 5;
   if (decidingSet) score += 12;
@@ -10011,14 +12372,14 @@ function clipNarrativeScoreV2(clip, result) {
 
   switch (clip.type) {
     case 'FINAL_POINT':       score += 100; break;
-    case 'MATCH_POINT':       score += converted ? 42 : 30; break;
+    case 'MATCH_POINT':       score += momentConverted ? 42 : 34; break;
     case 'FIFTH_SET_OPENER':  score += 26; break;
     case 'EPIC_RALLY_CLUTCH': score += 28; break;
     case 'TIEBREAK_CRITICAL': score += 22; break;
-    case 'SET_POINT':         score += converted ? 20 : 12; break;
-    case 'BREAK_POINT':       score += converted ? 18 : 4; break;
+    case 'SET_POINT':         score += momentConverted ? 20 : 10; break;
+    case 'BREAK_POINT':       score += momentConverted ? 18 : 0; break;
     case 'EPIC_RALLY':        score += 14; break;
-    case 'GAME_POINT':        score -= 10; break;
+    case 'GAME_POINT':        score -= 26; break;
     default: break;
   }
 
@@ -10032,6 +12393,7 @@ function findMomentumSwingClipV2(allClips, result, used = new Set()) {
       if (!c || used.has(c.chronIdx)) return false;
       if (['FINAL_POINT', 'MATCH_POINT', 'GAME_POINT'].includes(c.type)) return false;
       if (c.pointWinnerIdx !== winnerIdx) return false;
+      if (c.type === 'BREAK_POINT' && c._outcome === 'saved' && !savedBreakPointIsBroadcastWorthyV2(c, result)) return false;
       return (
         c.type === 'BREAK_POINT' ||
         c.type === 'SET_POINT' ||
@@ -10044,17 +12406,24 @@ function findMomentumSwingClipV2(allClips, result, used = new Set()) {
 }
 
 function buildCompactClipsV2(allClips, result) {
-  if (!allClips?.length) return [];
-  return allClips
-    .filter((clip) => ['BREAK_POINT', 'SET_POINT', 'MATCH_POINT'].includes(clip?.type))
+  const clips = normalizeClipListForReelV2(allClips);
+  if (!clips.length) return [];
+  return clips
+    .filter((clip) => {
+      if (!['BREAK_POINT', 'SET_POINT', 'MATCH_POINT', 'FINAL_POINT'].includes(clip?.type)) return false;
+      if (clip.type === 'FINAL_POINT') return true;
+      return (clip._outcome ?? clipOutcomeV2(clip)) === 'converted';
+    })
     .map((clip) => ({
       ...clip,
       _selectionReason:
         clip.type === 'BREAK_POINT'
-          ? 'impact point de break'
+          ? 'break point convertido'
           : clip.type === 'SET_POINT'
-            ? 'impact point de set'
-            : 'impact point de match',
+            ? 'set point convertido'
+            : clip.type === 'FINAL_POINT'
+              ? 'ponto final / match point convertido'
+              : 'match point convertido',
     }))
     .sort((a, b) => a.chronIdx - b.chronIdx);
 }
@@ -10068,57 +12437,73 @@ function pickBestClipInRangeV2(allClips, startRatio, endRatio, result, used, pre
     .filter((clip) => !used.has(clip.chronIdx) && predicate(clip))
     .sort((a, b) => clipNarrativeScoreV2(b, result) - clipNarrativeScoreV2(a, result))[0] ?? null;
 }
+
+function savedBreakPointIsBroadcastWorthyV2(clip, result) {
+  if (!clip || clip.type !== 'BREAK_POINT' || clip._outcome !== 'saved') return false;
+  return clipGamesTotalV2(clip) >= 8 ||
+    clipIsDecidingSetV2(clip, result) ||
+    (clip.rallyLength ?? 0) >= 8 ||
+    /TB|Ad|40/i.test(String(clip.score ?? ''));
+}
+
+function clipAllowedInBroadcastHighlightsV2(clip, result, allowGamePointFallback = false) {
+  if (!clip) return false;
+  if (clip.type === 'GAME_POINT') return allowGamePointFallback;
+  if (clip.type === 'BREAK_POINT' && clip._outcome === 'saved') {
+    return savedBreakPointIsBroadcastWorthyV2(clip, result);
+  }
+  if (clip.type === 'SET_POINT' && clip._outcome === 'saved') {
+    return clipGamesTotalV2(clip) >= 8 || clipIsDecidingSetV2(clip, result) || (clip.rallyLength ?? 0) >= 7;
+  }
+  return true;
+}
+
 function buildHighlightsBroadcastClipsV2(allClips, result) {
-  if (!allClips?.length) return [];
-  if (allClips.length <= 8) return [...allClips];
+  const clips = normalizeClipListForReelV2(allClips);
+  if (!clips.length) return [];
   const selected = [];
   const used = new Set();
-  const targetCount = 8;
+  // Um único corte: curto o bastante para não cansar, mas com espaço para
+  // apresentar a partida, mostrar a virada e entregar o desfecho.
+  const targetCount = Math.max(3, Math.min(15, Math.round(clips.length * .45)));
   function add(clip, reason) {
     if (!clip || used.has(clip.chronIdx)) return false;
+    const normalized = normalizeClipForReelV2(clip, reason);
+    if (!normalized) return false;
     used.add(clip.chronIdx);
-    selected.push({ ...clip, _selectionReason: reason });
+    selected.push(normalized);
     return true;
   }
-  const firstNotable = allClips.find((clip) => !['GAME_POINT', 'BREAK_POINT'].includes(clip.type)) ?? allClips[0];
+  const nonGameClips = clips.filter((clip) => clipAllowedInBroadcastHighlightsV2(clip, result, false));
+  const candidateClips = nonGameClips.length ? nonGameClips : clips.filter((clip) => clipAllowedInBroadcastHighlightsV2(clip, result, true));
+  const firstNotable = candidateClips.find((clip) => !['GAME_POINT', 'BREAK_POINT'].includes(clip.type)) ?? candidateClips[0];
   add(firstNotable, 'abertura da transmiss?o');
   add(
-    pickBestClipInRangeV2(allClips, 0.08, 0.32, result, used, (clip) =>
-      clipNarrativeScoreV2(clip, result) >= 58 || ['BREAK_POINT', 'SET_POINT', 'EPIC_RALLY', 'EPIC_RALLY_CLUTCH'].includes(clip.type)
+    pickBestClipInRangeV2(candidateClips, 0.08, 0.32, result, used, (clip) =>
+      clipAllowedInBroadcastHighlightsV2(clip, result, false) &&
+      (clipNarrativeScoreV2(clip, result) >= 58 || ['BREAK_POINT', 'SET_POINT', 'EPIC_RALLY', 'EPIC_RALLY_CLUTCH'].includes(clip.type))
     ),
     'primeiro sinal de tens?o'
   );
-  add(findMomentumSwingClipV2(allClips, result, used), 'mudan?a de temperatura');
+  add(findMomentumSwingClipV2(candidateClips, result, used), 'mudan?a de temperatura');
   add(
-    [...allClips]
+    [...candidateClips]
       .filter((clip) => !used.has(clip.chronIdx) && ((clip.rallyLength ?? 0) >= 8 || clip.type === 'EPIC_RALLY'))
       .sort((a, b) => clipNarrativeScoreV2(b, result) - clipNarrativeScoreV2(a, result))[0] ?? null,
     'rally assinatura da partida'
   );
   add(
-    pickBestClipInRangeV2(allClips, 0.32, 0.68, result, used, (clip) =>
-      ['BREAK_POINT', 'SET_POINT', 'TIEBREAK_CRITICAL', 'EPIC_RALLY_CLUTCH', 'MATCH_POINT'].includes(clip.type) ||
-      clipNarrativeScoreV2(clip, result) >= 66
-    ),
-    'ponto de virada do miolo'
-  );
-  add(
-    pickBestClipInRangeV2(allClips, 0.52, 0.84, result, used, (clip) =>
-      ['BREAK_POINT', 'SET_POINT', 'MATCH_POINT', 'FINAL_POINT'].includes(clip.type) ||
-      clipNarrativeScoreV2(clip, result) >= 68
-    ),
-    'resposta ou consolida??o'
-  );
-  add(
-    pickBestClipInRangeV2(allClips, 0.72, 0.96, result, used, (clip) =>
-      ['MATCH_POINT', 'SET_POINT', 'FINAL_POINT', 'TIEBREAK_CRITICAL'].includes(clip.type) ||
+    pickBestClipInRangeV2(candidateClips, 0.72, 0.96, result, used, (clip) =>
+      clipAllowedInBroadcastHighlightsV2(clip, result, false) &&
+      (['MATCH_POINT', 'SET_POINT', 'FINAL_POINT', 'TIEBREAK_CRITICAL'].includes(clip.type) ||
       clipNarrativeScoreV2(clip, result) >= 70
+      )
     ),
     'cl?max antes do desfecho'
   );
-  add(allClips[allClips.length - 1], 'fechamento da transmiss?o');
+  add(clips[clips.length - 1], 'fechamento da transmiss?o');
   if (selected.length < targetCount) {
-    const filler = [...allClips]
+    const filler = [...candidateClips]
       .filter((clip) => !used.has(clip.chronIdx))
       .sort((a, b) => clipNarrativeScoreV2(b, result) - clipNarrativeScoreV2(a, result));
     for (const clip of filler) {
@@ -10134,6 +12519,125 @@ function buildHighlightsClipsV2(allClips, result) {
   return buildHighlightsBroadcastClipsV2(allClips, result);
 }
 
+function reelLineVariantV2(seed, variants) {
+  const n = Math.abs(Number(seed ?? 0));
+  return variants[n % variants.length];
+}
+
+function buildReelNarrativeBeatV2(clip, index, total, result) {
+  const outcome = clip?._outcome ?? clipOutcomeV2(clip);
+  const winnerName = result?.winner?.name?.split(' ').pop() ?? 'o vencedor';
+  const holderName = clip?.momentHolderIdx === 0
+    ? result?.gs?.players?.[0]?.name?.split(' ').pop()
+    : result?.gs?.players?.[1]?.name?.split(' ').pop();
+  const seed = (clip?.chronIdx ?? index) + index * 17;
+  const isSaved = outcome === 'saved';
+
+  if (index === 0) return {
+    title: 'O primeiro aviso',
+    line: reelLineVariantV2(seed, [
+      'Antes do placar pesar, veio o primeiro ponto que mostrou onde a partida poderia quebrar.',
+      'Toda partida começa silenciosa. Esta começou com um aviso.',
+      'Ainda não era a virada, mas já era o tipo de ponto que muda o jeito de olhar o jogo.',
+    ]),
+  };
+  if (index === total - 1 || clip?.type === 'FINAL_POINT') return {
+    title: 'Quando não havia mais volta',
+    line: reelLineVariantV2(seed, [
+      `E então ${winnerName} encontrou o último espaço. O resto virou placar.`,
+      `O último ponto não explicou tudo, mas colocou um ponto final na história de ${winnerName}.`,
+      'Depois de tudo que a partida adiou, este foi o ponto que não deixou mais nada em aberto.',
+    ]),
+  };
+  if (clip?.type === 'MATCH_POINT') return isSaved ? {
+    title: 'O ponto que poderia ter acabado com tudo',
+    line: reelLineVariantV2(seed, [
+      'Era para ser o fim. Mas alguém se recusou a aceitar o roteiro.',
+      'A linha de chegada apareceu cedo demais — e foi empurrada para longe.',
+      'Por um instante a partida acabou. No ponto seguinte, ela nasceu de novo.',
+    ]),
+  } : {
+    title: 'O ponto que passou a valer a partida',
+    line: reelLineVariantV2(seed, [
+      'Não era apenas mais uma bola. Era a chance de carregar a partida inteira para um lado.',
+      'A quadra diminuiu, o barulho sumiu e a partida coube naquele ponto.',
+      'Tudo o que veio antes levou até aqui: uma bola para decidir quem seguiria de pé.',
+    ]),
+  };
+  if (clip?.type === 'SET_POINT') return isSaved ? {
+    title: 'A porta que não se fechou',
+    line: reelLineVariantV2(seed, [
+      'O set esteve na mão. Depois, voltou a ser uma pergunta.',
+      'A chance de fechar passou perto demais para não deixar cicatriz.',
+      'Quando parecia resolvido, o jogo escolheu continuar respirando.',
+    ]),
+  } : {
+    title: 'O ponto que mudou o peso do jogo',
+    line: reelLineVariantV2(seed, [
+      'Não decidiu a partida inteira, mas mudou tudo o que ela exigiria dali em diante.',
+      'Um set pode ser só um set — até o momento em que ele muda a coragem de quem está do outro lado.',
+      'A primeira grande fronteira da partida apareceu aqui.',
+    ]),
+  };
+  if (clip?.type === 'BREAK_POINT') return isSaved ? {
+    title: 'A ameaça que foi recusada',
+    line: reelLineVariantV2(seed, [
+      'A brecha apareceu. A resposta veio antes que ela virasse queda.',
+      'Havia uma porta aberta para a virada. Ela foi fechada no último segundo.',
+      'O jogo pediu fraqueza. A resposta foi sobrevivência.',
+    ]),
+  } : {
+    title: 'O ponto que começou a decidir',
+    line: reelLineVariantV2(seed, [
+      'Foi aqui que a partida deixou de ser equilibrada e passou a ter direção.',
+      'Não era o fim, mas era a primeira rachadura que realmente importava.',
+      'Um break não fecha uma história. Às vezes, porém, é ele que escreve o começo do final.',
+    ]),
+  };
+  if (clip?.type === 'TIEBREAK_CRITICAL') return {
+    title: 'Quando cada bola ficou pesada',
+    line: reelLineVariantV2(seed, [
+      'No tie-break, não existe ponto pequeno. Este fez a quadra inteira prender a respiração.',
+      'A partida já não aceitava erros comuns. Cada escolha passou a ter consequência.',
+      'A margem desapareceu. Sobrou nervo, leitura e uma bola para sobreviver.',
+    ]),
+  };
+  if ((clip?.rallyLength ?? 0) >= 8) return {
+    title: 'A troca que deu alma ao jogo',
+    line: reelLineVariantV2(seed, [
+      `Foram ${clip.rallyLength} bolas para descobrir quem cederia primeiro.`,
+      'Foi o tipo de rally que não muda apenas o placar: muda a confiança.',
+      'Por alguns segundos, a partida inteira coube numa troca que ninguém quis abandonar.',
+    ]),
+  };
+  return {
+    title: holderName ? `O momento de ${holderName}` : 'Um capítulo da partida',
+    line: 'Nem todo ponto entra na memória. Este entrou porque empurrou a história para o próximo capítulo.',
+  };
+}
+
+function buildBroadcastChaptersV2(clips, result) {
+  if (!clips?.length) return [];
+  const chapterFor = (clip, index) => {
+    return buildReelNarrativeBeatV2(clip, index, clips.length, result);
+  };
+  return clips.map((clip, index) => ({ ...chapterFor(clip, index), chronIdx: clip?.chronIdx, index }));
+}
+
+function reelDirectionForClipV2(clip) {
+  const storyKind = clip?.story?.kind ?? clip?.pressureType ?? clip?.type;
+  if (clip?.story?.montage) return { zoom: 1.032, accent: '#E8C84A', label: 'MONTAGEM', shake: 'medium', dim: .24 };
+  const isFinal = ['MATCH_POINT', 'FINAL_POINT'].includes(storyKind);
+  const isPressure = isFinal || ['SET_POINT', 'TIEBREAK_CRITICAL', 'BREAK_POINT', 'EPIC_RALLY_CLUTCH'].includes(storyKind);
+  const isRally = (clip?.rallyLength ?? 0) >= 8;
+  if (isFinal) return { zoom: 1.045, accent: '#FF5C6C', label: 'CLÍMAX', shake: 'heavy', dim: .30 };
+  if (storyKind === 'TIEBREAK_CRITICAL') return { zoom: 1.035, accent: '#C84FEB', label: 'TIEBREAK', shake: 'medium', dim: .24 };
+  if (storyKind === 'SET_POINT' || storyKind === 'BREAK_POINT') return { zoom: 1.026, accent: clip.color ?? '#FF9F43', label: 'PRESSÃO', shake: 'soft', dim: .18 };
+  if (isRally) return { zoom: 1.012, accent: '#4FC3F7', label: 'RALLY', shake: 'soft', dim: .10 };
+  if (isPressure) return { zoom: 1.02, accent: clip?.color ?? '#E8C84A', label: 'MOMENTO', shake: 'soft', dim: .14 };
+  return { zoom: 1, accent: clip?.color ?? '#4A90D9', label: 'JOGO', shake: 'none', dim: .05 };
+}
+
 function clipGameKeyV2(clip) {
   if (!clip) return 'unknown';
   return `${clip.s0 ?? 0}-${clip.s1 ?? 0}:${clip.g0 ?? 0}-${clip.g1 ?? 0}`;
@@ -10147,8 +12651,8 @@ function scoreGameStoryBlockV2(group, result) {
   const importantCount = group.filter((clip) =>
     ['BREAK_POINT', 'SET_POINT', 'MATCH_POINT', 'FINAL_POINT', 'TIEBREAK_CRITICAL', 'EPIC_RALLY_CLUTCH'].includes(clip.type)
   ).length;
-  const convertedCount = group.filter((clip) => clip.pointWinnerIdx === clip.momentHolderIdx).length;
-  const savedCount = group.filter((clip) => clip.pointWinnerIdx !== clip.momentHolderIdx).length;
+  const convertedCount = group.filter((clip) => (clip._outcome ?? clipOutcomeV2(clip)) === 'converted').length;
+  const savedCount = group.filter((clip) => (clip._outcome ?? clipOutcomeV2(clip)) === 'saved').length;
   const longRallies = group.filter((clip) => (clip.rallyLength ?? 0) >= 8).length;
   const deuceLike = group.filter((clip) => /40|Ad|TB/i.test(String(clip.score ?? ''))).length;
   const decidingSet = group.some((clip) => clipIsDecidingSetV2(clip, result));
@@ -10168,12 +12672,13 @@ function scoreGameStoryBlockV2(group, result) {
 }
 
 function buildDeepGameStoryClipsV2(allClips, result) {
-  if (!allClips?.length) return [];
-  if (allClips.length <= 8) {
-    return allClips.map((clip) => ({ ...clip, _selectionReason: 'partida curta; story completo' }));
+  const clips = normalizeClipListForReelV2(allClips);
+  if (!clips.length) return [];
+  if (clips.length <= 8) {
+    return clips.map((clip) => ({ ...clip, _selectionReason: 'partida curta; story completo' }));
   }
 
-  const sorted = [...allClips].sort((a, b) => a.chronIdx - b.chronIdx);
+  const sorted = [...clips].sort((a, b) => a.chronIdx - b.chronIdx);
   const groups = [];
   let current = [];
   let currentKey = null;
@@ -10244,7 +12749,7 @@ function buildDeepGameStoryClipsV2(allClips, result) {
 // CinematicReel — Sim Highlights experience
 // Phases: SELECT ? INTRO ? LIVE ? (next clip) ? DONE
 // -----------------------------------------------------------------------------
-const REEL_INTRO_DURATION = 2200;  // ms before auto-advancing intro to live
+const REEL_INTRO_DURATION = 10_000;  // leitura confortável; o botão permite começar antes
 
 function CinematicReel({
   simHlState,
@@ -10256,11 +12761,19 @@ function CinematicReel({
   setSimSpeed,
   onDone,
 }) {
-  const { allClips = [], result, playerA, playerB } = simHlState;
-  const compactClips    = React.useMemo(() => buildCompactClipsV2(allClips, result),    [allClips, result]);
-  const highlightsClips = React.useMemo(() => buildHighlightsClipsV2(allClips, result), [allClips, result]);
-  const deepStoryClips  = allClips;
-  const [mode,       setMode]      = useState(null);           // null | 'compact' | 'highlights' | 'extended'
+  const { allClips = [], result, playerA, playerB, tournament } = simHlState;
+  const normalizedAllClips = React.useMemo(() => normalizeClipListForReelV2(allClips), [allClips]);
+  const compactClips    = React.useMemo(() => buildCompactClipsV2(normalizedAllClips, result),    [normalizedAllClips, result]);
+  const dynamicStory = React.useMemo(
+    () => buildDynamicHighlightStory(normalizedAllClips, result, playerA, playerB),
+    [normalizedAllClips, result, playerA, playerB],
+  );
+  const highlightsClips = dynamicStory.clips;
+  const broadcastChapters = dynamicStory.chapters;
+  const deepStoryClips  = normalizedAllClips;
+  // Simular + Highlights tem um único corte editorial: compacto e intenso.
+  // Não há mais uma tela pedindo que o jogador escolha formato de replay.
+  const [mode] = useState('highlights');
   const [clipIdx,    setClipIdx]   = useState(0);
   const [phase,      setPhase]     = useState('INTRO');        // 'INTRO' | 'LIVE'
   const [showDone,   setShowDone]  = useState(false);
@@ -10278,22 +12791,26 @@ function CinematicReel({
     ? compactClips
     : mode === 'highlights'
       ? highlightsClips
-      : allClips;
+      : normalizedAllClips;
   const clip  = clips[clipIdx];
+  const activeChapter = mode === 'highlights'
+    ? broadcastChapters[clipIdx]
+    : null;
+  const reelDirection = reelDirectionForClipV2(clip);
   const modeMeta = mode === 'compact'
     ? {
         title: 'IMPACT POINTS',
-        deck: 'todos os break points, set points e match points',
+        deck: 'breaks, sets e match points convertidos',
         accent: '#E8C84A',
         status: 'PONTOS DE IMPACTO',
       }
-    : mode === 'highlights'
-      ? {
-          title: 'HIGHLIGHTS DE TRANSMISS?O',
-          deck: 'edi??o guiada, com suspense e sem entregar a estrutura',
-          accent: '#A78BFA',
-          status: 'TRANSMISS?O EDITADA',
-        }
+  : mode === 'highlights'
+    ? {
+        title: 'REEL INTENSO',
+        deck: `${highlightsClips.length} momentos escolhidos pela história desta partida`,
+        accent: '#A78BFA',
+        status: 'HISTÓRIA DA PARTIDA',
+      }
       : {
           title: 'COBERTURA ESTENDIDA',
           deck: 'mais contexto, mais jogo, menos mist?rio estrutural',
@@ -10319,7 +12836,7 @@ function CinematicReel({
       gameState:    gs.gameState,
       rally: gs.rally, maxRally: gs.maxRally,
       totalPoints:  gs.totalPoints ?? 0,
-      setsDetail:   gs.setsDetail  ?? [],
+      setsDetail:   getSetsDetailFromPlayers(gs.players),
       server:       gs.server      ?? 0,
       ballZ:        gs.ball?.pos?.z ?? 0,
       ballSpeed:    0,
@@ -10391,8 +12908,8 @@ function CinematicReel({
     const clipList = mode === 'compact'
       ? compactClips
       : mode === 'highlights'
-        ? highlightsClips
-        : allClips;
+      ? highlightsClips
+      : normalizedAllClips;
     const clipData = clipList[idx];
     if (!clipData) return;
 
@@ -10437,7 +12954,7 @@ function CinematicReel({
       takeSnapFn(gs);
     } catch {}
     if (trailRef) trailRef.current = [];
-  }, [allClips, compactClips, highlightsClips, mode, gsRef, trailRef, frameHistoryRef, takeSnapFn]); // eslint-disable-line
+  }, [normalizedAllClips, compactClips, highlightsClips, mode, gsRef, trailRef, frameHistoryRef, takeSnapFn]); // eslint-disable-line
 
   // -- Navigate to a clip --------------------------------------------
   const goToClip = useCallback((idx, startPhase = 'INTRO') => {
@@ -10597,9 +13114,9 @@ function CinematicReel({
   // -- Auto-advance after point ends ---------------------------------
   useEffect(() => {
     if (!pointDone) return;
-    autoDoneTimer.current = setTimeout(handleNext, 1800);
+    autoDoneTimer.current = setTimeout(handleNext, activeChapter?.montage ? 5200 : 3600);
     return () => clearTimeout(autoDoneTimer.current);
-  }, [pointDone]); // eslint-disable-line
+  }, [pointDone, activeChapter]); // eslint-disable-line
 
   // -- Keyboard navigation --------------------------------------------
   useEffect(() => {
@@ -10676,7 +13193,7 @@ function CinematicReel({
                     ? highlightsClips
                     : opt.id === 'deep-story'
                       ? deepStoryClips
-                      : allClips;
+                      : normalizedAllClips;
                 const modeLabel = opt.id === 'compact'
                   ? 'IMPACT'
                   : opt.id === 'highlights'
@@ -10686,11 +13203,13 @@ function CinematicReel({
                       : 'ESTENDIDO';
                 console.group(`%c[HL-REEL] Modo ${modeLabel} — ${modeClips.length} clips selecionados`, 'color:#FFD700;font-weight:bold');
                 modeClips.forEach((c, i) => {
-                  const converted = c.pointWinnerIdx === c.momentHolderIdx;
+                  const outcome = c._outcome ?? clipOutcomeV2(c);
+                  const converted = outcome === 'converted';
+                  const saved = outcome === 'saved';
                   console.log(
-                    `%c  #${String(i+1).padStart(2)} ${c.type.padEnd(20)} %c${converted ? '? convertido' : '? não convertido'}%c  sets=${c.s0}-${c.s1} games=${c.g0}-${c.g1}  score="${c.score}"  motivo="${c._selectionReason ?? '?'}"`,
+                    `%c  #${String(i+1).padStart(2)} ${c.type.padEnd(20)} %c${converted ? 'converted' : saved ? 'saved' : 'neutral'}%c  sets=${c.s0}-${c.s1} games=${c.g0}-${c.g1}  score="${c.score}"  motivo="${c._selectionReason ?? '?'}"`,
                     `color:${c.color}`,
-                    `color:${converted ? '#22c55e' : '#ef4444'}`,
+                    `color:${converted ? '#22c55e' : saved ? '#f59e0b' : '#94a3b8'}`,
                     'color:#666'
                   );
                 });
@@ -10766,6 +13285,11 @@ function CinematicReel({
       .join('   ');
     const ovrW = winnerP?.attrs ? overallRating(winnerP.attrs) : '—';
     const ovrL = loserP?.attrs  ? overallRating(loserP.attrs)  : '—';
+    const dossier = result?.matchNarrativeDossier ?? null;
+    const storyMoments = [...(dossier?.topMoments ?? [])]
+      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+      .slice(0, 3)
+      .sort((a, b) => (a.clipChronIdx ?? 0) - (b.clipChronIdx ?? 0));
     return (
       <div style={{
         width:'100vw', height:'100vh',
@@ -10802,7 +13326,20 @@ function CinematicReel({
           </div>
         </div>
         <div style={{ fontSize:8, letterSpacing:'.25em', color:'rgba(255,255,255,.18)' }}>
-          transmissao encerrada — sem revelar a estrutura antes da hora
+          {dossier?.thesis ?? 'transmissão encerrada'}
+        </div>
+        {storyMoments.length > 0 && (
+          <div style={{ width:'min(760px, calc(100vw - 48px))', display:'grid', gridTemplateColumns:`repeat(${storyMoments.length}, minmax(0, 1fr))`, gap:10, position:'relative', zIndex:1 }}>
+            {storyMoments.map((moment, index) => (
+              <div key={`${moment.type}-${index}`} style={{ textAlign:'left', padding:'13px 14px', background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.09)' }}>
+                <div style={{ fontSize:7, letterSpacing:'.22em', color:'#E8C84A', textTransform:'uppercase', marginBottom:7 }}>{moment.title}</div>
+                <div style={{ fontFamily:"'Barlow',sans-serif", fontSize:13, lineHeight:1.38, color:'rgba(255,255,255,.64)' }}>{moment.oneLine}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize:8, letterSpacing:'.2em', color:'rgba(255,255,255,.28)', textTransform:'uppercase' }}>
+          {tournament?.name ? `${tournament.name} · resultado pronto para atualizar a chave` : 'resultado pronto para atualizar a chave'}
         </div>
         <button onClick={onDone} style={{
           fontFamily:"'Space Mono',monospace", fontSize:9, fontWeight:700,
@@ -10881,7 +13418,11 @@ function CinematicReel({
         clipPath:'polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)',
         transition:'all .15s',
       }}>
-        {clipIdx + 1 >= clips.length && phase === 'LIVE' ? '?? RESULTADO' : 'PR—XIMO ?'}
+        {phase === 'INTRO'
+          ? '▶ VER O PONTO'
+          : clipIdx + 1 >= clips.length
+            ? 'RESULTADO ▶'
+            : 'PRÓXIMO ▶'}
       </button>
     </div>
   );
@@ -10892,7 +13433,9 @@ function CinematicReel({
     const playerBName = playerB?.name ?? '?';
     const holderName  = clip.momentHolderIdx === 0 ? playerAName : playerBName;
     const winnerName  = clip.pointWinnerIdx  === 0 ? playerAName : playerBName;
-    const winnerMatchesHolder = clip.pointWinnerIdx === clip.momentHolderIdx;
+    const clipOutcome = clip._outcome ?? clipOutcomeV2(clip);
+    const winnerMatchesHolder = clipOutcome === 'converted';
+    const clipWasSaved = clipOutcome === 'saved';
 
     const SCORE_LABELS = ['0', '15', '30', '40', 'Ad'];
     const snap = clip.gsSnapshot;
@@ -10905,6 +13448,11 @@ function CinematicReel({
         ? `TB ${snap.tbScore[0]}—${snap.tbScore[1]}`
         : `${snap.players[0]?.games}—${snap.players[1]?.games}  (${scorePts0}—${scorePts1})`
       : clip.score;
+    const simpleScore = snap
+      ? snap.inTiebreak
+        ? `TIEBREAK · ${snap.tbScore[0]}–${snap.tbScore[1]}`
+        : `${snap.players[0]?.sets ?? 0}–${snap.players[1]?.sets ?? 0} EM SETS  ·  ${snap.players[0]?.games ?? 0}–${snap.players[1]?.games ?? 0} NO SET`
+      : null;
     const modeLabel = mode === 'compact'
       ? 'IMPACT'
       : mode === 'highlights'
@@ -10939,17 +13487,18 @@ function CinematicReel({
       if (clip.rallyLength > 0) console.log(`  Rally        : ${clip.rallyLength} bolas`);
     console.groupEnd();
     console.groupCollapsed(
-      `%c${winnerMatchesHolder ? '? RESULTADO: CONVERTIDO' : '? RESULTADO: NÃO CONVERTIDO'}`,
-      `color:${winnerMatchesHolder ? '#22c55e' : '#ef4444'};font-weight:bold`
+      `%c${winnerMatchesHolder ? 'RESULTADO: CONVERTIDO' : clipWasSaved ? 'RESULTADO: SALVO' : 'RESULTADO: NEUTRO'}`,
+      `color:${winnerMatchesHolder ? '#22c55e' : clipWasSaved ? '#f59e0b' : '#94a3b8'};font-weight:bold`
     );
       console.log(`  Quem fez o ponto: ${winnerName} (idx ${clip.pointWinnerIdx})`);
       console.log(`  Holder era      : ${holderName} (idx ${clip.momentHolderIdx})`);
       console.log(`  Match           : ${winnerMatchesHolder
-        ? `? ${holderName} GANHOU o ponto ? momento convertido`
-        : `? ${holderName} PERDEU o ponto ? ${winnerName} salvou/venceu`}`);
-      if (!winnerMatchesHolder) {
-        console.warn(`  ??  ATEN——O: O replay vai mostrar o ponto sendo PERDIDO pelo holder.`
-          + ` Se este clip apareceu mesmo assim, verifique a l—gica de filtro.`);
+        ? `${holderName} ganhou o ponto: momento convertido`
+        : clipWasSaved
+          ? `${winnerName} salvou o momento contra ${holderName}`
+          : `${winnerName} venceu um ponto neutro`}`);
+      if (clipWasSaved) {
+        console.warn(`  Clip salvo: o replay mostra o holder perdendo o ponto, mas o card deve vender isto como defesa/sobrevivencia.`);
       }
     console.groupEnd();
     console.log(`%c?? raw clip`, 'color:#555', clip);
@@ -10985,94 +13534,112 @@ function CinematicReel({
           gap:0, textAlign:'center', padding:'0 40px', maxWidth:700,
           animation:'reel-intro-in .5s cubic-bezier(.16,1,.3,1) both',
         }}>
-          {/* Type badge */}
-          <div style={{
-            display:'inline-flex', alignItems:'center', gap:8,
-            padding:'7px 20px', marginBottom:36,
-            background:`${glow}18`, border:`1px solid ${glow}55`,
-            fontFamily:"'Space Mono',monospace", fontSize:10, fontWeight:700,
-            letterSpacing:'.32em', color:glow, textTransform:'uppercase',
-            animation:'reel-badge-in .4s cubic-bezier(.16,1,.3,1) .1s both',
-          }}>
-            <div style={{ width:6, height:6, borderRadius:'50%', background:glow,
-              boxShadow:`0 0 10px ${glow}`, animation:'reel-dot-pulse 1.5s ease-in-out infinite' }}/>
-            {clip.label}
-          </div>
+          {activeChapter && (
+            <div style={{ marginBottom:32, maxWidth:620 }}>
+              <div style={{ fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.3em', color:glow, textTransform:'uppercase', marginBottom:12 }}>
+                Capítulo {String(clipIdx + 1).padStart(2, '0')} de {String(clips.length).padStart(2, '0')}
+              </div>
+              <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:'clamp(30px,4vw,48px)', letterSpacing:'.045em', lineHeight:.95, color:'#F2EDE4', textTransform:'uppercase', marginBottom:14 }}>
+                {activeChapter.title}
+              </div>
+              <div style={{ fontFamily:"'Barlow',sans-serif", fontSize:'clamp(15px,1.75vw,20px)', lineHeight:1.5, color:'rgba(255,255,255,.58)' }}>
+                {activeChapter.setup}
+              </div>
+              {activeChapter.montage?.beats?.length > 0 && (
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', gap:7, flexWrap:'wrap', marginTop:18 }}>
+                  {activeChapter.montage.beats.map((beat, beatIndex) => (
+                    <React.Fragment key={`${beat}-${beatIndex}`}>
+                      {beatIndex > 0 && <span style={{ color:'rgba(255,255,255,.2)', fontSize:10 }}>→</span>}
+                      <span style={{
+                        padding:'5px 9px',
+                        border:`1px solid ${glow}42`,
+                        background:`${glow}0e`,
+                        color:'rgba(255,255,255,.64)',
+                        fontFamily:"'Space Mono',monospace",
+                        fontSize:7,
+                        letterSpacing:'.13em',
+                        textTransform:'uppercase',
+                      }}>
+                        {beat}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                  <span style={{ fontFamily:"'Space Mono',monospace", fontSize:7, color:glow, letterSpacing:'.16em', marginLeft:4 }}>
+                    {activeChapter.montage.clipChronIdxs?.length ?? 1} PONTOS NA HISTÓRIA
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Player names */}
+          {/* Quem está escrevendo este capítulo */}
           <div style={{
-            display:'flex', alignItems:'center', gap:24, marginBottom:28,
+            display:'flex', alignItems:'center', gap:14, marginBottom:22,
             animation:'reel-intro-in .5s cubic-bezier(.16,1,.3,1) .15s both',
           }}>
             <div style={{
               fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
-              fontSize:'clamp(28px,5vw,60px)', textTransform:'uppercase',
-              letterSpacing:'.04em', lineHeight:.9,
-              color: clip.momentHolderIdx === 0 ? '#F2EDE4' : 'rgba(255,255,255,.38)',
+              fontSize:'clamp(19px,2.5vw,28px)', textTransform:'uppercase',
+              letterSpacing:'.06em', lineHeight:1,
+              color: clip.momentHolderIdx === 0 ? '#F2EDE4' : 'rgba(255,255,255,.35)',
             }}>{playerA?.name?.split(' ').pop()?.toUpperCase() ?? '—'}</div>
-            <div style={{ fontFamily:"'Space Mono',monospace", fontSize:11,
-              color:'rgba(255,255,255,.2)', letterSpacing:'.2em', flexShrink:0 }}>vs</div>
+            <div style={{ width:20, height:1, background:'rgba(255,255,255,.18)', flexShrink:0 }}/>
             <div style={{
               fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
-              fontSize:'clamp(28px,5vw,60px)', textTransform:'uppercase',
-              letterSpacing:'.04em', lineHeight:.9,
-              color: clip.momentHolderIdx === 1 ? '#F2EDE4' : 'rgba(255,255,255,.38)',
+              fontSize:'clamp(19px,2.5vw,28px)', textTransform:'uppercase',
+              letterSpacing:'.06em', lineHeight:1,
+              color: clip.momentHolderIdx === 1 ? '#F2EDE4' : 'rgba(255,255,255,.35)',
             }}>{playerB?.name?.split(' ').pop()?.toUpperCase() ?? '—'}</div>
           </div>
 
-          {/* Context line */}
+          {/* A frase já aparece como narrativa no capítulo acima. */}
           <div style={{
+            display:'none',
             fontFamily:"'Barlow',sans-serif", fontSize:'clamp(14px,1.8vw,20px)',
             color:'rgba(255,255,255,.65)', lineHeight:1.5, marginBottom:28,
             fontWeight:400,
             animation:'reel-intro-in .5s cubic-bezier(.16,1,.3,1) .22s both',
           }}>
-            {clip.contextLine}
+            {activeChapter?.setup ?? clip.contextLine}
           </div>
 
-          {/* Score block — Sets prominent, games secondary */}
+          {/* Placar: presente, mas só uma leitura limpa do momento. */}
           <div style={{
-            display: mode === 'extended' ? 'flex' : 'none', flexDirection:'column', alignItems:'center', gap:10,
+            display: simpleScore ? 'flex' : 'none', flexDirection:'column', alignItems:'center', gap:0,
             animation:'reel-intro-in .5s cubic-bezier(.16,1,.3,1) .30s both',
+            paddingTop:12, borderTop:'1px solid rgba(255,255,255,.09)', minWidth:260,
           }}>
-            {/* Set label */}
             <div style={{
               fontFamily:"'Space Mono',monospace", fontSize:8, letterSpacing:'.3em',
-              color:'rgba(255,255,255,.28)', textTransform:'uppercase',
+              color:'rgba(255,255,255,.32)', textTransform:'uppercase', marginBottom:7,
             }}>
-              {(clip.s0 + clip.s1 + 1)}— set
+              Placar neste instante
             </div>
-
-            {/* Sets score — the big number */}
-            <div style={{ display:'flex', alignItems:'center', gap:20 }}>
-              <div style={{
-                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
-                fontSize:'clamp(48px,7vw,80px)', lineHeight:1,
-                color: clip.s0 >= clip.s1 ? '#F2EDE4' : 'rgba(255,255,255,.35)',
-              }}>{clip.s0}</div>
-              <div style={{
-                fontFamily:"'Space Mono',monospace", fontSize:11,
-                color:'rgba(255,255,255,.15)', letterSpacing:'.1em',
-              }}>—</div>
-              <div style={{
-                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
-                fontSize:'clamp(48px,7vw,80px)', lineHeight:1,
-                color: clip.s1 >= clip.s0 ? '#F2EDE4' : 'rgba(255,255,255,.35)',
-              }}>{clip.s1}</div>
-            </div>
-
-            {/* Divider */}
-            <div style={{ width:40, height:1, background:'rgba(255,255,255,.08)' }}/>
-
-            {/* Games + points — secondary */}
-            <div style={{
-              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:600,
-              fontSize:'clamp(14px,2vw,20px)', letterSpacing:'.1em',
-              color:'rgba(255,255,255,.55)',
-            }}>{clip.score}</div>
+            <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:18, letterSpacing:'.1em', color:'rgba(255,255,255,.72)' }}>{simpleScore}</div>
           </div>
 
-          {mode !== 'extended' && (
+          <button
+            onClick={goLive}
+            style={{
+              marginTop:26,
+              padding:'12px 28px',
+              background:`${glow}1c`,
+              border:`1px solid ${glow}88`,
+              color:'#F2EDE4',
+              fontFamily:"'Space Mono',monospace",
+              fontSize:9,
+              fontWeight:700,
+              letterSpacing:'.22em',
+              textTransform:'uppercase',
+              cursor:'pointer',
+              boxShadow:`0 0 24px ${glow}18`,
+              animation:'reel-intro-in .45s cubic-bezier(.16,1,.3,1) .42s both',
+            }}
+          >
+            ▶ VER O PONTO
+          </button>
+
+          {false && mode !== 'extended' && (
             <div style={{
               display:'flex', flexDirection:'column', alignItems:'center', gap:10,
               animation:'reel-intro-in .5s cubic-bezier(.16,1,.3,1) .30s both',
@@ -11089,9 +13656,9 @@ function CinematicReel({
                 color:'#F2EDE4', letterSpacing:'.08em', textTransform:'uppercase'
               }}>
                 {['MATCH_POINT', 'FINAL_POINT'].includes(clip.type)
-                  ? 'DECISAO NO AR'
+                  ? (clipWasSaved ? 'SOBREVIVEU AO FIM' : 'DECISAO NO AR')
                   : ['SET_POINT', 'TIEBREAK_CRITICAL', 'BREAK_POINT'].includes(clip.type)
-                    ? 'PRESSAO MAXIMA'
+                    ? (clipWasSaved ? 'PONTO SALVO' : 'PRESSAO MAXIMA')
                     : clip.rallyLength >= 10
                       ? 'TROCA ESTENDIDA'
                       : 'CAPITULO DA PARTIDA'}
@@ -11104,13 +13671,15 @@ function CinematicReel({
               }}>
                 {mode === 'compact'
                   ? 'So os impact points: break points, set points e match points.'
-                  : 'Um capitulo selecionado para contar a historia sem denunciar o tamanho do jogo.'}
+                  : clipWasSaved
+                    ? 'Um momento defensivo entrou porque mudou a temperatura da partida.'
+                    : 'Um capitulo selecionado para contar a historia sem denunciar o tamanho do jogo.'}
               </div>
             </div>
           )}
 
           {/* Rally length badge (only for rally clips) */}
-          {clip.rallyLength >= 10 && (
+          {false && clip.rallyLength >= 10 && (
             <div style={{
               marginTop:20, padding:'6px 18px',
               background:'rgba(79,195,247,.08)', border:'1px solid rgba(79,195,247,.2)',
@@ -11131,7 +13700,7 @@ function CinematicReel({
           color:'rgba(255,255,255,.14)', letterSpacing:'.3em',
           animation:'reel-intro-in .4s ease .6s both',
         }}>
-          ? AVAN—AR  —  ? VOLTAR  —  ESC SAIR
+          ESPAÇO VER O PONTO  —  ← VOLTAR  —  ESC SAIR
         </div>
       </div>
     );
@@ -11152,7 +13721,14 @@ function CinematicReel({
       }}>
         <div style={{ width:5, height:5, borderRadius:'50%', background:clip.color,
           boxShadow:`0 0 8px ${clip.color}`, animation:'reel-dot-pulse 1.5s ease-in-out infinite' }}/>
-        {clip.label}
+        {clip.story?.label ?? clip.label}
+      </div>
+      <div style={{
+        position:'absolute', top:59, left:16, zIndex:150,
+        fontFamily:"'Space Mono',monospace", fontSize:7, letterSpacing:'.22em',
+        color:reelDirection.accent, pointerEvents:'none', textTransform:'uppercase', opacity:.72,
+      }}>
+        {reelDirection.label} · DIREÇÃO AO VIVO
       </div>
       <div style={{
         position:'absolute', top:30, right:16, zIndex:150,
@@ -11161,14 +13737,21 @@ function CinematicReel({
       }}>
         {modeMeta.title}
       </div>
-      {/* Context line bottom-left (subtle) */}
+      {/* A chamada cria suspense antes do ponto; a resolução explica o que ele mudou. */}
       <div style={{
         position:'absolute', bottom:52, left:16, zIndex:150,
-        fontFamily:"'Barlow Condensed',sans-serif", fontSize:13,
-        color:'rgba(255,255,255,.28)', letterSpacing:'.05em',
-        pointerEvents:'none', maxWidth:'60vw',
+        fontFamily:"'Barlow Condensed',sans-serif", fontSize:pointDone ? 18 : 14,
+        color:pointDone ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.48)', letterSpacing:'.035em',
+        pointerEvents:'none', maxWidth:'min(760px,72vw)', lineHeight:1.35,
+        padding:pointDone ? '12px 15px' : 0,
+        background:pointDone ? 'rgba(3,6,10,.78)' : 'transparent',
+        borderLeft:pointDone ? `3px solid ${reelDirection.accent}` : 'none',
+        textShadow:'0 2px 12px rgba(0,0,0,.8)',
+        animation:pointDone ? 'reel-resolution-in .35s cubic-bezier(.16,1,.3,1) both' : 'none',
       }}>
-        {clip.contextLine}
+        {pointDone
+          ? (activeChapter?.resolution ?? clip.story?.resolution ?? clip.contextLine)
+          : (activeChapter?.setup ?? clip.story?.setup ?? clip.contextLine)}
       </div>
     </>
   );
@@ -11183,6 +13766,10 @@ function CinematicReel({
         @keyframes reel-dot-pulse  { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:1;transform:scale(1.3)} }
         @keyframes reel-intro-in   { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
         @keyframes reel-badge-in   { from{opacity:0;transform:scale(.88)} to{opacity:1;transform:scale(1)} }
+        @keyframes reel-resolution-in { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes reel-impact-soft { 0%,100%{transform:translate(0,0)} 20%{transform:translate(-2px,1px)} 45%{transform:translate(2px,-1px)} 70%{transform:translate(-1px,1px)} }
+        @keyframes reel-impact-medium { 0%,100%{transform:translate(0,0)} 18%{transform:translate(-4px,2px)} 38%{transform:translate(4px,-2px)} 58%{transform:translate(-3px,1px)} 78%{transform:translate(2px,-1px)} }
+        @keyframes reel-impact-heavy { 0%,100%{transform:translate(0,0)} 14%{transform:translate(-7px,3px)} 28%{transform:translate(7px,-3px)} 44%{transform:translate(-5px,2px)} 60%{transform:translate(5px,-2px)} 76%{transform:translate(-2px,1px)} }
       `}</style>
 
       {/* NEWME-Lite for highlights */}
@@ -11191,6 +13778,12 @@ function CinematicReel({
         opacity: phase === 'LIVE' ? 1 : 0,
         transition:'opacity .35s ease',
         pointerEvents: phase === 'LIVE' ? 'auto' : 'none',
+        transform: phase === 'LIVE' ? `scale(${reelDirection.zoom})` : 'scale(1)',
+        transformOrigin: clip?.momentHolderIdx === 0 ? '35% 52%' : '65% 52%',
+        transitionProperty:'opacity, transform',
+        transitionDuration:'350ms, 900ms',
+        transitionTimingFunction:'ease, cubic-bezier(.16,1,.3,1)',
+        animation: pointDone && reelDirection.shake !== 'none' ? `reel-impact-${reelDirection.shake} 520ms ease-out` : 'none',
       }}>
         <DefinitiveME
           gsRef={gsRef}
@@ -11204,16 +13797,24 @@ function CinematicReel({
           bugMode={false}
           setBugMode={() => {}}
           bugSpeedSaveRef={{ current: 1 }}
-          coachPool={[]}
           disableCameraMotion
           liteMode
           liteMeta={{
-            label: clip?.label,
+            label: clip?.story?.label ?? clip?.label,
             players: `${playerA?.name ?? '?'} vs ${playerB?.name ?? '?'}`,
             counter: modeMeta.status,
           }}
         />
       </div>
+
+      {phase === 'LIVE' && (
+        <div style={{
+          position:'absolute', inset:0, pointerEvents:'none', zIndex:140,
+          background:`radial-gradient(ellipse 72% 64% at 50% 50%, transparent 34%, ${reelDirection.accent}${Math.round(reelDirection.dim * 255).toString(16).padStart(2, '0')} 100%)`,
+          mixBlendMode:'screen', opacity:.75,
+          transition:'background .5s ease',
+        }}/>
+      )}
 
       {/* Broadcast header */}
       <BroadcastHeader />
@@ -11235,6 +13836,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
 
   const [phase, setPhase] = useState('home');
   const lastAutoLoadKeyRef = useRef(0);
+  const lastAutosaveSignatureRef = useRef(null);
   const [universeState, setUniverseState] = useState(null);
   const [simulating, setSimulating] = useState(false);
   const [simProgress, setSimProgress] = useState(0);
@@ -11252,10 +13854,13 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
   const liveBracketSavedStateRef   = useRef(null); // persists bracket progress across navigations
   const liveBracketLastIdRef       = useRef(null); // id of the last opened tournament
   const [watchMatchState, setWatchMatchState] = useState(null);
+  const [watchFinishing, setWatchFinishing] = useState(false);
   const [highlightsModeRef] = useState({ current: false }); // usar ref-in-state para não re-render
   const [highlightsPaused, setHighlightsPaused] = useState(false); // true = mostrando ponto ao vivo
-  const [hlFilters, setHlFilters] = useState({ gamePoint: true, breakPoint: true, setPoint: true, matchPoint: true });
-  const hlFiltersRef = useRef({ gamePoint: true, breakPoint: true, setPoint: true, matchPoint: true });
+  // Fechamentos de game comuns continuam disponíveis, mas desligados por padrão:
+  // a sala deve esperar tensão real em vez de interromper a partida a cada game.
+  const [hlFilters, setHlFilters] = useState({ gamePoint: false, breakPoint: true, setPoint: true, matchPoint: true });
+  const hlFiltersRef = useRef({ gamePoint: false, breakPoint: true, setPoint: true, matchPoint: true });
   const [hlFeed, setHlFeed] = useState([]); // feed de pontos durante headless
   const hlFeedRef = useRef([]);
   const [preGamePending, setPreGamePending] = useState(null);
@@ -11286,6 +13891,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     stopSimRef.current = false;
     setLiveBracketTournament(null);
     setWatchMatchState(null);
+    setWatchFinishing(false);
     setPreGamePending(null);
     setSimHlLoading(null);
     setSimHlState(null);
@@ -11319,10 +13925,13 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     if (!universeState || simulating) return;
     const currentTournament = CALENDAR[universeState.calendarIndex];
     if (!currentTournament) return;
+    if (!shouldPrebuildTournamentPackage(currentTournament)) return;
     const currentPackage = universeState.preparedTournamentPackage;
     const cachedPackage = universeState.preparedTournamentPackageCache?.[currentTournament.id] ?? null;
-    if (currentPackage?.tournamentId === currentTournament.id && currentPackage?.seasonYear === universeState.year) return;
-    if (cachedPackage?.tournamentId === currentTournament.id && cachedPackage?.seasonYear === universeState.year) {
+    const currentRadarSignature = radarFollowSignature(universeState.radar?.followedPlayerIds);
+    const packageMatchesRadar = (pkg) => pkg?.radarFollowSignature === currentRadarSignature;
+    if (currentPackage?.tournamentId === currentTournament.id && currentPackage?.seasonYear === universeState.year && packageMatchesRadar(currentPackage)) return;
+    if (cachedPackage?.tournamentId === currentTournament.id && cachedPackage?.seasonYear === universeState.year && packageMatchesRadar(cachedPackage)) {
       universeDispatch({
         type: 'SET_PREPARED_TOURNAMENT_PACKAGE',
         package: cachedPackage,
@@ -11336,6 +13945,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       universeState.prospects,
       universeState.playerSeasonSlots ?? {},
       universeState.year,
+      {
+        followedPlayerIds: universeState.radar?.followedPlayerIds ?? [],
+        rivalrySystem: universeState.rivalrySystem ?? null,
+      },
     );
     universeDispatch({
       type: 'SET_PREPARED_TOURNAMENT_PACKAGE',
@@ -11349,16 +13962,21 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     universeState?.prospects,
     universeState?.preparedTournamentPackage,
     universeState?.preparedTournamentPackageCache,
+    universeState?.radar?.followedPlayerIds,
+    universeState?.rivalrySystem,
     simulating,
     universeDispatch,
   ]);
 
   // -- Simula——o R—pida (FastSimulation) ------------------------------
-  // Constr—i um bracket completo usando simulateMatchFast em vez do engine real.
+  // Constrói um bracket completo com FastSimulation como base. A política do
+  // Radar promove toda partida acompanhada para o Headless completo.
   // Compat—vel com o formato esperado por APPLY_TOURNAMENT_RESULT.
   const runTournamentFast = useCallback((tournament, tourPlayers, prospects, playerSeasonSlots = {}, preparedPackage = null) => {
     const surface = courtKeyToSurface(tournament.courtKey ?? tournament.surface);
     const bestOf  = tournament.bestOf ?? 3;
+    const followedPlayerIds = universeState?.radar?.followedPlayerIds ?? [];
+    const radarMatches = [];
     const { qualifyOut = 0, preQualIn = 0 } = tournament;
     const pqOut   = tournament.preQualOut ?? Math.ceil(preQualIn / 2);
     const prepared = clonePreparedTournamentPackage(
@@ -11367,6 +13985,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
         ? universeState.preparedTournamentPackage
         : null)
     );
+    radarMatches.push(...(prepared?.radarMatches ?? []));
     const currentPlayersById = new Map(
       [...tourPlayers, ...prospects].filter(Boolean).map((player) => [player.id, player])
     );
@@ -11395,11 +14014,13 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     }
 
     // -- 2. Fun——o auxiliar de match r—pido ---------------------------
-    const fastMatch = (a, b) => {
-      const sA = applyTournamentContextModifiers(a, tournament);
-      const sB = applyTournamentContextModifiers(b, tournament);
-      const res = simulateMatchFast(sA, sB, surface, bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null });
-      return res.winner.id === a.id ? a : b;
+    const resolveMatch = (a, b, roundLabel) => {
+      const res = simulateRadarAwareFastMatch(a, b, surface, bestOf, tournament, roundLabel, followedPlayerIds, universeState?.rivalrySystem ?? null);
+      if (res.simulationSource === 'FOLLOWED_HEADLESS') {
+        const winner = res.winner?.id === a.id ? a : b;
+        radarMatches.push(buildRadarMatchRecord({ playerA:a, playerB:b, winner, result:res, tournament, roundLabel, year:universeState?.year }));
+      }
+      return res;
     };
 
     // -- 3a. PR—-QUALIFY: preQualIn ? pqOut passam -------------------
@@ -11410,7 +14031,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       const pool = [...rawPreQual].sort(() => Math.random() - 0.5);
       for (let i = 0; i + 1 < pool.length && preQualWinners.length < pqOut; i += 2) {
         const sA = pool[i], sB = pool[i + 1];
-        const res = simulateMatchFast(applyTournamentContextModifiers(sA, tournament), applyTournamentContextModifiers(sB, tournament), surface, bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null });
+        const res = resolveMatch(sA, sB, 'Pré-qualifying');
         const winnerPlayer = res.winner.id === sA.id ? sA : sB;
         preQualWinners.push(winnerPlayer);
         qualRoundsData.push({ playerA: sA, playerB: sB, winner: winnerPlayer, surface, sets: res.sets ?? [0, 0] });
@@ -11423,7 +14044,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       const pool = [...rawQual, ...preQualWinners].sort(() => Math.random() - 0.5);
       for (let i = 0; i + 1 < pool.length && qualifiers.length < qualifyOut; i += 2) {
         const sA = pool[i], sB = pool[i + 1];
-        const res = simulateMatchFast(applyTournamentContextModifiers(sA, tournament), applyTournamentContextModifiers(sB, tournament), surface, bestOf, { format: tournament?.format ?? null, tournamentTier: tournament?.category ?? null });
+        const res = resolveMatch(sA, sB, 'Qualifying');
         const winnerPlayer = res.winner.id === sA.id ? sA : sB;
         qualifiers.push(winnerPlayer);
         qualRoundsData.push({ playerA: sA, playerB: sB, winner: winnerPlayer, surface, sets: res.sets ?? [0, 0] });
@@ -11488,7 +14109,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     const r1 = r1Template.map(m => {
       if (m.isBye || !m.playerA || !m.playerB) return m;
       const a = m.playerA, b = m.playerB;
-      const result = simulateMatchFast(prepFast(a), prepFast(b), surface, bestOf, _opts(a, b, _rl(totalSlots)));
+      const result = resolveMatch(a, b, _rl(totalSlots));
       const winner = result.winner.id === a.id ? a : b;
       return { ...m, winner, isBye: false, result };
     });
@@ -11502,7 +14123,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       for (let i = 0; i < current.length; i += 2) {
         const a = current[i], b = current[i + 1] ?? null;
         if (!b) { roundMatches.push({ playerA: a, playerB: null, winner: a, isBye: true, result: null }); next.push(a); continue; }
-        const result = simulateMatchFast(prepFast(a), prepFast(b), surface, bestOf, _opts(a, b, rl));
+        const result = resolveMatch(a, b, rl);
         const winner = result.winner.id === a.id ? a : b;
         roundMatches.push({ playerA: a, playerB: b, winner, isBye: false, result });
         next.push(winner);
@@ -11520,8 +14141,15 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       injuryEvents: fastInjuryEvents,
       updatedByInjury: fastUpdatedByInjury,
       qualRoundsData,  // FASE 2: partidas de qualifying para updateRecentForm
+      radarMatches,
+      playerSeasonSlotsAfterSelection: prepared?.playerSeasonSlotsAfterSelection ?? playerSeasonSlots,
     };
-  }, [universeState?.preparedTournamentPackage]);
+  }, [
+    universeState?.preparedTournamentPackage,
+    universeState?.radar?.followedPlayerIds,
+    universeState?.rivalrySystem,
+    universeState?.year,
+  ]);
   // Simula um range de torneios usando FastSimulation.
   // mode: 'month' | 'champions' | 'year' | '5years' | 'decade' | '15years' | '20years'
   const handleFastSimulateRange = useCallback(async (mode) => {
@@ -11577,6 +14205,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
               universeState.preparedTournamentPackage?.tournamentId === tournament.id
                 ? universeState.preparedTournamentPackage
                 : null,
+              universeState.radar?.followedPlayerIds ?? [],
             );
         if (!stopSimRef.current) {
           universeDispatch({
@@ -11662,6 +14291,8 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
                   null,
                   currentState.year,
                   currentState.rivalrySystem ?? null,
+                  null,
+                  currentState.radar?.followedPlayerIds ?? [],
                 );
 
             const nextState = reducer(currentState, {
@@ -11775,6 +14406,8 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
               null,
               currentState.year,
               currentState.rivalrySystem ?? null,
+              null,
+              currentState.radar?.followedPlayerIds ?? [],
             );
 
         // Aplica resultado e atualiza snapshot local
@@ -11899,6 +14532,8 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
                       null,
                       currentState.year,
                       currentState.rivalrySystem ?? null,
+                      null,
+                      currentState.radar?.followedPlayerIds ?? [],
                     );
                 const nextState = reducer(currentState, {
                   type: 'APPLY_TOURNAMENT_RESULT',
@@ -12033,6 +14668,8 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
                   null,
                   currentState.year,
                   currentState.rivalrySystem ?? null,
+                  null,
+                  currentState.radar?.followedPlayerIds ?? [],
                 );
             const nextState = reducer(currentState, {
               type: 'APPLY_TOURNAMENT_RESULT',
@@ -12070,6 +14707,14 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
 
     // -- Modo padr—o: simula apenas o torneio atual (headless) ----------
     const tournament = CALENDAR[calIdx];
+    tournamentDebugLog('handleSimulate:start', {
+      tournamentId: tournament?.id,
+      tournamentName: tournament?.name,
+      category: tournament?.category,
+      calendarIndex: calIdx,
+      year: universeState.year,
+      mode: shouldUseFastInvisibleTournament(tournament) ? 'fast-invisible' : 'headless-overlay',
+    });
 
     if (shouldUseFastInvisibleTournament(tournament)) {
       stopSimRef.current = false;
@@ -12100,6 +14745,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
             updatedByInjury: updatedByInjury ?? {},
           },
           tournament,
+        });
+        tournamentDebugLog('handleSimulate:fast-invisible:dispatch-called', {
+          tournamentId: tournament?.id,
+          champion: bracket?.champion?.name ?? null,
         });
       } catch (e) {
         if (!e.isStopRequest) console.error('[handleSimulate] Fast low-tier error:', e);
@@ -12165,10 +14814,14 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
 
       let result;
       if (hasSavedState && partialStateRef._snapshotRef.current) {
+        tournamentDebugLog('handleSimulate:resume:start', {
+          tournamentId: tournament?.id,
+          savedRound: partialStateRef._snapshotRef.current?.currentRound ?? null,
+        });
         // -- Resume: continua a partir do snapshot salvo ----------------
         // Reconstr—i os jogadores vivos do —ltimo round completo
         const savedBracket = partialStateRef._snapshotRef.current;
-        const SURFACE_COURT = { CLAY: 'ROLAND_GARROS', GRASS: 'WIMBLEDON', HARD: 'US_OPEN', INDOOR: 'O2_ARENA' };
+        const SURFACE_COURT = { CLAY: 'ROLAND_GARROS', GRASS: 'WIMBLEDON', HARD: 'US_OPEN', STREET: 'URBAN_COURT', CARPET: 'CARPET_COURT', INDOOR: 'O2_ARENA' };
         const courtKey = SURFACE_COURT[tournament.surface] ?? 'US_OPEN';
         const bestOf   = tournament.bestOf ?? 3;
 
@@ -12194,6 +14847,8 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           partialStateRef._snapshotRef,
           tournament,
           universeState.rivalrySystem ?? null,
+          null,
+          universeState.radar?.followedPlayerIds ?? [],
         );
 
         // Mescla rounds anteriores com os novos
@@ -12214,6 +14869,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
         liveBracketSavedStateRef.current = null; // limpa o snapshot
       } else {
         // -- Fresh start ------------------------------------------------
+        tournamentDebugLog('handleSimulate:fresh-run:start', {
+          tournamentId: tournament?.id,
+          preparedPackage: universeState.preparedTournamentPackage?.tournamentId === tournament.id,
+        });
         result = await runTournament(
           tournament,
           universeState.tourPlayers,
@@ -12226,18 +14885,32 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           universeState.preparedTournamentPackage?.tournamentId === tournament.id
             ? universeState.preparedTournamentPackage
             : null,
+          universeState.radar?.followedPlayerIds ?? [],
         );
       }
+      tournamentDebugLog('handleSimulate:runTournament:return', {
+        tournamentId: tournament?.id,
+        champion: result?.bracket?.champion?.name ?? null,
+        rounds: result?.bracket?.rounds?.length ?? 0,
+      });
       universeDispatch({
         type: 'APPLY_TOURNAMENT_RESULT',
         tournamentId: tournament.id,
         result,
         tournament,
       });
+      tournamentDebugLog('handleSimulate:dispatch-called', {
+        tournamentId: tournament?.id,
+        champion: result?.bracket?.champion?.name ?? null,
+      });
 
       // Mostra cerim—nia após torneios principais
       const skipCeremony = tournament.isJuniors || isBaseCircuitTournament(tournament);
       if (getResChampion(result) && !skipCeremony) {
+        tournamentDebugLog('handleSimulate:ceremony:start', {
+          tournamentId: tournament?.id,
+          champion: getResChampion(result)?.name ?? null,
+        });
         // Gera wrapData aqui, antes do newsEngine processar — para a aba AN—LISE
         let wrapData = null;
         try {
@@ -12254,6 +14927,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           console.warn('[handleSimulate] wrapData falhou:', we);
         }
         setCeremonyData({ tournament, bracket: result.bracket, wrapData });
+        tournamentDebugLog('handleSimulate:ceremony:set', {
+          tournamentId: tournament?.id,
+          hasWrapData: !!wrapData,
+        });
       }
     } catch (e) {
       // Se o usu—rio parou, salva o estado parcial para continuar no bracket
@@ -12270,8 +14947,16 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
         liveBracketLastIdRef.current = tournament.id;
       } else if (!e.isStopRequest) {
         console.error('[handleSimulate] Erro ao simular torneio:', e);
+        tournamentDebugLog('handleSimulate:error', {
+          tournamentId: tournament?.id,
+          message: e?.message,
+          stack: e?.stack,
+        });
       }
     } finally {
+      tournamentDebugLog('handleSimulate:finally', {
+        tournamentId: tournament?.id,
+      });
       setSimulating(false);
       setSimProgress(0);
       setSimTournament(null);
@@ -12283,96 +14968,61 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
 
 
   // -- SAVE / LOAD -------------------------------------------------------
-  const handleSaveGame = useCallback(() => {
+  const handleSaveGame = useCallback(async () => {
     if (!universeState) return;
     const s = universeState;
-
-    // Slim historicalTournamentResults (pode ter entradas ainda não-slimificadas)
-    const slimHistorical = {};
-    for (const [key, res] of Object.entries(s.historicalTournamentResults ?? {})) {
-      slimHistorical[key] = compactTournamentResultForSave(
-        res._slim ? res : slimifyTournamentResult(res, res._season ?? s.year - 1)
-      );
+    const payload = buildUniverseSavePayload(s);
+    try {
+      const artifact = await createSaveArtifactOffThread(payload, { gameVersion: '0.7.0' });
+      await storeRotatingAutosave(artifact, {
+        ...artifact.header,
+        year: s.year,
+        season: s.season,
+        reason: 'MANUAL',
+      });
+      const url = URL.createObjectURL(artifact.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `hv_universe_T${s.season ?? 1}_${s.year ?? 2025}${artifact.extension}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      console.info(`[SaveGame] Save V${SAVE_SCHEMA_VERSION}: ${(artifact.storedBytes / 1024 / 1024).toFixed(2)} MB (${artifact.compressed ? 'gzip' : 'JSON'}).`);
+    } catch (error) {
+      console.error('[SaveGame] Falha ao salvar:', error);
+      alert(`Nao foi possivel salvar o jogo: ${error?.message ?? 'erro desconhecido'}`);
     }
-
-    // Slim retiredPlayers — mant—m s— potencial HOF (=3 GS)
-    const gsCountSave = {};
-    for (const res of Object.values(slimHistorical)) {
-      const champId = res?.champion?.id;
-      if (champId && res.tournament?.category === 'GRAND_SLAM') {
-        gsCountSave[champId] = (gsCountSave[champId] ?? 0) + 1;
-      }
-    }
-    const slimRetired = (s.retiredPlayers ?? [])
-      .filter(p => (gsCountSave[p.id] ?? 0) >= 3)
-      .map(p => p._isSlimRetired ? p : slimifyRetiredPlayer(p));
-
-    // Transient runtime-only keys that must never be serialised.
-    // _aiTrace  ? holds `sc` which back-references `player` (circular).
-    // _finalShot ? shot execution state, recreated each point.
-    // ctx        ? rally context created by createCtx() in game.js, recreated each point.
-    // These keys can appear on ANY player object embedded anywhere in the payload
-    // (tourPlayers, prospects, bracket.playerA/playerB/champion, etc.), so we use
-    // a JSON replacer that strips them at every depth instead of patching each site.
-    const TRANSIENT_KEYS = new Set(['_aiTrace', '_finalShot', 'ctx']);
-    const safeReplacer = (key, value) => (TRANSIENT_KEYS.has(key) ? undefined : value);
-
-    const payload = {
-      _version: 2,
-      year:                        s.year,
-      season:                      s.season,
-      calendarIndex:               s.calendarIndex,
-      tourPlayers:                 (s.tourPlayers ?? []).map(slimifyPlayerForSave),
-      prospects:                   (s.prospects ?? []).map(slimifyPlayerForSave),
-      retiredPlayers:              slimRetired,
-      rankingStore:                s.rankingStore,
-      tournamentResults:           (() => {
-        const slimCurrent = {};
-        for (const [k, res] of Object.entries(s.tournamentResults ?? {})) {
-          slimCurrent[k] = compactTournamentResultForSave(
-            res._slim ? res : slimifyTournamentResult(res, res._season ?? s.year)
-          );
-        }
-        return slimCurrent;
-      })(),
-      historicalTournamentResults: slimHistorical,
-      events:                      s.events                      ?? [],
-      
-      playerSeasonSlots:           s.playerSeasonSlots           ?? {},
-      newgenImagePool:             s.newgenImagePool             ?? {},
-      yearSummary:                 s.yearSummary                 ?? null,
-      rivalrySystem:               s.rivalrySystem?.toJSON?.()   ?? null,
-      chronicleEngine:             s.chronicleEngine?.toJSON?.() ?? null,
-      newsEngine:                  slimifyNewsEngineForSave(s.newsEngine),
-      sponsorPool:                 s.sponsorPool                 ?? null,
-      pendingOffers:               s.pendingOffers               ?? [],
-      highestPaidPlayerId:         s.highestPaidPlayerId         ?? null,
-      seasonPulseState:            s.seasonPulseState            ?? createSeasonPulseState(s.year ?? 2025),
-      monthlyInterviews:           (s.monthlyInterviews ?? []).map(slimifyInterviewArchiveItem),
-      grandSlamInterviews:         (s.grandSlamInterviews ?? []).map(slimifyInterviewArchiveItem),
-      recordsStore:                s.recordsStore                ?? { _version:1, playerStats:{} },
-    };
-    const json = JSON.stringify(payload, safeReplacer);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `hv_universe_T${s.season ?? 1}_${s.year ?? 2025}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
   }, [universeState]);
 
-  const handleLoadGame = useCallback(() => {
-    const input    = document.createElement('input');
-    input.type     = 'file';
-    input.accept   = '.json,application/json';
-    input.onchange = (e) => {
-      const file = e.target.files?.[0];
+  // Snapshot silencioso depois de progresso real no calendario. Mantemos tres
+  // copias rotativas no navegador; nao baixa arquivo e nao interrompe a tela.
+  useEffect(() => {
+    if (!universeState || phase !== 'running' || simulating) return undefined;
+    const signature = `${universeState.year}:${universeState.calendarIndex}:${universeState.season}`;
+    if (lastAutosaveSignatureRef.current === signature) return undefined;
+    const timer = setTimeout(async () => {
+      try {
+        const payload = buildUniverseSavePayload(universeState);
+        const artifact = await createSaveArtifactOffThread(payload, { gameVersion: '0.7.0' });
+        await storeRotatingAutosave(artifact, {
+          ...artifact.header,
+          year: universeState.year,
+          season: universeState.season,
+          reason: 'AUTO_PROGRESS',
+        });
+        lastAutosaveSignatureRef.current = signature;
+      } catch (error) {
+        console.warn('[Autosave] Nao foi possivel criar o snapshot automatico:', error);
+      }
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, [phase, simulating, universeState?.year, universeState?.season, universeState?.calendarIndex]);
+
+  const handleLoadGame = useCallback((source = null) => {
+    const loadFile = async (file) => {
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(ev.target.result);
+      try {
+          const decoded = await decodeSaveFileOffThread(file);
+          const data = decoded.payload;
 
           const rivalrySystem   = new RivalrySystem();
           rivalrySystem.fromJSON(data.rivalrySystem ?? null);
@@ -12381,19 +15031,6 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           chronicleEngine.fromJSON(data.chronicleEngine ?? null);
 
           const newsEngine = NewsEngine.fromJSON(data.newsEngine ?? null);
-
-          // -- Migra coach.signature ausente nos jogadores --------------------
-          // Saves anteriores — Fase 7 t—m player.coach sem o campo signature.
-          // Busca no coachPool; se não achar, rola um novo baseado na filosofia.
-          const _coachPool = data.coachPool ?? [];
-          const _syncCoachSignature = (players) => (players ?? []).map(p => {
-            if (!p.coach?.coachId) return p;           // sem t—cnico
-            if (p.coach.signature)  return p;           // j— tem — save novo
-            const fullCoach = _coachPool.find(c => c.id === p.coach.coachId);
-            const sig = fullCoach?.signature
-              ?? rollCoachSignature(p.coach?.philosophy ?? 'ALL_COURT');
-            return { ...p, coach: { ...p.coach, signature: sig } };
-          });
 
           // -- Sincroniza careerTitles a partir do recordsStore --------------
           // Garante que saves antigos (onde careerTitles estava zerado) mostrem
@@ -12428,16 +15065,53 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
             return p;
           });
 
+          const loadedWorldDate = normalizeUniverseDate(data.worldDate ?? { year: data.year ?? 2025, month: 1 }, data.year ?? 2025);
+          const migrateLoadedSurface = player => ensureSurfaceProfile(player, { year: loadedWorldDate.year, source: 'SAVE_MIGRATION' });
+          const loadedTourPlayers = _syncCareerTitles(data.tourPlayers ?? []).map(p => migrateLoadedSurface(ensureLifeSimulation(ensureDevelopmentLedger(applyYouthAgeCaps(ensureYouthProfile(ensurePlayerBirthDate(ensureCareerTrajectory(stripOldCoachButKeepBancoVivo(p), loadedWorldDate.year, 'SAVE_MIGRATION'), loadedWorldDate, loadedWorldDate.year), loadedWorldDate.year, 'SAVE_MIGRATION'), { age: p.age }), loadedWorldDate.year), loadedWorldDate)));
+          const loadedProspects = (data.prospects ?? []).map(p => migrateLoadedSurface(ensureLifeSimulation(ensureDevelopmentLedger(applyYouthAgeCaps(ensureYouthProfile(ensurePlayerBirthDate(ensureCareerTrajectory(stripOldCoachButKeepBancoVivo(p), loadedWorldDate.year, 'SAVE_MIGRATION'), loadedWorldDate, loadedWorldDate.year), loadedWorldDate.year, 'SAVE_MIGRATION'), { age: p.age }), loadedWorldDate.year), loadedWorldDate)));
+          let loadedCoachMarket = migrateCoachMarket(data.coachMarket, [...loadedTourPlayers, ...loadedProspects], data.year ?? 2025);
+          // Repara individualmente os ausentes. A função preserva quem já tem
+          // vínculo válido, então saves parcialmente quebrados também voltam a
+          // ter um mercado coerente sem resetar as parcerias existentes.
+          const seededCoaching = initializePlayersCoaching(loadedTourPlayers, loadedCoachMarket, data.year ?? 2025);
+          loadedCoachMarket = seededCoaching.coachMarket;
+          let loadedCoachingPlayers = seededCoaching.players;
+
+          // Recalcula no carregamento: saves antigos guardam o cache `ranked`
+          // com a regra anterior, mas os resultados brutos continuam válidos.
+          const loadedRankingStore = {
+            ...(data.rankingStore ?? createRankingStore()),
+            playerResults: Object.fromEntries(Object.entries(data.rankingStore?.playerResults ?? {}).map(([id, rows]) => [id, [...rows]])),
+            prospectResults: Object.fromEntries(Object.entries(data.rankingStore?.prospectResults ?? {}).map(([id, rows]) => [id, [...rows]])),
+            seedOrder: data.rankingStore?.seedOrder ?? Object.fromEntries(loadedCoachingPlayers.map((player, index) => [player.id, index + 1])),
+            ranked: [], prospectRanked: [],
+          };
+          const loadedRanked = computeRanking(loadedRankingStore, loadedCoachingPlayers.map(p => p.id));
+          const loadedProspectRanked = computeProspectRanking(loadedRankingStore, loadedProspects.map(p => p.id));
+          const loadedRankMap = Object.fromEntries(loadedRanked.map(r => [r.playerId, r.position]));
+          const loadedProspectRankMap = Object.fromEntries(loadedProspectRanked.map(r => [r.playerId, r.position]));
+          loadedCoachingPlayers = loadedCoachingPlayers.map(p => ({ ...p, rankPosition: loadedRankMap[p.id] ?? p.rankPosition }));
+          const rankedLoadedProspects = loadedProspects.map(p => ({ ...p, rankPosition: loadedProspectRankMap[p.id] ?? p.rankPosition }));
+
           const loaded = {
             year:                        data.year                        ?? 2025,
+            worldDate:                   loadedWorldDate,
             season:                      data.season                      ?? 1,
             calendarIndex:               data.calendarIndex               ?? 0,
-            tourPlayers:                 _syncCoachSignature(_syncCareerTitles(data.tourPlayers ?? [])).map(p => ensureDevelopmentLedger(p, data.year ?? 2025)),
-            prospects:                   (data.prospects                   ?? []).map(p => ensureDevelopmentLedger(p, data.year ?? 2025)),
-            retiredPlayers:              _syncCoachSignature(_syncCareerTitles(data.retiredPlayers ?? [])),
-            rankingStore:                data.rankingStore                ?? { playerResults: {}, prospectResults: {}, ranked: [], prospectRanked: [] },
+            tourPlayers:                 loadedCoachingPlayers,
+            prospects:                   rankedLoadedProspects,
+            youthCohortUniverse:         ensureYouthCohortUniverse(data.youthCohortUniverse, loadedWorldDate.year, rankedLoadedProspects.length),
+            competitiveDensity:          ensureCompetitiveDensityState(data.competitiveDensity, loadedWorldDate.year),
+            circuitShock:                data.circuitShock ?? null,
+            youthExitArchive:            (data.youthExitArchive ?? []).slice(-500),
+            retiredPlayers:              _syncCareerTitles(data.retiredPlayers ?? []).map(p => migrateLoadedSurface(ensureYouthProfile(ensurePlayerBirthDate(ensureCareerTrajectory(stripOldCoachButKeepBancoVivo(p), loadedWorldDate.year, 'SAVE_MIGRATION'), loadedWorldDate, loadedWorldDate.year), loadedWorldDate.year, 'SAVE_MIGRATION'))),
+            coachMarket:                 loadedCoachMarket,
+            rankingStore:                loadedRankingStore,
             tournamentResults:           data.tournamentResults           ?? {},
             historicalTournamentResults: data.historicalTournamentResults ?? {},
+            circuitShifts:               (data.circuitShifts ?? []).slice(-120),
+            latestCircuitShift:          data.latestCircuitShift ?? null,
+            historyBook:                 migrateHistoryBook(data.historyBook, data.chronicleEngine, data.year ?? 2025),
             events:                      data.events                      ?? [],
             
             playerSeasonSlots:           data.playerSeasonSlots           ?? {},
@@ -12449,13 +15123,14 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
             rivalrySystem,
             chronicleEngine,
             newsEngine,
-            sponsorPool:                 data.sponsorPool         ?? initSponsorPool(),
+            sponsorPool:                 ensureSponsorPoolFoundation(data.sponsorPool ?? initSponsorPool({ year: data.year ?? 2025 }), data.year ?? 2025),
             pendingOffers:               data.pendingOffers       ?? [],
             highestPaidPlayerId:         data.highestPaidPlayerId ?? null,
             seasonPulseState:            data.seasonPulseState    ?? createSeasonPulseState(data.year ?? 2025),
             monthlyInterviews:           data.monthlyInterviews   ?? [],
             grandSlamInterviews:         data.grandSlamInterviews ?? [],
             recordsStore:                data.recordsStore        ?? { _version:1, playerStats:{} },
+            radar:                       createRadarState(data.radar),
           };
 
           resetTransientUniverseRuntime();
@@ -12463,13 +15138,35 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           setPhase('running');
         } catch (err) {
           console.error('[LoadGame] Erro ao carregar save:', err);
-          alert('Erro ao carregar o arquivo. Verifique se — um save v—lido.');
+          alert(`Erro ao carregar o arquivo: ${err?.message ?? 'save invalido'}`);
         }
-      };
-      reader.readAsText(file);
     };
+    if (source instanceof Blob) {
+      loadFile(source);
+      return;
+    }
+    const input    = document.createElement('input');
+    input.type     = 'file';
+    input.accept   = '.tennis-save,.json,.gz,application/json,application/gzip';
+    input.onchange = (event) => loadFile(event.target.files?.[0]);
     input.click();
   }, [resetTransientUniverseRuntime]);
+
+  const handleRestoreAutosave = useCallback(async () => {
+    try {
+      const latest = await loadLatestAutosave();
+      if (!latest?.blob) {
+        alert('Ainda nao existe um backup automatico neste navegador.');
+        return;
+      }
+      const label = `${latest.year ?? 'ano desconhecido'} · ${new Date(latest.savedAt).toLocaleString('pt-BR')}`;
+      if (!confirm(`Recuperar o backup automatico mais recente?\n${label}`)) return;
+      handleLoadGame(latest.blob);
+    } catch (error) {
+      console.error('[Autosave] Falha ao recuperar:', error);
+      alert(`Nao foi possivel recuperar o backup: ${error?.message ?? 'erro desconhecido'}`);
+    }
+  }, [handleLoadGame]);
 
   useEffect(() => {
     if (!autoLoadKey || lastAutoLoadKeyRef.current === autoLoadKey) return;
@@ -12539,6 +15236,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     const DT_FIXED = 1 / 60;
     let running = true;
     const prev = { g0: -1, g1: -1, s0: -1, s1: -1, tb: false };
+    // Dá tempo para o espectador ler a telemetria antes de abrir o próximo ponto.
+    // Quando a oportunidade chega cedo, o motor a conserva em PRE_SERVE; não a pula.
+    const highlightsReadingStartedAt = performance.now();
+    const HIGHLIGHTS_READING_MIN_MS = 2600;
 
     // Classifica o tipo de ponto atual (em PRE_SERVE)
     // Retorna: { isGamePoint, isBreakPoint, isSetPoint, isMatchPoint } ou null
@@ -12553,8 +15254,10 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       if (gs.inTiebreak) {
         const tbSv = gs.tbScore[gs.server];
         const tbRv = gs.tbScore[gs.receiver];
-        isGamePoint  = tbSv >= 6 && tbSv >= tbRv;   // servidor pode fechar TB
-        isBreakPoint = tbRv >= 6 && tbRv >= tbSv;   // receiver pode fechar TB
+        // No tie-break é preciso liderar por um ponto para ter chance real de fechar.
+        // O empate em 6-6 não pode virar dois "set points" simultâneos.
+        isGamePoint  = tbSv >= 6 && tbSv - tbRv >= 1;
+        isBreakPoint = tbRv >= 6 && tbRv - tbSv >= 1;
         if (!isGamePoint && !isBreakPoint) return null;
       } else {
         isGamePoint  = sv.score >= 3 && (sv.score > rv.score || sv.score === 4);
@@ -12575,7 +15278,12 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
         if (isBreakPoint && rv.sets === setsNeeded - 1) isMatchPoint = true;
       }
 
-      return { isGamePoint, isBreakPoint, isSetPoint, isMatchPoint };
+      const opportunityPlayerIndex = isBreakPoint ? gs.receiver : gs.server;
+      return {
+        isGamePoint, isBreakPoint, isSetPoint, isMatchPoint,
+        opportunityPlayerIndex,
+        opportunityName: gs.players[opportunityPlayerIndex]?.name ?? null,
+      };
     }
 
     // Deve parar e mostrar ao vivo este ponto?
@@ -12593,7 +15301,17 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
     // Label curto para o feed
     function pointLabel(gs) {
       const c = classifyPoint(gs);
-      return buildHighlightsSuspenseLabel(gs, c);
+      const label = buildHighlightsSuspenseLabel(gs, c);
+      if (!label || !c) return null;
+      const name = c.opportunityName ?? 'O jogador';
+      const headline = c.isMatchPoint
+        ? `${name} pode fechar a partida`
+        : c.isSetPoint
+          ? `${name} pode fechar o set`
+          : c.isBreakPoint
+            ? `${name} ameaça o saque rival`
+            : `${name} tenta confirmar o game`;
+      return { ...label, ...c, headline };
     }
 
     function gameJustEnded(gs) {
@@ -12626,7 +15344,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
         gameState: gs.gameState,
         rally: gs.rally, maxRally: gs.maxRally,
         totalPoints: gs.totalPoints ?? 0,
-        setsDetail: gs.setsDetail ?? [],
+        setsDetail: getSetsDetailFromPlayers(gs.players),
         server: gs.server ?? 0,
         ballZ: gs.ball.pos.z,
         ballSpeed: Math.round(mag3(gs.ball.vel) * 3.6),
@@ -12675,7 +15393,9 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
               // Guarda snap do pr—-ponto para adicionar ao feed depois
               prePointSnap = {
                 label: lbl,
-                headline: lbl.text,
+                headline: lbl.headline,
+                opportunityName: lbl.opportunityName,
+                opportunityPlayerIndex: lbl.opportunityPlayerIndex,
                 subline: lbl.subline,
                 tone: lbl.tone,
                 intensity: lbl.intensity,
@@ -12686,6 +15406,17 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
               };
             }
             if (shouldStop(gs)) {
+              if (performance.now() - highlightsReadingStartedAt < HIGHLIGHTS_READING_MIN_MS) {
+                takeSnap(gs);
+                rafRef.current = requestAnimationFrame(loop);
+                return;
+              }
+              if (prePointSnap) {
+                const detected = { ...prePointSnap, id: Date.now() + ticks };
+                hlFeedRef.current = [detected, ...hlFeedRef.current].slice(0, 12);
+                setHlFeed([...hlFeedRef.current]);
+                prePointSnap = null;
+              }
               savePrev(gs);
               setHighlightsPaused(true);
               break;
@@ -12936,7 +15667,7 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
       // Roda headless num timeout para não bloquear o render do loading
       setTimeout(() => {
         try {
-          const { result, allClips } = simulateAndCollectHighlights(
+          const { result, allClips } = simulateAndCollectStoryHighlights(
             { playerData: playerA },
             { playerData: playerB },
             courtKey,
@@ -12948,8 +15679,15 @@ export default function UniverseManager({ onBack, universeMode = 'normal', autoL
           // Injeta temporariamente nas NAMED_PLAYERS para o 2D funcionar
           NAMED_PLAYERS[keyA] = playerA;
           NAMED_PLAYERS[keyB] = playerB;
+          const storyResult = buildReelMatchStory(
+            result,
+            allClips,
+            playerA,
+            playerB,
+            preGamePending?.tournament ?? null,
+          );
           setSimHlLoading(null);
-          setSimHlState({ allClips, result, playerA, playerB, onResult, keyA, keyB });
+          setSimHlState({ allClips, result: storyResult, playerA, playerB, tournament: preGamePending?.tournament ?? null, onResult, keyA, keyB });
         } catch (e) {
           console.error('[SimHL] Erro:', e);
           setSimHlLoading(null);
@@ -13069,21 +15807,59 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
       ?? (snap?.inTiebreak ? 'PRESSÃO' : 'ESTÁVEL');
     const tensionColor = latestHlLabel?.color ?? (snap?.inTiebreak ? '#FFD166' : '#4ECDC4');
 
-    const handleMatchDone = () => {
+    const finishWatchedMatch = (result) => {
       delete NAMED_PLAYERS[watchMatchState.keyA];
       delete NAMED_PLAYERS[watchMatchState.keyB];
-      if (snap && watchMatchState.onResult) {
-        const sets = [p0?.sets ?? 0, p1?.sets ?? 0];
-        const setsDetail = snap.setsDetail ?? [];
-        watchMatchState.onResult({
-          sets,
-          setsDetail,
-          matchNarrativeDossier: snap.matchNarrativeDossier ?? null,
-          matchStoryCapsules: snap.matchStoryCapsules ?? [],
-        });
+      if (result && watchMatchState.onResult) {
+        watchMatchState.onResult(result);
       }
+      setWatchFinishing(false);
       setWatchMatchState(null);
       setSnap(null);
+    };
+
+    const handleMatchDone = () => {
+      const livePlayers = gsRef.current?.players ?? [p0, p1];
+      finishWatchedMatch({
+        sets: [livePlayers[0]?.sets ?? 0, livePlayers[1]?.sets ?? 0],
+        setsDetail: getSetsDetailFromPlayers(livePlayers),
+        stats: { a: livePlayers[0]?.stats ?? {}, b: livePlayers[1]?.stats ?? {} },
+        heat: gsRef.current?.heat ?? snap?.heat ?? null,
+        retirement: gsRef.current?.matchRetirement ?? null,
+        inMatchInjuryEvents: gsRef.current?.inMatchInjuryEvents ?? [],
+        matchNarrativeDossier: snap?.matchNarrativeDossier ?? null,
+        matchStoryCapsules: snap?.matchStoryCapsules ?? [],
+      });
+    };
+
+    const handleSimulateRemaining = () => {
+      if (watchFinishing || !gsRef.current) return;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      setWatchFinishing(true);
+      window.setTimeout(() => {
+        try {
+          const result = simulateRemainingMatchHeadless(gsRef.current, {
+            format: watchMatchState.format ?? null,
+            category: liveBracketTournament?.category ?? null,
+            round: 'WATCH',
+            isSlamClash: !!liveBracketTournament?.isSlamClash,
+          });
+          finishWatchedMatch({
+            sets: result.sets,
+            setsDetail: result.setsDetail,
+            stats: result.stats,
+            telemetry: result.telemetry,
+            heat: result.heat,
+            retirement: result.retirement,
+            inMatchInjuryEvents: result.inMatchInjuryEvents,
+            matchNarrativeDossier: result.matchNarrativeDossier ?? null,
+            matchStoryCapsules: result.matchStoryCapsules ?? [],
+          });
+        } catch (error) {
+          console.error('[Universe] falha ao simular restante da partida assistida:', error);
+          setWatchFinishing(false);
+        }
+      }, 0);
     };
 
     if (isOver) {
@@ -13112,7 +15888,7 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
           gsRef={gsRef}
           trailRef={trailRef}
           snap={snap}
-          onMenu={handleMatchDone}
+          onMenu={handleSimulateRemaining}
           simSpeed={simSpeed}
           setSimSpeed={setSimSpeed}
           speedRef={speedRef}
@@ -13120,17 +15896,49 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
           bugMode={false}
           setBugMode={() => {}}
           bugSpeedSaveRef={{ current: 1 }}
-          coachPool={universeState?.coachPool ?? []}
           tournamentId={watchMatchState?.tournamentId ?? null}
           universePlayerA={watchMatchState?.playerA ?? null}
           universePlayerB={watchMatchState?.playerB ?? null}
         />
+        <button
+          onClick={handleSimulateRemaining}
+          disabled={watchFinishing}
+          style={{
+            position:'fixed', right:18, bottom:18, zIndex:320,
+            padding:'10px 14px', border:'1px solid rgba(232,200,74,.55)',
+            background:watchFinishing ? 'rgba(12,17,15,.94)' : 'rgba(232,200,74,.12)',
+            color:watchFinishing ? 'rgba(242,237,228,.55)' : '#F2EDE4',
+            fontFamily:"'Space Mono',monospace", fontSize:8, fontWeight:700,
+            letterSpacing:2, textTransform:'uppercase', cursor:watchFinishing ? 'wait' : 'pointer',
+            boxShadow:'0 10px 28px rgba(0,0,0,.35)',
+          }}
+        >{watchFinishing ? 'SIMULANDO RESTANTE…' : 'SIMULAR RESTANTE →'}</button>
         <DebugLog gsRef={gsRef} />
         <TracePanel gsRef={gsRef} />
 
 
-        {/* -- HIGHLIGHTS CURTAIN — cobre a quadra durante o headless ---- */}
+        {/* Sala de direção: cobre a quadra apenas enquanto o motor procura o próximo corte. */}
         {highlightsModeRef.current && (
+          <LiveHighlightsControlRoom
+            visible={!highlightsPaused}
+            snap={snap}
+            match={watchMatchState}
+            feed={hlFeed}
+            filters={hlFilters}
+            onToggleFilter={(key) => {
+              const next = { ...hlFiltersRef.current, [key]: !hlFiltersRef.current[key] };
+              hlFiltersRef.current = next;
+              setHlFilters(next);
+            }}
+            headline={hlFeed[0]?.headline ?? null}
+            pulseMessage={buildHighlightsPulseMessage(snap, hlFeed[0])}
+            intensityLabel={hlFeed[0]?.label?.intensity ?? 'EM LEITURA'}
+            tensionColor={hlFeed[0]?.label?.color ?? '#52C7F5'}
+          />
+        )}
+
+        {/* Legado visual mantido temporariamente fora da renderização para facilitar comparação. */}
+        {false && highlightsModeRef.current && (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             opacity: highlightsPaused ? 0 : 1,
@@ -13526,6 +16334,7 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
         onToggleStopOnBreaking={setStopOnBreaking}
         onSaveGame={handleSaveGame}
         onLoadGame={handleLoadGame}
+        onRestoreAutosave={handleRestoreAutosave}
       />
       {simulating && simMode === 'headless' && (
         <HeadlessOverlay
@@ -13554,6 +16363,9 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
           bracket={ceremonyData.bracket}
           wrapData={ceremonyData.wrapData ?? null}
           state={universeState}
+          circuitShift={universeState?.latestCircuitShift?.tournamentId === ceremonyData.tournament?.id
+            ? universeState.latestCircuitShift
+            : null}
           onClose={() => setCeremonyData(null)}
         />
       )}
@@ -13579,17 +16391,3 @@ return <WelcomeToUniverse onInit={handleInitUniverse} onBack={onBack} />;
     </>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

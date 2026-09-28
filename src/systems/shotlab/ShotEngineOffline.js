@@ -15,6 +15,10 @@ export function offlineNoop() {
   return null;
 }
 
+export function offlineIdentity(value) {
+  return value;
+}
+
 export function offlineZero() {
   return 0;
 }

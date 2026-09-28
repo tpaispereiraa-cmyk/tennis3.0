@@ -50,6 +50,7 @@ import {
 } from './SponsorContractClauses.js';
 
 import { offlineZero as computeSponsorSignal, offlineTier as getPhaseTwoTier } from '../shotlab/ShotEngineOffline.js';
+import { buildSponsorCompany, ensureSponsorPoolFoundation } from './SponsorCompanySystem.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIPOS DE CONTRATO
@@ -168,14 +169,15 @@ export function initSponsorPool(universe = {}) {
       urgency:           1.0,          // começa em 1.0 — todas as marcas sem contratos buscam ativamente
       lastSeasonActive:  null,         // último ano com contratos ativos
       historyLog:        [],           // eventos históricos desta marca
+      company:           buildSponsorCompany(sponsor, universe.year ?? 2025),
     };
   }
 
-  return {
+  return ensureSponsorPoolFoundation({
     states,
     contractArchive: [],    // contratos encerrados (histórico)
     lastProcessedYear: null,
-  };
+  }, universe.year ?? 2025);
 }
 
 /**
@@ -243,6 +245,13 @@ export function signContract(pool, contract) {
     playerId: contract.playerId,
     value:   contract.annualFee,
   });
+  if (state.company) {
+    state.company = {
+      ...state.company,
+      budgetCommitted: state.budgetUsed,
+      budgetAvailable: Math.max(0, (state.company.annualMarketingBudget ?? 0) - state.budgetUsed),
+    };
+  }
 
   return { ...pool, states: { ...pool.states, [contract.sponsorId]: state } };
 }
@@ -268,10 +277,11 @@ export function terminateContract(pool, contractId, reason = TERMINATION_REASONS
       const newContracts = [...state.contracts];
       newContracts.splice(idx, 1);
 
+      const nextBudgetUsed = Math.max(0, state.budgetUsed - foundContract.annualFee);
       newStates[sponsorId] = {
         ...state,
         contracts:  newContracts,
-        budgetUsed: Math.max(0, state.budgetUsed - foundContract.annualFee),
+        budgetUsed: nextBudgetUsed,
         historyLog: [...state.historyLog, {
           year:    year ?? foundContract.seasonSigned,
           event:   'TERMINATED',
@@ -279,6 +289,11 @@ export function terminateContract(pool, contractId, reason = TERMINATION_REASONS
           playerId: foundContract.playerId,
           value:   foundContract.annualFee,
         }],
+        company: state.company ? {
+          ...state.company,
+          budgetCommitted: nextBudgetUsed,
+          budgetAvailable: Math.max(0, (state.company.annualMarketingBudget ?? 0) - nextBudgetUsed),
+        } : state.company,
       };
       break;
     }
@@ -340,7 +355,7 @@ export function computeInterest(sponsor, player, opts = {}) {
 
   if (pool) {
     const state = getSponsorState(pool, sponsor.id);
-    const budgetAvailable = sponsor.budget - state.budgetUsed;
+    const budgetAvailable = state.company?.budgetAvailable ?? (sponsor.budget - state.budgetUsed);
     const [minFee] = getContractRange(sponsor.tier);
     if (budgetAvailable < minFee) {
       return { score: 0, reasons: [], eligible: false,
@@ -370,6 +385,15 @@ export function computeInterest(sponsor, player, opts = {}) {
   // ── Base: sinal combinado ────────────────────────────────────────────────
   let score   = signal;
   const reasons = [];
+  const hype = player.publicHype ?? {};
+  if ((hype.score ?? 0) >= 60) {
+    score += Math.round(((hype.score ?? 0) - 55) * .28);
+    reasons.push(hype.state === 'CONTESTED' ? 'Hype alto, ainda sob prova' : 'Nome em alta no circuito');
+  }
+  if (hype.state === 'UNFULFILLED' && sponsor.riskTolerance < .45) {
+    score -= 8;
+    reasons.push('Marca conservadora evita promessa sob pressão');
+  }
 
   // ── Bônus por estilo preferido ───────────────────────────────────────────
   const playerStyle = player.style?.id ?? player.styleId;
@@ -679,6 +703,12 @@ export function processSponsorSeason(pool, allPlayers, year, opts = {}) {
       budgetUsed:  newBudgetUsed,
       urgency:     newUrgency,
       lastSeasonActive: contractsToKeep.length > 0 ? year : state.lastSeasonActive,
+      company: state.company ? {
+        ...state.company,
+        fiscalYear: year,
+        budgetCommitted: newBudgetUsed,
+        budgetAvailable: Math.max(0, (state.company.annualMarketingBudget ?? sponsor.budget) - newBudgetUsed),
+      } : state.company,
     };
   }
 
@@ -689,7 +719,7 @@ export function processSponsorSeason(pool, allPlayers, year, opts = {}) {
   for (const sponsor of SPONSOR_CATALOG) {
     const state = getSponsorState(currentPool, sponsor.id);
     const [minFee] = getContractRange(sponsor.tier);
-    const budgetAvailable = sponsor.budget - state.budgetUsed;
+    const budgetAvailable = state.company?.budgetAvailable ?? (sponsor.budget - state.budgetUsed);
     const slotsAvailable  = sponsor.maxContracts - state.contracts.length;
 
     if (budgetAvailable < minFee || slotsAvailable <= 0) continue;

@@ -2,6 +2,8 @@
 // RIVALRYSYSTEM.JS — Tennis Edition v1.0
 // Adaptado de bblade/RivalrySystem v2.0
 // ============================================
+
+import { isTiebreakSetScore } from '../../core/constants.js';
 //
 // FILOSOFIA:
 //  Rivalidades são raras e pesadas, não automáticas.
@@ -79,17 +81,17 @@ export const RIVALRY_STATUS = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// Detecta se o set decisivo foi para tiebreak (7-6)
+// Detecta se o set decisivo foi para tiebreak (5-4 no formato compacto)
 function _hasDecisiveTiebreak(setsDetail) {
   if (!setsDetail || setsDetail.length === 0) return false;
   const last = setsDetail[setsDetail.length - 1];
-  return last && (last[0] === 7 || last[1] === 7);
+  return last && isTiebreakSetScore(last[0], last[1]);
 }
 
-// Conta quantos sets foram decididos no tiebreak (7-6)
+// Conta quantos sets foram decididos no tiebreak (5-4)
 function _countTiebreakSets(setsDetail) {
   if (!setsDetail) return 0;
-  return setsDetail.filter(s => s && (s[0] === 7 || s[1] === 7)).length;
+  return setsDetail.filter(s => s && isTiebreakSetScore(s[0], s[1])).length;
 }
 
 // ─────────────────────────────────────────────────────────────────

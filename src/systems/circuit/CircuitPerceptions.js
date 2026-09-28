@@ -23,6 +23,8 @@
 // HELPERS
 // ─────────────────────────────────────────────────────────────────
 
+import { isTiebreakSetScore } from '../../core/constants.js';
+
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 function safeLower(value) {
@@ -330,7 +332,7 @@ function tiebreakWinRate(playerId, tournamentResults) {
         const isB = match.playerB?.id === playerId;
         if (!isA && !isB) continue;
         for (const [gA, gB] of (match.result.setsDetail ?? [])) {
-          const isTb = (gA === 7 && gB === 6) || (gA === 6 && gB === 7);
+          const isTb = isTiebreakSetScore(gA, gB);
           if (!isTb) continue;
           const wonTb = (isA && gA > gB) || (isB && gB > gA);
           if (wonTb) tbWins++; else tbLosses++;

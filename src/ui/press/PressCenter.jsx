@@ -291,7 +291,7 @@ function extractPullQuote(body) {
 function ArticleReader({ article, onBack }) {
   const color = jColor(article.journalist);
   const sc = article.tournament?.surface;
-  const surfColors = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', INDOOR:'#AB47BC' };
+  const surfColors = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', STREET:'#EF9F27', CARPET:'#C4426A', INDOOR:'#AB47BC' };
   const pullQuote = extractPullQuote(article.body);
 
   return (
@@ -427,7 +427,7 @@ function ArticleHero({ article, onClick }) {
   if (!article) return null;
   const color = jColor(article.journalist);
   const sc = article.tournament?.surface;
-  const surfColors = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', INDOOR:'#AB47BC' };
+  const surfColors = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', STREET:'#EF9F27', CARPET:'#C4426A', INDOOR:'#AB47BC' };
 
   return (
     <div className="pc-article-card pc-hero-shimmer" onClick={onClick} style={{

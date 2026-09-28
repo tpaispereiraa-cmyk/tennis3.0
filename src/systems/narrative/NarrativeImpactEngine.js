@@ -1,3 +1,5 @@
+import { isTiebreakSetScore } from '../../core/constants.js';
+
 const CATEGORY_WEIGHT = {
   ATP_PROSPECTS: 0.28,
   ATP_100: 0.36,
@@ -196,7 +198,7 @@ export function buildNarrativeImpact(kind, payload = {}) {
 function computeScorelineDrama(match) {
   const sets = match?.result?.setsDetail ?? [];
   if (!sets.length) return 0;
-  const tbSets = sets.filter(([a, b]) => (a === 7 && b === 6) || (a === 6 && b === 7)).length;
+  const tbSets = sets.filter(([a, b]) => isTiebreakSetScore(a, b)).length;
   const closeSets = sets.filter(([a, b]) => Math.abs(a - b) <= 2).length;
   return clamp((tbSets * 0.4) + (closeSets / Math.max(1, sets.length)) * 0.6, 0, 1);
 }

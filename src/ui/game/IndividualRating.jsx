@@ -1,304 +1,154 @@
-﻿/**
- * IndividualRating.jsx — v4.0
- *
- * Rating individual de desempenho por partida — escala 0–10.
- *
- * ── O QUE MUDOU DA v3.0 ──────────────────────────────────────────────────────
- *
- * 1. BASE 7.0 — Antes de estatísticas acumularem (poucos dados), cada pilar
- *    parte de 7.0. O jogador precisa jogar MAL para cair, não jogar bem para subir.
- *
- * 2. norm() ASSIMÉTRICA — Performances acima da média são recompensadas
- *    mais do que performances abaixo são punidas (scale+ 2.7 vs scale- 2.0).
- *    Isso abre o teto para jogos épicos atingirem 9.0–10.0 com mais frequência.
- *
- * 3. MENOS VOLATILIDADE — Sigma aumentado em winners/UE/quality/tática.
- *    Nota sobe e cai gradualmente, não em pulos bruscos.
- *
- * 4. PRESSURE SCORE (novo, 20% do pilar Qualidade) — Recompensa jogar
- *    sob pressão. Calcula a proporção de erros que foram FORÇADOS vs não-forçados.
- *    Alto = a maioria dos seus erros foi causada pelo adversário (você se defendeu
- *    bem). Baixo = erros gratuitos. Isso valida "jogar sob ataque e sobreviver".
- *
- * 5. STEAL SCORE rebalanceado — Peso de 35% → 45% dentro da tática.
- *    Ganhar pontos na defesa vale mais. Benchmark de 0.28 → 0.25 (o tour defende
- *    pior, então defender bem destaca ainda mais).
- *
- * 6. ueScore — Floor de 1.0 → 2.5. Dias ruins não colapsam a nota.
- *
- * 7. holdBonus — Amplitude ±0.30 → ±0.50. Quebrar e confirmar serviço tem
- *    mais impacto no score final.
- *
- * Exports:
- *   computeRating(stats, shotCount)  → { score, components, tier, detail }
- *   MatchRatingBadge({ stats, shotCount, surfColor })  → JSX
- */
-
+/** IndividualRating.jsx — avaliação pós-jogo baseada em pilares ATP. */
 import React from 'react';
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const clamp = (v, min = 1, max = 10) => Math.max(min, Math.min(max, v));
+const ratio = (a, b) => b > 0 ? a / b : null;
+const round = (v) => Math.round(v * 10) / 10;
 
-/**
- * Normaliza para 0–10 com escala assimétrica.
- * avg → 6.0
- * avg + 1σ → ~8.4
- * avg − 1σ → ~4.8
- *
- * A ideia do live rating é premiar a solidez e exigir uma partida
- * realmente ruim para despencar. Em tênis, muito jogador "ok" ao vivo
- * ainda passa sensação de 6.5–7.2, não de nota 5 o tempo todo.
- */
-function norm(value, avg, sigma) {
-  const z = (value - avg) / sigma;
-  const scale = z >= 0 ? 2.35 : 1.20;
-  return clamp(6.0 + z * scale, 1.8, 10);
+// Médias de referência. Não são atributos: são a linha de base do tour para
+// comparar uma atuação dentro daquela superfície.
+const SURFACE_BASELINES = {
+  CLAY:   { firstIn: .63, firstWon: .68, secondWon: .52, hold: .76, aceGame: .32, dfGame: .34, ret: .38, break: .25, winnerPoint: .14, uePoint: .14 },
+  GRASS:  { firstIn: .63, firstWon: .73, secondWon: .53, hold: .84, aceGame: .72, dfGame: .34, ret: .32, break: .19, winnerPoint: .17, uePoint: .13 },
+  INDOOR: { firstIn: .63, firstWon: .73, secondWon: .54, hold: .85, aceGame: .78, dfGame: .34, ret: .31, break: .18, winnerPoint: .17, uePoint: .13 },
+  CARPET: { firstIn: .64, firstWon: .75, secondWon: .54, hold: .87, aceGame: .90, dfGame: .35, ret: .30, break: .17, winnerPoint: .18, uePoint: .13 },
+  STREET: { firstIn: .62, firstWon: .69, secondWon: .51, hold: .77, aceGame: .42, dfGame: .38, ret: .37, break: .24, winnerPoint: .15, uePoint: .15 },
+  HARD:   { firstIn: .62, firstWon: .70, secondWon: .52, hold: .80, aceGame: .55, dfGame: .35, ret: .35, break: .22, winnerPoint: .16, uePoint: .14 },
+};
+
+function compare(value, mean, spread, inverse = false) {
+  if (value == null || !Number.isFinite(value)) return null;
+  const z = ((inverse ? mean - value : value - mean) / spread);
+  return clamp(6 + z * 1.22, 1.2, 9.9);
 }
 
-// ── Tiers — ajustados para refletir a nova base 7.0 ──────────────────────────
+function combine(items) {
+  const available = items.filter((item) => item.value != null && Number.isFinite(item.value));
+  if (!available.length) return { score: 6, confidence: 0 };
+  const weight = available.reduce((sum, item) => sum + item.weight, 0);
+  const confidence = Math.min(1, available.reduce((sum, item) => sum + (item.confidence ?? 1) * item.weight, 0) / weight);
+  return { score: available.reduce((sum, item) => sum + item.value * item.weight, 0) / weight, confidence };
+}
+
 const TIERS = [
-  { min: 9.0, label: 'LENDÁRIO',    color: '#FFD700', glow: 'rgba(255,215,0,0.40)'   },
-  { min: 7.5, label: 'EXCEPCIONAL', color: '#B0FF60', glow: 'rgba(176,255,96,0.32)'  },
-  { min: 6.5, label: 'SÓLIDO',      color: '#60D0FF', glow: 'rgba(96,208,255,0.26)'  },
-  { min: 5.0, label: 'REGULAR',     color: '#FFB060', glow: 'rgba(255,176,96,0.22)'  },
-  { min: 3.5, label: 'ABAIXO',      color: '#FF8040', glow: 'rgba(255,128,64,0.20)'  },
-  { min: 0,   label: 'FRACO',       color: '#FF5050', glow: 'rgba(255,80,80,0.20)'   },
+  { min: 9, label: 'LENDÁRIO', color: '#FFD700', glow: 'rgba(255,215,0,.4)' },
+  { min: 8, label: 'EXCEPCIONAL', color: '#B0FF60', glow: 'rgba(176,255,96,.32)' },
+  { min: 7, label: 'MUITO FORTE', color: '#60D0FF', glow: 'rgba(96,208,255,.26)' },
+  { min: 5.5, label: 'SÓLIDO', color: '#C5D7E8', glow: 'rgba(197,215,232,.18)' },
+  { min: 4.2, label: 'ABAIXO', color: '#FF9A55', glow: 'rgba(255,154,85,.2)' },
+  { min: 0, label: 'FRACO', color: '#FF5050', glow: 'rgba(255,80,80,.2)' },
 ];
-function getTier(score) {
-  return TIERS.find(t => score >= t.min) ?? TIERS[TIERS.length - 1];
-}
+const tierFor = (score) => TIERS.find((tier) => score >= tier.min) ?? TIERS.at(-1);
 
-// ── Função principal ──────────────────────────────────────────────────────────
 /**
- * @param {object} stats     — player.stats do game.js
- * @param {number} shotCount — player.shotCount (fallback para qualityCount)
- * @returns {{ score, components, tier, detail }}
+ * Avalia a atuação, não quem venceu. O segundo argumento continua compatível
+ * com chamadas antigas; opponentStats/context permitem leituras mais completas.
  */
-export function computeRating(stats, shotCount) {
-  const s = stats ?? {};
-
-  // Base de golpes
-  const shots = Math.max(
-    s.qualityCount ?? 0,
+export function computeRating(stats = {}, shotCount = 0, opponentStats = null, context = {}) {
+  const surface = String(context.surface ?? context.courtSurface ?? 'HARD').toUpperCase();
+  const base = SURFACE_BASELINES[surface] ?? SURFACE_BASELINES.HARD;
+  const points = Math.max(
+    (stats.pointsWonServing ?? 0) + (stats.pointsWonReturning ?? 0),
+    (stats.pointsWonServing ?? 0) + (stats.pointsLostServing ?? 0),
+    (stats.pointOutcomeCount ?? 0),
     shotCount ?? 0,
-    (s.winners ?? 0) + (s.unforcedErrors ?? 0) + (s.forcedErrors ?? 0) + 1
+    1,
   );
+  const gamesServed = stats.gamesServed ?? 0;
+  const gamesReturned = stats.gamesReturned ?? 0;
+  const firstTotal = stats.serve1Total ?? 0;
+  const secondTotal = stats.serve2In ?? stats.serve2Total ?? 0;
+  const firstWon = stats.serve1WonPoints ?? stats.serve1Won ?? 0;
+  const secondWon = stats.serve2WonPoints ?? stats.serve2Won ?? 0;
+  const firstIn = ratio(stats.serve1In ?? 0, firstTotal);
+  const firstWonRate = ratio(firstWon, stats.serve1In ?? 0);
+  const secondWonRate = ratio(secondWon, secondTotal);
+  const holdRate = ratio(stats.gamesHeld ?? 0, gamesServed);
+  const aceGame = ratio(stats.aces ?? 0, gamesServed);
+  const dfGame = ratio(stats.doubleFaults ?? 0, gamesServed);
 
-  // ══════════════════════════════════════════════════════════════════════
-  // PILAR 1 — QUALIDADE DE GOLPE (35%)
-  // ══════════════════════════════════════════════════════════════════════
+  const serve = combine([
+    { value: compare(firstIn, base.firstIn, .075), weight: .17, confidence: Math.min(1, firstTotal / 18) },
+    { value: compare(firstWonRate, base.firstWon, .10), weight: .27, confidence: Math.min(1, (stats.serve1In ?? 0) / 14) },
+    { value: compare(secondWonRate, base.secondWon, .11), weight: .22, confidence: Math.min(1, secondTotal / 12) },
+    { value: compare(holdRate, base.hold, .17), weight: .22, confidence: Math.min(1, gamesServed / 4) },
+    { value: compare(aceGame, base.aceGame, .52), weight: .07, confidence: Math.min(1, gamesServed / 4) },
+    { value: compare(dfGame, base.dfGame, .30, true), weight: .05, confidence: Math.min(1, gamesServed / 4) },
+  ]);
 
-  // 1a. Qualidade média da engine (0.05–1.0); σ aumentado 0.07→0.10
-  const qCount    = Math.max(s.qualityCount ?? 0, 1);
-  const avgQ      = (s.qualitySum ?? 0) / qCount;
-  const qualScore = (s.qualityCount ?? 0) > 5
-    ? norm(avgQ, 0.53, 0.10)
-    : 7.0;
+  const returnPoints = ratio(stats.pointsWonReturning ?? 0, (stats.pointsWonReturning ?? 0) + (stats.pointsLostReturning ?? 0));
+  const breakRate = ratio(stats.gamesConverted ?? stats.breakPointsConverted ?? 0, gamesReturned);
+  const firstReturn = opponentStats ? ratio((opponentStats.serve1LostPoints ?? 0), opponentStats.serve1In ?? 0) : null;
+  const secondReturn = opponentStats ? ratio((opponentStats.serve2LostPoints ?? 0), opponentStats.serve2In ?? opponentStats.serve2Total ?? 0) : null;
+  const returning = combine([
+    { value: compare(returnPoints, base.ret, .09), weight: .48, confidence: Math.min(1, ((stats.pointsWonReturning ?? 0) + (stats.pointsLostReturning ?? 0)) / 28) },
+    { value: compare(breakRate, base.break, .18), weight: .25, confidence: Math.min(1, gamesReturned / 4) },
+    { value: compare(firstReturn, 1 - base.firstWon, .10), weight: .12, confidence: firstReturn == null ? 0 : .7 },
+    { value: compare(secondReturn, 1 - base.secondWon, .11), weight: .15, confidence: secondReturn == null ? 0 : .7 },
+  ]);
 
-  // 1b. Winner rate por golpe; σ aumentado 0.03→0.05, fallback 7.0
-  const winnerRate  = (s.winners ?? 0) / shots;
-  const winnerScore = shots > 8
-    ? norm(winnerRate, 0.07, 0.05)
-    : 7.0;
+  const winnersPerPoint = ratio(stats.winners ?? 0, points);
+  const uePerPoint = ratio(stats.unforcedErrors ?? 0, points);
+  const avgQuality = ratio(stats.qualitySum ?? 0, stats.qualityCount ?? 0);
+  const attackRate = ratio(stats.attackPointsWon ?? 0, stats.attackPointsPlayed ?? 0);
+  const defenseRate = ratio(stats.defensePointsWon ?? 0, stats.defensePointsPlayed ?? 0);
+  const construction = combine([
+    { value: compare(winnersPerPoint, base.winnerPoint, .065), weight: .22, confidence: Math.min(1, points / 55) },
+    { value: compare(uePerPoint, base.uePoint, .065, true), weight: .28, confidence: Math.min(1, points / 55) },
+    { value: compare(avgQuality, .54, .105), weight: .18, confidence: Math.min(1, (stats.qualityCount ?? 0) / 30) },
+    { value: compare(attackRate, .62, .16), weight: .19, confidence: Math.min(1, (stats.attackPointsPlayed ?? 0) / 10) },
+    { value: compare(defenseRate, .28, .16), weight: .13, confidence: Math.min(1, (stats.defensePointsPlayed ?? 0) / 10) },
+  ]);
 
-  // 1c. UE rate invertida; σ 0.03→0.05, floor 1.0→2.5, fallback 7.0
-  const ueRate  = (s.unforcedErrors ?? 0) / shots;
-  const ueScore = shots > 8
-    ? clamp(norm(-ueRate, -0.07, 0.05), 2.5, 9.5)
-    : 7.0;
+  const bpConverted = ratio(stats.breakPointsConverted ?? stats.breakPointsWon ?? 0, stats.breakPointsOpportunities ?? 0);
+  const bpSaved = ratio(stats.breakPointsSaved ?? 0, stats.breakPointsFaced ?? 0);
+  const tieRate = ratio(stats.tiebreakPointsWon ?? 0, stats.tiebreakPointsPlayed ?? 0);
+  const pressure = combine([
+    { value: compare(bpConverted, .40, .20), weight: .38, confidence: Math.min(1, (stats.breakPointsOpportunities ?? 0) / 5) },
+    { value: compare(bpSaved, .62, .18), weight: .38, confidence: Math.min(1, (stats.breakPointsFaced ?? 0) / 5) },
+    { value: compare(tieRate, .50, .18), weight: .24, confidence: Math.min(1, (stats.tiebreakPointsPlayed ?? 0) / 8) },
+  ]);
 
-  // 1d. PRESSURE SCORE — proporção de erros que foram forçados.
-  //     Benchmark: 45% dos erros são forçados no tour médio.
-  //     Fallback 0.55 → ligeiramente acima do benchmark → base ~7.0
-  const totalErrors   = (s.forcedErrors ?? 0) + (s.unforcedErrors ?? 0);
-  const pressureRatio = totalErrors > 3
-    ? (s.forcedErrors ?? 0) / totalErrors
-    : 0.55;
-  const pressureScore = norm(pressureRatio, 0.45, 0.20);
+  const netRate = ratio(stats.netPointsWon ?? 0, stats.netApproaches ?? 0);
+  const execution = combine([
+    { value: compare(netRate, .61, .18), weight: .34, confidence: Math.min(1, (stats.netApproaches ?? 0) / 8) },
+    { value: compare(dfGame, base.dfGame, .30, true), weight: .26, confidence: Math.min(1, gamesServed / 4) },
+    { value: compare(uePerPoint, base.uePoint, .065, true), weight: .40, confidence: Math.min(1, points / 55) },
+  ]);
 
-  const qualityScore =
-    qualScore     * 0.50 +
-    winnerScore   * 0.15 +
-    ueScore       * 0.15 +
-    pressureScore * 0.20;
-
-  // ══════════════════════════════════════════════════════════════════════
-  // PILAR 2 — EXECUÇÃO DE SAQUE (30%)
-  // ══════════════════════════════════════════════════════════════════════
-
-  const srv1Tot   = Math.max(s.serve1Total ?? 0, 1);
-  const srv1Score = (s.serve1Total ?? 0) > 3
-    ? norm((s.serve1In ?? 0) / srv1Tot, 0.62, 0.09)
-    : 7.0;
-
-  const gSrv    = Math.max(s.gamesServed ?? 0, 1);
-  const dfRaw   = (s.doubleFaults ?? 0) / gSrv;
-  const dfScore = clamp(norm(-dfRaw, -0.35, 0.30), 1.5, 9.0);
-
-  const aceRaw   = (s.aces ?? 0) / gSrv;
-  const aceScore = (s.gamesServed ?? 0) > 2
-    ? norm(aceRaw, 0.50, 0.40)
-    : 7.0;
-
-  const hasSpeed   = (s.serve1AvgKmh ?? 0) > 50;
-  const speedScore = hasSpeed ? norm(s.serve1AvgKmh, 185, 18) : 7.0;
-
-  const serveScore =
-    srv1Score  * 0.40 +
-    dfScore    * 0.25 +
-    aceScore   * 0.20 +
-    speedScore * 0.15;
-
-  // ══════════════════════════════════════════════════════════════════════
-  // PILAR 3 — TÁTICA: CONVERSION + STEAL (35%)
-  // Steal: 35% → 45%. Benchmark 0.28 → 0.25. σ 0.10 → 0.14.
-  // ══════════════════════════════════════════════════════════════════════
-
-  const atkPlayed = s.attackPointsPlayed ?? 0;
-  const convScore = atkPlayed > 3
-    ? norm((s.attackPointsWon ?? 0) / atkPlayed, 0.65, 0.14)
-    : 7.0;
-
-  const defPlayed  = s.defensePointsPlayed ?? 0;
-  const stealScore = defPlayed > 3
-    ? norm((s.defensePointsWon ?? 0) / defPlayed, 0.25, 0.14)
-    : 7.0;
-
-  const tacticScore = convScore * 0.55 + stealScore * 0.45;
-
-  // ══════════════════════════════════════════════════════════════════════
-  // SCORE FINAL
-  // ══════════════════════════════════════════════════════════════════════
-  const raw = clamp(
-    qualityScore * 0.35 +
-    serveScore   * 0.30 +
-    tacticScore  * 0.35,
-    0, 10
-  );
-
-  // holdBonus ampliado: ±0.30 → ±0.50
-  const holdBonus = (() => {
-    const g = s.gamesServed ?? 0;
-    if (g < 3) return 0;
-    const hp = (s.gamesHeld ?? 0) / g;
-    return clamp((hp - 0.65) / 0.35 * 0.50, -0.50, 0.50);
-  })();
-
-  const score = clamp(raw + holdBonus, 0, 10);
-
-  const srv1PctVal  = (s.serve1Total ?? 0) > 3 ? (s.serve1In ?? 0) / srv1Tot : null;
-  const convRateVal = atkPlayed > 3 ? (s.attackPointsWon ?? 0) / atkPlayed : null;
-  const stlRateVal  = defPlayed > 3 ? (s.defensePointsWon ?? 0) / defPlayed : null;
-
+  const pillars = { saque: serve, devolucao: returning, construcao: construction, pressao: pressure, execucao: execution };
+  const weighted = combine([
+    { value: serve.score, weight: .27, confidence: serve.confidence },
+    { value: returning.score, weight: .25, confidence: returning.confidence },
+    { value: construction.score, weight: .23, confidence: construction.confidence },
+    { value: pressure.score, weight: .17, confidence: pressure.confidence },
+    { value: execution.score, weight: .08, confidence: execution.confidence },
+  ]);
+  // Amostras fracas se aproximam do neutro, em vez do antigo 7.0 automático.
+  const confidence = Math.min(1, weighted.confidence * .72 + Math.min(1, points / 70) * .28);
+  const score = clamp(6 + (weighted.score - 6) * (.38 + confidence * .62));
+  const components = Object.fromEntries(Object.entries(pillars).map(([key, value]) => [key, {
+    score: round(value.score), label: key.toUpperCase(), weight: { saque: .27, devolucao: .25, construcao: .23, pressao: .17, execucao: .08 }[key], confidence: value.confidence,
+  }]));
   return {
-    score: Math.round(score * 10) / 10,
-    components: {
-      qualidade: { score: Math.round(qualityScore * 10) / 10, label: 'QUALIDADE', weight: 0.35 },
-      saque:     { score: Math.round(serveScore   * 10) / 10, label: 'SAQUE',     weight: 0.30 },
-      tatica:    { score: Math.round(tacticScore  * 10) / 10, label: 'TÁTICA',    weight: 0.35 },
-    },
-    tier: getTier(score),
-    detail: {
-      avgQuality:    Math.round(avgQ * 100) / 100,
-      srv1Pct:       srv1PctVal  != null ? Math.round(srv1PctVal  * 100) : '—',
-      convRate:      convRateVal != null ? Math.round(convRateVal * 100) : '—',
-      stealRate:     stlRateVal  != null ? Math.round(stlRateVal  * 100) : '—',
-      winnerRate:    Math.round(winnerRate   * 100),
-      ueRate:        Math.round(ueRate       * 100),
-      pressureRatio: Math.round(pressureRatio * 100),
-    },
+    score: round(score), confidence: round(confidence), components, tier: tierFor(score),
+    detail: { firstIn, firstWonRate, secondWonRate, returnPoints, bpConverted, bpSaved, winnersPerPoint, uePerPoint, avgQuality },
   };
 }
 
-// ── React component ───────────────────────────────────────────────────────────
 export function MatchRatingBadge({ stats, shotCount, surfColor = '#c8571a' }) {
-  const { score, components, tier, detail } = computeRating(stats, shotCount);
-
-  const hasData = (stats?.qualityCount ?? 0) > 5 ||
-    ((stats?.winners ?? 0) + (stats?.aces ?? 0) + (stats?.unforcedErrors ?? 0)) > 3;
-
-  const R = 22, cx = 30, cy = 30;
-  const circumference = 2 * Math.PI * R;
-  const arcFrac = hasData ? Math.min(score / 10, 1) : 0;
-  const dashArr = `${arcFrac * circumference} ${circumference}`;
-
-  return (
-    <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-      <div style={{
-        fontFamily: 'Rajdhani, monospace', fontSize: 6, letterSpacing: 3,
-        color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', marginBottom: 6,
-      }}>RATING</div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flexShrink: 0 }}>
-          <svg width={60} height={60} style={{ display: 'block' }}>
-            <circle cx={cx} cy={cy} r={R} fill="none"
-              stroke="rgba(255,255,255,0.06)" strokeWidth={4} />
-            <circle cx={cx} cy={cy} r={R} fill="none"
-              stroke={hasData ? tier.color : 'rgba(255,255,255,0.12)'}
-              strokeWidth={4} strokeLinecap="round"
-              strokeDasharray={dashArr} strokeDashoffset={0}
-              transform={`rotate(-90 ${cx} ${cy})`}
-              style={{
-                transition: 'stroke-dasharray 0.8s cubic-bezier(.4,0,.2,1)',
-                filter: hasData ? `drop-shadow(0 0 4px ${tier.glow})` : 'none',
-              }}
-            />
-            <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
-              fontFamily="Rajdhani, monospace" fontWeight="900"
-              fontSize={hasData ? 14 : 10}
-              fill={hasData ? tier.color : 'rgba(255,255,255,0.2)'}
-            >
-              {hasData ? score.toFixed(1) : '—'}
-            </text>
-          </svg>
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {hasData && (
-            <div style={{
-              fontFamily: 'Rajdhani, monospace', fontSize: 9, fontWeight: 700,
-              letterSpacing: 2, color: tier.color, textTransform: 'uppercase',
-              marginBottom: 5, textShadow: `0 0 8px ${tier.glow}`,
-            }}>{tier.label}</div>
-          )}
-
-          {Object.values(components).map(({ label, score: cs }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-              <span style={{
-                fontFamily: 'Rajdhani, monospace', fontSize: 6, letterSpacing: 1,
-                color: 'rgba(255,255,255,0.20)', width: 44, flexShrink: 0, textTransform: 'uppercase',
-              }}>{label}</span>
-              <div style={{
-                flex: 1, height: 2, background: 'rgba(255,255,255,0.05)',
-                overflow: 'hidden', position: 'relative',
-              }}>
-                <div style={{
-                  height: '100%',
-                  width: hasData ? `${cs * 10}%` : '0%',
-                  background: hasData ? `linear-gradient(90deg,${surfColor}88,${surfColor})` : 'transparent',
-                  transition: 'width 0.7s cubic-bezier(.4,0,.2,1)',
-                }} />
-              </div>
-              <span style={{
-                fontFamily: 'Rajdhani, monospace', fontSize: 8, fontWeight: 700,
-                color: hasData ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)',
-                width: 16, textAlign: 'right', flexShrink: 0,
-              }}>{hasData ? cs.toFixed(1) : '—'}</span>
-            </div>
-          ))}
-
-          {hasData && detail && (
-            <div style={{
-              marginTop: 4, fontFamily: 'Rajdhani, monospace',
-              fontSize: 6, color: 'rgba(255,255,255,0.14)', letterSpacing: 1,
-            }}>
-              {`Q:${detail.avgQuality.toFixed(2)}  1S:${detail.srv1Pct}%  CNV:${detail.convRate}%  STL:${detail.stealRate}%  PRE:${detail.pressureRatio}%`}
-            </div>
-          )}
-        </div>
+  const { score, confidence, components, tier } = computeRating(stats, shotCount);
+  const hasData = confidence >= .18;
+  const R = 22, cx = 30, cy = 30, circumference = 2 * Math.PI * R;
+  return <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
+    <div style={{ fontFamily: 'Rajdhani, monospace', fontSize: 6, letterSpacing: 3, color: 'rgba(255,255,255,.25)', textTransform: 'uppercase', marginBottom: 6 }}>RATING DA PARTIDA</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <svg width={60} height={60} style={{ flexShrink: 0 }}><circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={4}/><circle cx={cx} cy={cy} r={R} fill="none" stroke={hasData ? tier.color : 'rgba(255,255,255,.12)'} strokeWidth={4} strokeLinecap="round" strokeDasharray={`${(score / 10) * circumference} ${circumference}`} transform={`rotate(-90 ${cx} ${cy})`}/><text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle" fontFamily="Rajdhani, monospace" fontWeight="900" fontSize={14} fill={hasData ? tier.color : 'rgba(255,255,255,.2)'}>{hasData ? score.toFixed(1) : '—'}</text></svg>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'Rajdhani, monospace', fontSize: 9, fontWeight: 700, letterSpacing: 2, color: tier.color, marginBottom: 5 }}>{hasData ? tier.label : 'SEM AMOSTRA'}</div>
+        {Object.values(components).map(({ label, score: pillar }) => <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}><span style={{ fontFamily: 'Rajdhani, monospace', fontSize: 6, letterSpacing: 1, color: 'rgba(255,255,255,.25)', width: 54 }}>{label}</span><div style={{ flex: 1, height: 2, background: 'rgba(255,255,255,.06)' }}><div style={{ height: '100%', width: `${pillar * 10}%`, background: `linear-gradient(90deg,${surfColor}88,${surfColor})` }}/></div><span style={{ fontFamily: 'Rajdhani, monospace', fontSize: 8, color: 'rgba(255,255,255,.5)', width: 16, textAlign: 'right' }}>{pillar.toFixed(1)}</span></div>)}
+        <div style={{ marginTop: 4, fontFamily: 'Rajdhani, monospace', fontSize: 6, color: 'rgba(255,255,255,.18)', letterSpacing: 1 }}>CONFIANÇA DA AMOSTRA {Math.round(confidence * 100)}%</div>
       </div>
     </div>
-  );
+  </div>;
 }
-

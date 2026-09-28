@@ -611,7 +611,8 @@ export const LIFE_EVENT_TYPES = {
   DOPING_ALLEGATION: {
     id: 'DOPING_ALLEGATION', category: 'CONTROVERSY', label: 'Acusação de doping', icon: '🚨',
     newsworthy: true, marketImpact: -15,
-    condition: p => !hasEventOccurred(p, 'DOPING_ALLEGATION')
+    // Integridade pertence ao Circuit Shock: evita duas acusações paralelas.
+    condition: () => false
                     && p.personality?.competitiveArchetype?.id === 'PREDATOR' && chance(0.2),
     apply: p => p,
     describe: p => `${p.name} alvo de suspeita de doping — caso investigado pela agência antidoping`,
@@ -654,7 +655,8 @@ export const LIFE_EVENT_TYPES = {
   GAMBLING_RUMOR: {
     id: 'GAMBLING_RUMOR', category: 'CONTROVERSY', label: 'Rumor de apostas', icon: '🎲',
     newsworthy: true, marketImpact: -7,
-    condition: p => !hasEventOccurred(p, 'GAMBLING_RUMOR')
+    // Integridade pertence ao Circuit Shock: rumor não nasce mais sem caso.
+    condition: () => false
                     && p.personality?.pressPersona?.id === 'ENIGMATIC' && chance(0.12),
     apply: p => p,
     describe: p => `Imprensa especula sobre hábitos de apostas de ${p.name}`,
@@ -1124,14 +1126,6 @@ export const LIFE_EVENT_TYPES = {
     describe: p => `${p.name} troca farpas públicas com rival — declarações se tornam o tema da semana`,
   },
 
-  COACH_DRAMA: {
-    id: 'COACH_DRAMA', category: 'CONTROVERSY', label: 'Demissão dramática de técnico', icon: '👨‍🏫',
-    newsworthy: true, marketImpact: -2,
-    condition: p => !hasEventOccurred(p, 'COACH_DRAMA'),
-    apply: p => p,
-    describe: p => `${p.name} demite técnico de forma pública e abrupta — os motivos viram especulação`,
-  },
-
   FEDERATION_CONFLICT: {
     id: 'FEDERATION_CONFLICT', category: 'CONTROVERSY', label: 'Conflito com federação', icon: '⚡',
     newsworthy: true, marketImpact: -3,
@@ -1297,14 +1291,6 @@ export const LIFE_EVENT_TYPES = {
     describe: p => `${p.name} assume publicamente que está perseguindo um recorde histórico — sem desculpas`,
   },
 
-  COACHING_REFUSAL: {
-    id: 'COACHING_REFUSAL', category: 'CAREER', label: 'Recusa proposta de técnico famoso', icon: '🤝',
-    newsworthy: true, marketImpact: +1,
-    condition: p => !hasEventOccurred(p, 'COACHING_REFUSAL'),
-    apply: p => p,
-    describe: p => `${p.name} recusa oferta de técnico renomado — "Não é a direção certa para onde quero ir"`,
-  },
-
   EARLY_PEAK_LAMENT: {
     id: 'EARLY_PEAK_LAMENT', category: 'CAREER', label: 'Arrependimento sobre pico precoce', icon: '⌛',
     newsworthy: true, marketImpact: -1,
@@ -1374,14 +1360,6 @@ export const LIFE_EVENT_TYPES = {
     condition: p => !hasEventOccurred(p, 'COLD_WATER_CONVERT'),
     apply: p => p,
     describe: p => `${p.name} vira evangelizador da imersão em água fria — diz que transformou recuperação`,
-  },
-
-  COACH_RESET: {
-    id: 'COACH_RESET', category: 'CAREER', label: 'Reorganiza relação com o técnico', icon: '🎯',
-    newsworthy: true, marketImpact: +1,
-    condition: p => !!p.coach && !hasEventOccurred(p, 'COACH_RESET'),
-    apply: p => p,
-    describe: p => `${p.name} descreve uma entressafra de reconstrução com a equipe técnica — menos ruído, mais clareza`,
   },
 
   COMMERCIAL_PRESSURE: {
@@ -1672,10 +1650,10 @@ const OFF_COURT_CATEGORY_EFFECTS = {
   SOCIAL:      { growth: 3, publicPressure: 4, supportNetwork: 1 },
   BUSINESS:    { commercialLoad: 10, publicPressure: 4, discipline: -1 },
   MEDIA:       { publicPressure: 10, commercialLoad: 6, socialDistraction: 3 },
-  CONTROVERSY: { stability: -10, publicPressure: 16, burnoutRisk: 10, socialDistraction: 8, coachHarmony: -4 },
+  CONTROVERSY: { stability: -10, publicPressure: 16, burnoutRisk: 10, socialDistraction: 8 },
   COMMUNITY:   { supportNetwork: 3, growth: 3, publicPressure: 2 },
   SPIRITUAL:   { growth: 8, discipline: 4, burnoutRisk: -7, stability: 3 },
-  CAREER:      { publicPressure: 9, stability: -4, burnoutRisk: 5, coachHarmony: -2 },
+  CAREER:      { publicPressure: 9, stability: -4, burnoutRisk: 5 },
   WELLNESS:    { discipline: 8, burnoutRisk: -8, stability: 3, socialDistraction: -2 },
 };
 
@@ -1712,9 +1690,8 @@ const OFF_COURT_EVENT_OVERRIDES = {
   SPORTS_COMMENTARY:     { growth: 2, publicPressure: 4 },
   RACKET_SMASH_VIRAL:    { stability: -6, publicPressure: 8, socialDistraction: 5 },
   ATP_FINE:              { stability: -4, publicPressure: 5 },
-  SUSPENSION:            { stability: -16, publicPressure: 18, burnoutRisk: 10, coachHarmony: -6 },
+  SUSPENSION:            { stability: -16, publicPressure: 18, burnoutRisk: 10 },
   RIVAL_PUBLIC_FEUD:     { publicPressure: 9, stability: -4, socialDistraction: 4 },
-  COACH_DRAMA:           { coachHarmony: -22, stability: -8, burnoutRisk: 5, publicPressure: 7 },
   FEDERATION_CONFLICT:   { publicPressure: 10, stability: -5 },
   SOCIAL_MEDIA_MELTDOWN: { stability: -12, burnoutRisk: 10, publicPressure: 14, socialDistraction: 8 },
   CHEATING_ALLEGATION:   { publicPressure: 14, stability: -10, burnoutRisk: 9 },
@@ -1722,7 +1699,6 @@ const OFF_COURT_EVENT_OVERRIDES = {
   PILGRIMAGE:            { growth: 9, stability: 4, burnoutRisk: -4 },
   CAREER_DOUBT:          { stability: -10, burnoutRisk: 9, publicPressure: 6 },
   COMEBACK_STATEMENT:    { growth: 6, discipline: 4, stability: 3 },
-  COACH_RESET:           { coachHarmony: 16, discipline: 4, stability: 4, growth: 3 },
   RANKING_CRISIS:        { stability: -8, burnoutRisk: 7, publicPressure: 6 },
   RETIREMENT_THREAT:     { stability: -10, burnoutRisk: 8, growth: 2 },
   DIET_REVOLUTION:       { discipline: 8, burnoutRisk: -3, stability: 2 },
@@ -1843,7 +1819,6 @@ export function getOffCourtState(player, season = null) {
     supportNetwork: 46,
     growth: 44,
     socialDistraction: 42,
-    coachHarmony: player.coach ? 56 : 46,
     recentEvents: events.length,
   };
 
@@ -1885,7 +1860,7 @@ export function getOffCourtState(player, season = null) {
   const effects = {
     mentalidade: Math.max(-3, Math.min(3, Math.round(((state.supportNetwork - 50) / 18) + ((state.growth - 50) / 24) - ((state.publicPressure - 50) / 26)))),
     regularidade: Math.max(-3, Math.min(3, Math.round(((state.stability - 50) / 14) + ((state.discipline - 50) / 16) - ((state.socialDistraction - 50) / 18)))),
-    adaptacao: Math.max(-3, Math.min(3, Math.round(((state.growth - 50) / 15) + ((state.coachHarmony - 50) / 20)))),
+    adaptacao: Math.max(-3, Math.min(3, Math.round((state.growth - 50) / 15))),
     resistencia: Math.max(-2, Math.min(2, Math.round(((state.discipline - 50) / 18) - ((state.burnoutRisk - 50) / 16)))),
   };
 
@@ -1927,15 +1902,10 @@ function applyOffCourtState(player, season = null) {
     };
   }
 
-  if (season != null && np.lifeData.offCourt?.lastAppliedSeason !== season && np.attrs) {
-    const applyAttr = (key, delta) => {
-      if (typeof np.attrs[key] !== 'number' || !delta) return;
-      np.attrs[key] = Math.max(1, Math.min(99, np.attrs[key] + delta));
-    };
-    applyAttr('mentalidade', state.effects.mentalidade);
-    applyAttr('regularidade', state.effects.regularidade);
-    applyAttr('adaptacao', state.effects.adaptacao);
-    applyAttr('resistencia', state.effects.resistencia);
+  // Eventos não gravam atributos permanentemente. A camada LifeSimulation
+  // transforma esta leitura em modificadores temporários com duração mensal;
+  // assim uma crise não vira uma cicatriz numérica eterna por ter ocorrido.
+  if (season != null) {
     np.lifeData.offCourt.lastAppliedSeason = season;
     np.lifeData.offCourt.lastAppliedEffects = state.effects;
   }
@@ -1992,11 +1962,11 @@ const BASE_CHANCES = {
 
   CONTROVERSIAL_STATEMENT: 0.06,
   PUBLIC_DISPUTE:          0.03,
-  DOPING_ALLEGATION:       0.02,
+  DOPING_ALLEGATION:       0,
   DOPING_CLEARED:          0.70,
   TAX_EVASION:             0.04,
   ON_COURT_INCIDENT:       0.08,
-  GAMBLING_RUMOR:          0.03,
+  GAMBLING_RUMOR:          0,
 
   NATIONAL_HERO:           0.08,
   STREET_NAMED:            0.05,
@@ -2053,7 +2023,6 @@ const BASE_CHANCES = {
   ATP_FINE:                0.05,
   SUSPENSION:              0.30,
   RIVAL_PUBLIC_FEUD:       0.08,
-  COACH_DRAMA:             0.05,
   FEDERATION_CONFLICT:     0.04,
   SOCIAL_MEDIA_MELTDOWN:   0.04,
   CHEATING_ALLEGATION:     0.03,
@@ -2077,8 +2046,6 @@ const BASE_CHANCES = {
   NATIONAL_CAPTAINCY:      0.06,
   RETIREMENT_THREAT:       0.09,
   RECORD_CHASE:            0.07,
-  COACHING_REFUSAL:        0.06,
-  COACH_RESET:             0.08,
   EARLY_PEAK_LAMENT:       0.08,
 
   // WELLNESS — nova categoria
@@ -2185,7 +2152,6 @@ export function rollLifeEvents(player, season, context = {}) {
     // Pressão de ranking: ranking ruim aumenta eventos de crise de carreira
     if (rank > 60 && age < 34) {
       if (typeId === 'RANKING_CRISIS')      prob *= 2.0;
-      if (typeId === 'COACH_RESET')         prob *= 1.5;
       if (typeId === 'PERSONAL_MATURITY')   prob *= 1.3;
       if (typeId === 'WILDCARD_ACCEPTANCE') prob *= 2.5;
       if (typeId === 'RETIREMENT_THREAT')   prob *= 1.5;
@@ -2222,6 +2188,8 @@ export function rollLifeEvents(player, season, context = {}) {
       icon:         def.icon,
       season,
       monthIndex:   context.monthIndex ?? null,
+      date:         context.worldDate ?? (context.monthIndex ? { year: season, month: context.monthIndex } : null),
+      dateKey:      context.worldDate ? `${context.worldDate.year}-${String(context.worldDate.month).padStart(2, '0')}` : null,
       weekNumber:   context.weekNumber ?? null,
       pulseType:    context.pulseType ?? null,
       description:  def.describe(playerBefore),
@@ -2275,6 +2243,7 @@ export function runLifePulseEvents(players = [], season, context = {}) {
       monthIndex: monthlyPulse.monthIndex ?? null,
       weekNumber: monthlyPulse.weekNumber ?? null,
       pulseType: monthlyPulse.type,
+      worldDate: context.worldDate ?? monthlyPulse.date ?? { year: season, month: monthlyPulse.monthIndex ?? 1 },
     });
     updated.push(result.player);
     if ((result.events ?? []).length > 0) results.push(result);

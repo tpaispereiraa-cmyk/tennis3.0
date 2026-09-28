@@ -7,6 +7,7 @@ import React, { useEffect, useMemo } from 'react';
 import { overallRating } from '../../domain/players/players.js';
 import { ovrTier } from '../../systems/scouting/ScoutProfile.js';
 import { PLAY_STYLES } from '../../domain/players/styles.js';
+import { isTiebreakSetScore, MATCH_RULES } from '../../core/constants.js';
 
 const TOKENS = {
   disp: "'Bebas Neue', sans-serif",
@@ -77,7 +78,7 @@ function analyzeMatchDrama(event, rivalrySystem = null) {
   // ── 5 SETS ────────────────────────────────────────────────────
   const totalSets  = sets[0] + sets[1];
   const totalGames = sd.reduce((s,[a,b])=>s+a+b, 0);
-  const tiebreaks  = sd.filter(([a,b]) => (a===7&&b===6)||(a===6&&b===7)).length;
+  const tiebreaks  = sd.filter(([a,b]) => isTiebreakSetScore(a, b)).length;
   if (totalSets >= 5) {
     badges.push({ label: 'EPICO 5S', bg: '#633806', fg: '#FAC775' });
     identity = { title: 'EPICO - 5 SETS', sub: `${tiebreaks} tiebreak${tiebreaks!==1?'s':''} - ${totalGames} games` };
@@ -88,8 +89,8 @@ function analyzeMatchDrama(event, rivalrySystem = null) {
     badges.push({ label: `${tiebreaks}TB`, bg: '#0C447C', fg: '#B5D4F4' });
   }
 
-  // ── BAGEL (6-0) ───────────────────────────────────────────────
-  const bagels = sd.filter(([a,b]) => (a===6&&b===0)||(a===0&&b===6)).length;
+  // ── BAGEL (4-0 no formato compacto) ───────────────────────────
+  const bagels = sd.filter(([a,b]) => (a===MATCH_RULES.gamesPerSet&&b===0)||(a===0&&b===MATCH_RULES.gamesPerSet)).length;
   if (bagels >= 2) {
     badges.push({ label: `${bagels}x BAGEL`, bg: '#791F1F', fg: '#F7C1C1' });
     if (!identity) identity = { title: 'DOMINIO TOTAL', sub: `${bagels} bagels - ${sw?.aces??0} aces` };
@@ -112,12 +113,12 @@ function analyzeMatchDrama(event, rivalrySystem = null) {
     };
   }
 
-  // ── VIRADA (perdeu 1º set 6-0/6-1 e buscou) ──────────────────
+  // ── VIRADA (perdeu 1º set 4-0/4-1 e buscou) ──────────────────
   const fsW = aWon ? sd[0]?.[0] : sd[0]?.[1];
   const fsL = aWon ? sd[0]?.[1] : sd[0]?.[0];
-  if (fsW !== undefined && fsL !== undefined && fsW <= 1 && fsL === 6 && totalSets >= 3) {
+  if (fsW !== undefined && fsL !== undefined && fsW <= 1 && fsL === MATCH_RULES.gamesPerSet && totalSets >= 3) {
     badges.push({ label: 'VIRADA', bg: '#085041', fg: '#9FE1CB' });
-    if (!identity) identity = { title: 'VIRADA EPICA', sub: `Perdeu 1O set 6-${fsW} e buscou` };
+    if (!identity) identity = { title: 'VIRADA EPICA', sub: `Perdeu 1O set ${MATCH_RULES.gamesPerSet}-${fsW} e buscou` };
   }
 
   // ── VETERANO (≥ 33 anos em campo) ────────────────────────────
@@ -581,42 +582,33 @@ function PlayerRow({ player, setsDetail, isWinner, playerIndex }) {
 function StatsAB({ result }) {
   if (!result?.stats) return null;
   const { a, b } = result.stats;
-  const aWon = (result.sets?.[0]??0) > (result.sets?.[1]??0);
-  const sw = aWon ? a : b;
-  const sl = aWon ? b : a;
-  const serveInW = sw.serve1Total > 0 ? Math.round(sw.serve1In/sw.serve1Total*100) : 0;
-  const serveInL = sl.serve1Total > 0 ? Math.round(sl.serve1In/sl.serve1Total*100) : 0;
-  const serve1DenW = (sw.serve1WonPoints ?? null) != null || (sw.serve1LostPoints ?? null) != null
-    ? Math.max(1, (sw.serve1WonPoints ?? 0) + (sw.serve1LostPoints ?? 0))
-    : Math.max(1, sw.serve1In ?? 0);
-  const serve1DenL = (sl.serve1WonPoints ?? null) != null || (sl.serve1LostPoints ?? null) != null
-    ? Math.max(1, (sl.serve1WonPoints ?? 0) + (sl.serve1LostPoints ?? 0))
-    : Math.max(1, sl.serve1In ?? 0);
-  const serve1NumW = (sw.serve1WonPoints ?? null) != null ? (sw.serve1WonPoints ?? 0) : (sw.serve1Won ?? 0);
-  const serve1NumL = (sl.serve1WonPoints ?? null) != null ? (sl.serve1WonPoints ?? 0) : (sl.serve1Won ?? 0);
-  const serve1PtsW = Math.round((serve1NumW / serve1DenW) * 100);
-  const serve1PtsL = Math.round((serve1NumL / serve1DenL) * 100);
-  const serve2DenW = (sw.serve2WonPoints ?? null) != null || (sw.serve2LostPoints ?? null) != null
-    ? Math.max(1, (sw.serve2WonPoints ?? 0) + (sw.serve2LostPoints ?? 0))
-    : Math.max(1, (sw.serve2Total ?? 0) || ((sw.serve1Total ?? 0) - (sw.serve1In ?? 0)));
-  const serve2DenL = (sl.serve2WonPoints ?? null) != null || (sl.serve2LostPoints ?? null) != null
-    ? Math.max(1, (sl.serve2WonPoints ?? 0) + (sl.serve2LostPoints ?? 0))
-    : Math.max(1, (sl.serve2Total ?? 0) || ((sl.serve1Total ?? 0) - (sl.serve1In ?? 0)));
-  const serve2NumW = (sw.serve2WonPoints ?? null) != null ? (sw.serve2WonPoints ?? 0) : (sw.serve2Won ?? 0);
-  const serve2NumL = (sl.serve2WonPoints ?? null) != null ? (sl.serve2WonPoints ?? 0) : (sl.serve2Won ?? 0);
-  const serve2PtsW = Math.round((serve2NumW / serve2DenW) * 100);
-  const serve2PtsL = Math.round((serve2NumL / serve2DenL) * 100);
+  // As colunas precisam seguir a mesma ordem dos cards: playerA / playerB.
+  const statA = a ?? {};
+  const statB = b ?? {};
+  const serveInA = statA.serve1Total > 0 ? Math.round(statA.serve1In/statA.serve1Total*100) : 0;
+  const serveInB = statB.serve1Total > 0 ? Math.round(statB.serve1In/statB.serve1Total*100) : 0;
+  const servePoints = (stats, serve) => {
+    const won = stats?.[`${serve}WonPoints`];
+    const lost = stats?.[`${serve}LostPoints`];
+    const denominator = won != null || lost != null
+      ? (won ?? 0) + (lost ?? 0)
+      : serve === 'serve1'
+        ? (stats?.serve1In ?? 0)
+        : (stats?.serve2Total ?? 0) || ((stats?.serve1Total ?? 0) - (stats?.serve1In ?? 0));
+    return denominator > 0 ? Math.round(((won ?? stats?.[`${serve}Won`] ?? 0) / denominator) * 100) : 0;
+  };
+  const breakPoints = stats => `${stats?.breakPointsConverted ?? 0}/${stats?.breakPointsOpportunities ?? 0}`;
     const rows = [
-      { lbl:'ACES', left:sw.aces??0, right:sl.aces??0, better:(w,l)=>w>l },
-      { lbl:'1O SAQUE', left:`${serveInW}%`, right:`${serveInL}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
-      { lbl:'PTS 1O', left:`${serve1PtsW}%`, right:`${serve1PtsL}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
-      { lbl:'PTS 2O', left:`${serve2PtsW}%`, right:`${serve2PtsL}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
-      { lbl:'WINNERS', left:sw.winners??0, right:sl.winners??0, better:(w,l)=>w>l },
-      { lbl:'UE', left:sw.unforcedErrors??0, right:sl.unforcedErrors??0, better:(w,l)=>w<l },
+      { lbl:'ACES', left:statA.aces??0, right:statB.aces??0, better:(w,l)=>w>l },
+      { lbl:'1O SAQUE', left:`${serveInA}%`, right:`${serveInB}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
+      { lbl:'PTS 1O', left:`${servePoints(statA, 'serve1')}%`, right:`${servePoints(statB, 'serve1')}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
+      { lbl:'PTS 2O', left:`${servePoints(statA, 'serve2')}%`, right:`${servePoints(statB, 'serve2')}%`, better:(w,l)=>parseInt(w,10)>=parseInt(l,10) },
+      { lbl:'WINNERS', left:statA.winners??0, right:statB.winners??0, better:(w,l)=>w>l },
+      { lbl:'UE', left:statA.unforcedErrors??0, right:statB.unforcedErrors??0, better:(w,l)=>w<l },
       {
         lbl:'BREAK PTS',
-        left:`${sw.gamesConverted??0}/${sw.gamesReturned??0}`,
-        right:`${sl.gamesConverted??0}/${sl.gamesReturned??0}`,
+        left:breakPoints(statA),
+        right:breakPoints(statB),
         better:(w,l)=>parseInt(String(w).split('/')[0],10)>=parseInt(String(l).split('/')[0],10)
       },
     ];

@@ -86,6 +86,9 @@ export function buildPlayerBiography(player, {
   const chapters = buildChapters(ctx, tone, careerPhase);
   const longBiography = buildLongBiography(ctx, tone, careerPhase, legacy);
   const milestones = buildMilestones(ctx);
+  const narrativeFacts = buildNarrativeFacts(ctx);
+  const narrativeSignals = buildNarrativeSignals(ctx, narrativeFacts);
+  const fullNarrative = buildFullNarrative(ctx, tone, careerPhase, legacy, narrativeFacts, narrativeSignals);
 
   const tags = [
     peakRank && peakRank <= 10 ? 'elite' : null,
@@ -106,6 +109,9 @@ export function buildPlayerBiography(player, {
     headline,
     summary,
     paragraphs,
+    fullNarrative,
+    narrativeFacts,
+    narrativeSignals,
     milestones,
     tags,
     chapters,
@@ -139,6 +145,9 @@ function createEmptyBio() {
     headline: '',
     summary: '',
     paragraphs: [],
+    fullNarrative: '',
+    narrativeFacts: {},
+    narrativeSignals: [],
     milestones: [],
     tags: [],
     chapters: [],
@@ -155,6 +164,20 @@ const SURFACE_LABELS = {
   CLAY: { label: 'Saibro', color: '#C4572A' },
   GRASS: { label: 'Grama', color: '#2E7D32' },
   INDOOR: { label: 'Indoor', color: '#6A1B9A' },
+  STREET: { label: 'Asfalto', color: '#5BB8E4' },
+  CARPET: { label: 'Veludo', color: '#8B5CF6' },
+};
+
+const CATEGORY_LABELS = {
+  GRAND_SLAM: 'Grand Slam',
+  SLAM_CLASH: 'Clash Slam',
+  MASTERS_1000: 'Masters 1000',
+  FINALS: 'ATP Finals',
+  ATP_FINALS: 'ATP Finals',
+  ATP_500: 'ATP 500',
+  ATP_250: 'ATP 250',
+  ATP_100: 'ATP 100',
+  OLYMPICS: 'Olimpiada',
 };
 
 const BIG_CATEGORIES = new Set(['GRAND_SLAM', 'SLAM_CLASH', 'MASTERS_1000', 'FINALS']);
@@ -171,12 +194,14 @@ function collectTitleEvents(player, tournamentResults) {
       year: tournament.season ?? res?._season ?? null,
       name: tournament.name ?? 'Torneio',
       category: tournament.category ?? '',
+      categoryLabel: CATEGORY_LABELS[tournament.category] ?? tournament.category ?? '',
       surface: tournament.surface ?? 'HARD',
+      surfaceLabel: SURFACE_LABELS[tournament.surface]?.label ?? tournament.surface ?? 'Dura',
       weekIndex: tournament.weekIndex ?? 999,
     });
   }
   out.sort((a, b) => (a.year - b.year) || (a.weekIndex - b.weekIndex));
-  return out;
+  return out.map((event, index) => ({ ...event, order: index + 1 }));
 }
 
 function resolveBestSurface(player) {
@@ -390,6 +415,344 @@ function opponentMemoryLine(profile, mode = 'key') {
     return `${profile.opponentName} e um confronto que tende a trazer confianca: ${read ?? 'o historico emocional sugere encaixe favoravel'}.`;
   }
   return `${profile.opponentName} e o adversario mais presente na memoria recente, um nome que ajuda a explicar a textura competitiva da carreira.`;
+}
+
+function buildNarrativeFacts(ctx) {
+  const { player, history, titleEvents, latestInjury, topRival, careerMemory } = ctx;
+  const titleByYear = {};
+  for (const title of titleEvents ?? []) {
+    const y = title.year ?? 'unknown';
+    if (!titleByYear[y]) titleByYear[y] = [];
+    titleByYear[y].push(title);
+  }
+
+  const rankedYears = (history ?? [])
+    .filter(h => h?.year)
+    .map((h, index, arr) => {
+      const prev = arr[index - 1] ?? null;
+      const titles = titleByYear[h.year] ?? [];
+      const rank = Number.isFinite(h.rank) ? h.rank : null;
+      const prevRank = Number.isFinite(prev?.rank) ? prev.rank : null;
+      const rankGain = rank && prevRank ? prevRank - rank : 0;
+      const rankDrop = rank && prevRank ? rank - prevRank : 0;
+      const ovr = Number.isFinite(h.ovr) ? h.ovr : Number.isFinite(h.overall) ? h.overall : null;
+      const prevOvr = Number.isFinite(prev?.ovr) ? prev.ovr : Number.isFinite(prev?.overall) ? prev.overall : null;
+      const ovrDelta = ovr != null && prevOvr != null ? +(ovr - prevOvr).toFixed(1) : 0;
+      const bigTitles = titles.filter(t => BIG_CATEGORIES.has(t.category));
+      const score =
+        titles.length * 8 +
+        bigTitles.length * 10 +
+        Math.max(0, rankGain) * 0.35 +
+        Math.max(0, ovrDelta) * 3 -
+        Math.max(0, rankDrop) * 0.18 -
+        Math.max(0, -ovrDelta) * 1.5;
+      return {
+        year: h.year,
+        age: h.age ?? null,
+        rank,
+        prevRank,
+        rankGain,
+        rankDrop,
+        ovr,
+        ovrDelta,
+        titles,
+        bigTitles,
+        score,
+        inDecline: !!h.inDecline,
+        raw: h,
+      };
+    });
+
+  const goldenYears = [...rankedYears]
+    .filter(y => y.score > 0 || y.titles.length || y.bigTitles.length || y.rankGain >= 10)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  const hardYears = [...rankedYears]
+    .filter(y => y.rankDrop >= 8 || y.ovrDelta <= -1.5 || y.inDecline)
+    .sort((a, b) => (b.rankDrop + Math.max(0, -b.ovrDelta) * 5 + (b.inDecline ? 8 : 0)) - (a.rankDrop + Math.max(0, -a.ovrDelta) * 5 + (a.inDecline ? 8 : 0)))
+    .slice(0, 3);
+
+  const injuryEvents = collectInjuryEvents(player);
+  const lifeEvents = collectLifeEvents(player);
+  const sponsorEvents = collectSponsorEvents(player);
+  const careerMoments = collectCareerMoments(player);
+  const definingTitle = resolveDefiningTitle(titleEvents);
+  const latestTitle = titleEvents?.[titleEvents.length - 1] ?? null;
+
+  return {
+    seasonsTracked: rankedYears.length,
+    goldenYears,
+    hardYears,
+    definingTitle,
+    latestTitle,
+    injuryEvents,
+    latestInjury,
+    lifeEvents,
+    sponsorEvents,
+    careerMoments,
+    topRival,
+    memory: {
+      favoriteTournament: careerMemory?.favoriteTournament ?? null,
+      hauntingTournament: careerMemory?.hauntingTournament ?? careerMemory?.painfulTournament ?? null,
+      keyOpponent: careerMemory?.keyOpponent ?? null,
+      avoidedOpponent: careerMemory?.avoidedOpponent ?? null,
+      respectedOpponent: careerMemory?.respectedOpponent ?? null,
+    },
+  };
+}
+
+function collectInjuryEvents(player) {
+  const raw = [
+    ...(Array.isArray(player?.injuryHistory) ? player.injuryHistory : []),
+    ...(Array.isArray(player?.inMatchInjuryEvents) ? player.inMatchInjuryEvents : []),
+  ];
+  const seen = new Set();
+  return raw
+    .map((inj, index) => {
+      const season = inj?.season ?? inj?.year ?? inj?.dateYear ?? null;
+      const type = getInjuryDisplayName(inj);
+      const grade = inj?.grade ?? inj?.severity ?? null;
+      const key = `${season}-${type}-${grade}-${index}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { season, type, grade, raw: inj };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a.season ?? 0) - (b.season ?? 0))
+    .slice(-5);
+}
+
+function collectLifeEvents(player) {
+  const pools = [
+    player?.lifeEvents,
+    player?.lifeEventLog,
+    player?.lifeData?.events,
+    player?.life?.events,
+    player?.personalLife?.events,
+  ].filter(Array.isArray);
+  return pools
+    .flat()
+    .filter(Boolean)
+    .map((event) => ({
+      year: event.year ?? event.season ?? null,
+      type: event.type ?? event.category ?? null,
+      label: event.label ?? event.title ?? event.headline ?? event.summary ?? null,
+      detail: event.detail ?? event.desc ?? event.text ?? event.narrative ?? null,
+      raw: event,
+    }))
+    .filter(event => event.label || event.detail)
+    .sort((a, b) => (a.year ?? 0) - (b.year ?? 0))
+    .slice(-6);
+}
+
+function collectSponsorEvents(player) {
+  const pools = [
+    player?.sponsorEvents,
+    player?.sponsorTimeline,
+    player?.sponsorship?.events,
+    player?.sponsorship?.history,
+    player?.sponsors?.history,
+    player?.marketability?.sponsorEvents,
+  ].filter(Array.isArray);
+  const current = player?.sponsorship?.currentSponsor ?? player?.sponsor ?? player?.sponsors?.current ?? null;
+  const events = pools
+    .flat()
+    .filter(Boolean)
+    .map(event => ({
+      year: event.year ?? event.season ?? null,
+      brand: event.brand ?? event.sponsor ?? event.name ?? event.company ?? null,
+      label: event.label ?? event.title ?? event.headline ?? null,
+      value: event.value ?? event.amount ?? event.contractValue ?? null,
+      raw: event,
+    }))
+    .filter(event => event.brand || event.label);
+  if (current && typeof current === 'object') {
+    events.push({
+      year: current.year ?? current.since ?? null,
+      brand: current.brand ?? current.name ?? current.company ?? null,
+      label: current.label ?? 'patrocinio atual',
+      value: current.value ?? current.amount ?? null,
+      raw: current,
+    });
+  }
+  return events
+    .sort((a, b) => (a.year ?? 0) - (b.year ?? 0))
+    .slice(-5);
+}
+
+function collectCareerMoments(player) {
+  return (player?.personality?.careerMoments ?? [])
+    .filter(Boolean)
+    .map(moment => ({
+      year: moment.year ?? null,
+      type: moment.type ?? null,
+      title: moment.title ?? null,
+      desc: moment.desc ?? moment.description ?? moment.narrative ?? null,
+      raw: moment,
+    }))
+    .filter(moment => moment.title || moment.desc)
+    .sort((a, b) => (a.year ?? 0) - (b.year ?? 0))
+    .slice(-8);
+}
+
+function resolveDefiningTitle(titleEvents = []) {
+  if (!titleEvents.length) return null;
+  return titleEvents.find(t => t.category === 'GRAND_SLAM')
+    ?? titleEvents.find(t => t.category === 'SLAM_CLASH')
+    ?? titleEvents.find(t => t.category === 'FINALS')
+    ?? titleEvents.find(t => t.category === 'MASTERS_1000')
+    ?? titleEvents[0];
+}
+
+function buildNarrativeSignals(ctx, facts) {
+  const signals = new Set();
+  if (ctx.firstTitle) signals.add('breakthrough');
+  if (facts.goldenYears?.length) signals.add('golden_year');
+  if (facts.hardYears?.length) signals.add('lost_year');
+  if (facts.injuryEvents?.length || ctx.latestInjury) signals.add('injury_shadow');
+  if (ctx.topRival?.opponentName) signals.add('rivalry_defined');
+  if (facts.sponsorEvents?.length) signals.add('sponsor_era');
+  if (facts.lifeEvents?.length) signals.add('personal_life');
+  if (ctx.careerMemory?.hauntingTournament || ctx.careerMemory?.painfulTournament) signals.add('haunting_memory');
+  if ((ctx.player?.age ?? 0) >= 30 && ctx.peakRank && ctx.currentRank && ctx.currentRank <= ctx.peakRank + 8) signals.add('late_peak');
+  if (ctx.retired) signals.add('closed_career');
+  return [...signals];
+}
+
+function buildFullNarrative(ctx, tone, careerPhase, legacy, facts, signals) {
+  const { player, debutYear, latestSeason, peakRank, currentRank, totalTitles, titles, firstTitle, firstBigTitle, bestSurface, retired, primeWindow } = ctx;
+  const density =
+    (facts.seasonsTracked ?? 0) +
+    (ctx.titleEvents?.length ?? 0) * 2 +
+    (facts.injuryEvents?.length ?? 0) +
+    (facts.lifeEvents?.length ?? 0) +
+    (facts.sponsorEvents?.length ?? 0) +
+    (facts.careerMoments?.length ?? 0) +
+    (ctx.topRival ? 3 : 0);
+  const target = retired || legacy?.key === 'pantheon' || density >= 22 ? 9
+    : density >= 13 ? 7
+      : density >= 6 ? 5
+        : 3;
+
+  const paragraphs = [];
+  const rankClause = [
+    peakRank ? `melhor ranking #${peakRank}` : null,
+    currentRank && !retired ? `ranking atual #${currentRank}` : null,
+    totalTitles > 0 ? `${totalTitles} titulo${totalTitles !== 1 ? 's' : ''}` : null,
+  ].filter(Boolean).join(', ');
+  paragraphs.push(
+    debutYear
+      ? `${player.name} entrou no circuito em ${debutYear}${latestSeason && latestSeason !== debutYear ? ` e chegou a ${latestSeason} com uma biografia que ja nao cabe apenas em numeros` : ''}. A linha principal combina ${rankClause || 'um projeto competitivo ainda em formacao'}; por baixo dela, aparece uma carreira marcada por ${tone?.shortTag ?? 'constancia'}, por fases de ${careerPhase?.label?.toLowerCase?.() ?? 'definicao'} e por uma pergunta recorrente: quanto dessa trajetoria ainda esta em construcao, e quanto ja virou identidade.`
+      : `${player.name} ainda vive o primeiro bloco da propria historia profissional. A biografia, por enquanto, e menos uma lista de conquistas e mais um retrato de promessa, formacao tecnica e tentativa de transformar sinais de teto em memoria real de circuito.`
+  );
+
+  if (firstTitle || firstBigTitle || facts.definingTitle) {
+    const title = firstBigTitle ?? facts.definingTitle ?? firstTitle;
+    const firstLine = firstTitle
+      ? `O primeiro trofeu apareceu em ${firstTitle.year ?? 'uma temporada inicial'}, no ${firstTitle.name}`
+      : `A primeira grande marca competitiva veio com ${title.name}`;
+    const context = title ? titleContext(title, facts) : null;
+    paragraphs.push(`${firstLine}${context ? ` (${context})` : ''}. ${firstBigTitle ? `A mudanca de escala veio quando ${player.name} venceu ${firstBigTitle.name}, resultado que transformou expectativa em obrigacao de pertencer.` : 'Mesmo sem uma ruptura maxima imediata, esse ponto deu ao circuito uma referencia concreta para medir seu teto.'}`);
+  } else {
+    paragraphs.push(`Ainda sem um titulo que organize a narrativa, a carreira se apoia nos sinais: evolucao de ranking, leitura de superficie, maturacao fisica e a busca por uma semana que possa dividir o antes e o depois.`);
+  }
+
+  const golden = facts.goldenYears?.[0] ?? null;
+  if (golden) {
+    paragraphs.push(`${golden.year} aparece como um dos anos que melhor explicam a subida${golden.age ? `, aos ${golden.age} anos` : ''}${yearContext(golden) ? ` (${yearContext(golden)})` : ''}. Foi uma temporada em que resultado e percepcao caminharam juntos: o jogador deixou de parecer apenas competitivo e passou a carregar uma forma mais clara de autoridade.`);
+  }
+
+  const hard = facts.hardYears?.[0] ?? null;
+  if (hard) {
+    paragraphs.push(`A biografia tambem tem seu ano de atrito. ${hard.year} ficou como trecho menos limpo${yearPainContext(hard) ? ` (${yearPainContext(hard)})` : ''}, lembrando que a carreira nao se moveu em linha reta. Esse tipo de queda importa porque muda o modo como cada retorno e lido: nao basta voltar a vencer, e preciso provar que a versao anterior ainda existe ou que uma nova versao nasceu.`);
+  }
+
+  if (bestSurface?.label) {
+    paragraphs.push(`Em termos de quadra, ${bestSurface.label.toLowerCase()} virou o idioma mais natural da carreira${bestSurface.wins || bestSurface.losses ? ` (${bestSurface.wins ?? 0}v/${bestSurface.losses ?? 0}d no recorte conhecido)` : ''}. Ali o jogo pareceu encontrar uma traducao mais simples entre tecnica e resultado, como se a superficie reduzisse o ruido e deixasse aparecer a assinatura competitiva.`);
+  }
+
+  const coaching = player.coaching ?? null;
+  const coachMoment = coaching?.history?.slice?.(-1)?.[0] ?? null;
+  if (coaching?.activeCoachId) {
+    paragraphs.push(`No banco, a carreira tambem ganhou uma camada propria. A parceria iniciada${coaching.startYear ? ` em ${coaching.startYear}` : ''} carrega status de ${String(coaching.publicStatus ?? 'projeto').toLowerCase()}, com foco em ${coaching.tacticalFocus ?? 'ajuste tatico'} e uma relacao medida por confianca ${Math.round(coaching.confidence ?? 0)}, vinculo ${Math.round(coaching.trust ?? 0)} e atrito ${Math.round(coaching.friction ?? 0)}. ${coachMoment?.text ?? 'Esse tipo de detalhe importa porque explica por que algumas fases parecem metodo, e nao apenas forma.'}`);
+  }
+
+  if (ctx.topRival?.opponentName) {
+    const r = ctx.topRival;
+    paragraphs.push(`Nenhuma carreira ganha contorno completo sem os nomes que a contrariam, e o principal espelho de ${player.name} foi ${r.opponentName} (${r.wins ?? 0}-${r.losses ?? 0}, ${r.totalMatches ?? 0} encontro${r.totalMatches === 1 ? '' : 's'} lembrado${r.totalMatches === 1 ? '' : 's'}). Essa rivalidade funciona como uma segunda biografia: nela aparecem ajustes, feridas, orgulho, teimosia e a necessidade de responder ao mesmo problema mais de uma vez.`);
+  }
+
+  const injury = facts.injuryEvents?.[facts.injuryEvents.length - 1] ?? ctx.latestInjury ?? null;
+  if (injury) {
+    paragraphs.push(`O corpo tambem escreveu parte do texto. ${injury.type ?? injury.rawType ?? 'Uma lesao relevante'}${injury.season ? ` em ${injury.season}` : ''}${injury.grade ? ` (grau ${injury.grade})` : ''} entrou como marca de fragilidade e resistencia ao mesmo tempo. A lesao nao explica tudo, mas ajuda a entender pausas, quedas de ritmo e a maneira como cada sequencia forte depois dela ganha um peso emocional maior.`);
+  }
+
+  const sponsor = facts.sponsorEvents?.[facts.sponsorEvents.length - 1] ?? null;
+  if (sponsor) {
+    paragraphs.push(`Fora da quadra, a imagem publica tambem cresceu em camadas. ${sponsor.brand ?? sponsor.label} aparece como parte dessa fase comercial${sponsor.year ? ` desde ${sponsor.year}` : ''}${sponsor.value ? ` (contrato avaliado em ${sponsor.value})` : ''}, sinal de que a carreira passou a ser vendida nao so por resultado, mas por personagem, promessa de audiencia e identidade reconhecivel.`);
+  }
+
+  const life = facts.lifeEvents?.[facts.lifeEvents.length - 1] ?? null;
+  if (life) {
+    paragraphs.push(`A vida pessoal entrou no enquadramento sem substituir o tenis. ${life.label ?? life.detail}${life.year ? `, em ${life.year}` : ''}, adicionou uma camada de contexto ao jogador publico: o circuito passou a enxergar nao apenas o atleta que soma semanas, mas alguem cuja historia fora da quadra tambem interfere no tom das perguntas e no peso das respostas.`);
+  }
+
+  const memoryLines = [
+    memoryTournamentLine(facts.memory?.favoriteTournament, 'favorite'),
+    memoryTournamentLine(facts.memory?.hauntingTournament, 'haunting'),
+    opponentMemoryLine(facts.memory?.respectedOpponent, 'respect'),
+    opponentMemoryLine(facts.memory?.avoidedOpponent, 'avoid'),
+  ].filter(Boolean);
+  if (memoryLines.length) {
+    paragraphs.push(`A memoria interna da carreira da textura ao retrato. ${memoryLines.join(' ')} Sao detalhes que nao aparecem apenas como curiosidade: eles explicam onde o jogador parece mais em casa, quais derrotas ainda cobram resposta e quais adversarios obrigam uma versao mais precisa de si mesmo.`);
+  }
+
+  const moment = facts.careerMoments?.[facts.careerMoments.length - 1] ?? null;
+  if (moment) {
+    paragraphs.push(`${moment.year ? `Em ${moment.year}, ` : ''}${moment.title ?? 'um momento de carreira'} entrou como nota de rodape que virou leitura de personagem. ${moment.desc ?? 'O episodio reforcou a percepcao de que a carreira tambem se define por reacoes, nao apenas por resultados.'}`);
+  }
+
+  const trophyDetail = totalTitles > 0
+    ? `No balanco frio, sao ${totalTitles} titulo${totalTitles !== 1 ? 's' : ''}${(titles.gs ?? 0) ? `, incluindo ${titles.gs} Grand Slam${titles.gs !== 1 ? 's' : ''}` : ''}${(titles.masters ?? 0) ? ` e ${titles.masters} Masters 1000` : ''}.`
+    : `No balanco frio, ainda falta a colecao que transforma promessa em arquivo historico.`;
+  const primeDetail = primeWindow?.start
+    ? ` O melhor recorte competitivo se concentra entre ${primeWindow.start}${primeWindow.end && primeWindow.end !== primeWindow.start ? ` e ${primeWindow.end}` : ''}.`
+    : '';
+  paragraphs.push(`${trophyDetail}${primeDetail} ${legacy?.summary ?? ''} ${retired ? 'Com a carreira encerrada, cada numero deixa de ser previsao e vira evidencia.' : 'Enquanto a carreira continua aberta, cada nova temporada ainda pode reorganizar o significado das anteriores.'}`);
+
+  return paragraphs.slice(0, target).join('\n\n');
+}
+
+function titleContext(title, facts) {
+  if (!title) return null;
+  const sameYear = facts.goldenYears?.find(y => y.year === title.year);
+  const bits = [
+    title.categoryLabel || CATEGORY_LABELS[title.category],
+    title.surfaceLabel,
+    title.order ? `${title.order}o titulo da carreira` : null,
+    sameYear?.rankGain >= 8 ? `ano em que subiu ${sameYear.rankGain} posicoes` : null,
+  ].filter(Boolean);
+  return bits.join(', ');
+}
+
+function yearContext(year) {
+  if (!year) return null;
+  const bits = [];
+  if (year.rankGain > 0) bits.push(`subiu ${year.rankGain} posicoes`);
+  if (year.ovrDelta > 0) bits.push(`ganhou ${year.ovrDelta} de nivel`);
+  if (year.titles?.length) bits.push(`venceu ${year.titles.length} torneio${year.titles.length !== 1 ? 's' : ''}`);
+  if (year.bigTitles?.length) bits.push(`${year.bigTitles.length} grande${year.bigTitles.length !== 1 ? 's' : ''}`);
+  return bits.join(', ');
+}
+
+function yearPainContext(year) {
+  if (!year) return null;
+  const bits = [];
+  if (year.rankDrop > 0) bits.push(`caiu ${year.rankDrop} posicoes`);
+  if (year.ovrDelta < 0) bits.push(`perdeu ${Math.abs(year.ovrDelta)} de nivel`);
+  if (year.inDecline) bits.push('entrou em declinio');
+  return bits.join(', ');
 }
 
 function resolveBiographyTone(ctx) {

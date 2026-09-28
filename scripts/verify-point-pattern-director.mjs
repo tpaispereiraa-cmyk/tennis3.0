@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { evaluatePointPattern, pointPatternScore } from '../src/systems/shotengine/PointPatternDirector.js';
+import { SHOT_BLUEPRINTS } from '../src/systems/shotengine/ShotBlueprints.js';
+const player = { id: 'pattern', attrs: { leitura: 85, visaoTatica: 85 }, courtIdentity: { construction: { favoritePatterns: ['DEPTH_TO_DROP'] } }, ctx: {} };
+const context = { player, opponent: { pos: { x: 0, y: -10.1 }, vel: { x: 0, y: 0 } }, body: { contactReadiness: 0.8, arrivalMargin: 0.07 }, ballState: { pos: { x: 0, y: 8.1 } }, score: { rally: 2 }, memory: { shots: [{ targetY: -9.5, targetX: 0.5, quality: 0.75, family: 'TOPSPIN' }] }, gs: {} };
+const clean = { quality: 0.78, bodyState: 'PLANTED' };
+const drop = SHOT_BLUEPRINTS.find(b => b.id === 'DROP_DISGUISED_CROSS');
+const deep = SHOT_BLUEPRINTS.find(b => b.id === 'TOPSPIN_DEEP_CROSS');
+const pattern = evaluatePointPattern(context, clean);
+assert.equal(pattern.activePattern, 'DEPTH_TO_DROP');
+assert.ok(pointPatternScore(pattern, drop) > pointPatternScore(pattern, deep));
+assert.equal(evaluatePointPattern(context, { quality: 0.3, bodyState: 'LATE' }).activePattern, 'RESET');
+context.opponent.pos.y = -8.2;
+assert.notEqual(evaluatePointPattern(context, clean).activePattern, 'DEPTH_TO_DROP');
+console.log('point pattern director ok');

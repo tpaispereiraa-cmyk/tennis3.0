@@ -120,6 +120,10 @@ function ShotBlock({ shot, idx }) {
         {shot.target && <Tag text={shot.target.dir} color={DIR_COLOR[shot.target.dir] ?? C.gray6} small />}
         {shot.target && <Tag text={shot.target.depth} color={DEPTH_COLOR[shot.target.depth] ?? C.gray6} small />}
         <Tag text={shot.intent} color={INTENT_COLOR[shot.intent] ?? C.gray6} small />
+        {shot.courtIdentity?.favoritePlayHit && <Tag text="JOGADA" color={C.orange} small />}
+        {shot.courtIdentity?.instinctTriggered && <Tag text="INSTINTO" color={C.blue} small />}
+        {shot.courtIdentity?.blindSpotTriggered && <Tag text="PONTO CEGO" color={C.red} small />}
+        {shot.coaching?.tacticalFocusHit && <Tag text="BANCO" color={C.green} small />}
         {shot.inControl && <Tag text="CONTROLE" color={C.green} small />}
         {shot.atNet && <Tag text="REDE" color={C.blue} small />}
         <span style={{ flex: 1 }} />
@@ -184,6 +188,28 @@ function ShotBlock({ shot, idx }) {
               </span>
             </div>
           </div>
+
+          {shot.courtIdentity && (shot.courtIdentity.favoritePlayHit || shot.courtIdentity.instinctTriggered || shot.courtIdentity.blindSpotTriggered) && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 7, color: C.gray5, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4, fontFamily: C.body }}>Marca em Quadra</div>
+              <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                {shot.courtIdentity.favoritePlayHit && <Tag text={`jogada:${shot.courtIdentity.favoritePlayHit}`} color={C.orange} />}
+                {shot.courtIdentity.instinctTriggered && <Tag text={`instinto:${shot.courtIdentity.instinctTriggered}`} color={C.blue} />}
+                {shot.courtIdentity.blindSpotTriggered && <Tag text={`ponto cego:${shot.courtIdentity.blindSpotTriggered}`} color={C.red} />}
+              </div>
+            </div>
+          )}
+
+          {shot.coaching && (shot.coaching.tacticalFocusHit || shot.coaching.frictionPenalty || shot.coaching.planInfluence) && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 7, color: C.gray5, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4, fontFamily: C.body }}>Banco Vivo</div>
+              <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                {shot.coaching.tacticalFocusHit && <Tag text={`foco:${shot.coaching.tacticalFocusHit}`} color={C.green} />}
+                {shot.coaching.planInfluence && <Tag text={`plano:${shot.coaching.planInfluence}`} color={C.blue} />}
+                {shot.coaching.frictionPenalty > 0 && <Tag text={`atrito:-${shot.coaching.frictionPenalty}`} color={C.red} />}
+              </div>
+            </div>
+          )}
 
           {/* Candidates */}
           <CandidatesTable top5={shot.top5} />

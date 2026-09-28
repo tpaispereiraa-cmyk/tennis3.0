@@ -1,4 +1,4 @@
-export const SHOT_ENGINE_VERSION = 'shotengine-patch-1';
+export const SHOT_ENGINE_VERSION = 'shotengine-patch-7';
 
 export const ShotPhase = Object.freeze({
   SERVE: 'SERVE',
@@ -42,6 +42,7 @@ export const ShotIntent = Object.freeze({
   RESET: 'RESET',
   CONTROL: 'CONTROL',
   BUILD: 'BUILD',
+  REDIRECT: 'REDIRECT',
   PRESSURE: 'PRESSURE',
   APPROACH: 'APPROACH',
   FINISH: 'FINISH',
@@ -51,6 +52,7 @@ export const ShotIntent = Object.freeze({
 export const TargetDepth = Object.freeze({
   SHORT: 'SHORT',
   MID: 'MID',
+  MID_DEEP: 'MID_DEEP',
   DEEP: 'DEEP',
   SERVICE_BOX: 'SERVICE_BOX',
 });

@@ -16,7 +16,7 @@ function pick(arr) {
 }
 
 const SURFACE_LABELS = {
-  CLAY: 'saibro', GRASS: 'grama', HARD: 'quadra dura', INDOOR: 'indoor',
+  CLAY: 'saibro', GRASS: 'grama', HARD: 'quadra dura', STREET: 'asfalto', CARPET: 'veludo', INDOOR: 'indoor',
 };
 
 const ATTR_LABELS = {
@@ -325,7 +325,7 @@ function buildRealCtx(player, state = {}, params = {}) {
 
   const titlesList = [];
   let slamTitles = 0, mastersTitles = 0;
-  const surfaceWins = { CLAY:0, GRASS:0, HARD:0, INDOOR:0 };
+  const surfaceWins = { CLAY:0, GRASS:0, HARD:0, STREET:0, CARPET:0, INDOOR:0 };
   const recentResults = [];
 
   const sortedRes = Object.values(tournamentResults)
@@ -410,7 +410,7 @@ function buildRealCtx(player, state = {}, params = {}) {
     titles: titlesList.length, slamTitles, mastersTitles, titlesList,
     lastTitle: titlesList[0] ?? null, h2h, dominantAttr, bestSurface, bestSurfaceLabel, recentForm,
     isVeteran: (player.age ?? 0) >= 30, isRookie: (player.age ?? 0) <= 21,
-    coachName: player.coach?.name ?? null,
+    coachName: player.coaching?.activeCoachName ?? null,
     offCourt,
     lifeHeadline: offCourt.headline,
     lifeSummary: offCourt.summary,

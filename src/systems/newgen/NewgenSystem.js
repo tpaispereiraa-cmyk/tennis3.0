@@ -22,6 +22,10 @@ import {
 } from '../progression/DevelopmentConstants.js';
 
 import { evaluateAlcunha } from '../progression/DevelopmentSystem.js';
+import { createCareerTrajectory } from '../career/CareerTrajectorySystem.js';
+import { createYouthProfile } from '../youth/YouthFoundationSystem.js';
+import { ensureSurfaceProfile } from '../surfaces/SurfaceIdentitySystem.js';
+import { applyYouthAgeCaps } from '../youth/YouthDevelopmentGuardrails.js';
 import { generateKits } from '../../ui/pixel/appearances.js';
 import { initPlayerDNA, assignTraits } from '../traits/TraitSystem.js';
 import { generateTournamentPreferences } from '../tournaments/TournamentPreferences.js';
@@ -30,15 +34,16 @@ import {
   PLAY_STYLES,
   RALLY_PATTERNS,  RALLY_PATTERN_KEYS,
 } from '../../domain/players/styles.js';
-import { offlineNoop as rollSignaturePattern, offlineNoop as rollPlayerSignature } from '../shotlab/ShotEngineOffline.js';
 import { generatePersonality } from '../../domain/players/PlayerPersonality.js';
 import { generateLifeData } from '../../domain/players/PlayerLifeData.js';
 import { migrateLifeEventLog } from '../life/LifeEventSystem.js';
 import { ensureTalentProfile } from '../progression/arvoredetalentos.jsx';
+import { initializeTalentIdentity } from '../talents/TalentIdentitySystem.js';
 import {
   BUILD_STYLE_META, NET_GAME_META, RALLY_CADENCE_META, RISK_PROFILE_META,
   generatePrefs,
 } from '../../domain/players/playerPrefs.js';
+import { getCourtIdentity } from '../../domain/players/PlayerCourtIdentity.js';
 
 // Chaves disponíveis para randomização aleatória de prefs
 const _BUILD_STYLE_KEYS    = Object.keys(BUILD_STYLE_META);
@@ -53,22 +58,70 @@ const _NET_GAME_DISTRIBUTION = [
 ];
 
 /**
- * Gera prefs completamente aleatórias para um newgen.
- * Adaptability ainda deriva dos attrs (mentalidade + leitura).
+ * Gera preferências autorais, mas ancoradas no corpo e na técnica do newgen.
+ * A variação cria indivíduos; a âncora impede um caçador de rede sem mãos ou
+ * um jogador de controle com potência/regularidade incompatíveis.
  */
 function generateRandomPrefs(attrs) {
-  const base = generatePrefs(attrs); // para pegar o adaptability correto
+  const base = generatePrefs(attrs);
+  const vary = (baseValue, keys, chance = 0.34) => Math.random() < chance
+    ? keys[Math.floor(Math.random() * keys.length)]
+    : baseValue;
+  let netGame = Math.random() < 0.30 ? weightedRandom(_NET_GAME_DISTRIBUTION) : base.netGame;
+  const netSkill = (attrs?.volley ?? 50) * 0.62 + (attrs?.smash ?? 50) * 0.38;
+  if (netGame === 'HUNTER' && netSkill < 66) netGame = netSkill >= 58 ? 'OPPORTUNIST' : 'RELUCTANT';
+  if (netGame === 'PROACTIVE' && netSkill < 58) netGame = 'OPPORTUNIST';
   return {
-    buildStyle:   _BUILD_STYLE_KEYS[Math.floor(Math.random()   * _BUILD_STYLE_KEYS.length)],
-    netGame:      weightedRandom(_NET_GAME_DISTRIBUTION),
-    rallyCadence: _RALLY_CADENCE_KEYS[Math.floor(Math.random() * _RALLY_CADENCE_KEYS.length)],
-    riskProfile:  _RISK_PROFILE_KEYS[Math.floor(Math.random()  * _RISK_PROFILE_KEYS.length)],
+    buildStyle:   vary(base.buildStyle, _BUILD_STYLE_KEYS, 0.36),
+    netGame,
+    rallyCadence: vary(base.rallyCadence, _RALLY_CADENCE_KEYS, 0.30),
+    riskProfile:  vary(base.riskProfile, _RISK_PROFILE_KEYS, 0.30),
     adaptability: base.adaptability,
     serveProfile: base.serveProfile,
     serve1Bias:   base.serve1Bias,
     serve2Bias:   base.serve2Bias,
     pressureServe: base.pressureServe,
   };
+}
+
+function rollPlayerSignature(styleId, attrs = {}) {
+  const candidates = [
+    { id:'FH_TOPSPIN_CROSS', weight:12 + (attrs.topspin ?? 50) * 0.38 + (attrs.fhControle ?? 50) * 0.10 },
+    { id:'FH_FLAT_BOMB', weight:8 + (attrs.fhPotencia ?? 50) * 0.38 },
+    { id:'FH_SHORT_ANGLE', weight:6 + (attrs.fhControle ?? 50) * 0.18 + (attrs.visaoTatica ?? 50) * 0.12 },
+    { id:'BH_TOPSPIN_CROSS', weight:7 + (attrs.bhPotencia ?? 50) * 0.20 + (attrs.bhControle ?? 50) * 0.20 },
+    { id:'BH_SLICE_DEEP', weight:5 + (attrs.slice ?? 50) * 0.34 },
+    { id:'DROP_HIDDEN', weight:2 + (attrs.slice ?? 50) * 0.15 + (attrs.leitura ?? 50) * 0.10 },
+    { id:'SERVE_FLAT_BOMB', weight:5 + (attrs.saqueForca ?? 50) * 0.34 },
+    { id:'SERVE_SLICE_WIDE', weight:4 + (attrs.saquePrecisao ?? 50) * 0.18 + (attrs.slice ?? 50) * 0.12 },
+    { id:'SERVE_KICK_HIGH', weight:4 + (attrs.saquePrecisao ?? 50) * 0.14 + (attrs.topspin ?? 50) * 0.16 },
+    { id:'VOLLEY_PUNCH', weight:2 + (attrs.volley ?? 50) * 0.32 + (styleId === 'NET_SPEC' || styleId === 'SRV_VOL' ? 18 : 0) },
+    { id:'LOB_DEFENSIVE_PRECISE', weight:2 + (attrs.defesa ?? 50) * 0.20 + (attrs.leitura ?? 50) * 0.14 },
+  ];
+  return weightedRandom(candidates);
+}
+
+function rollSignaturePattern(styleId, attrs = {}) {
+  const candidates = [
+    { id:'SERVE_COMMANDER', weight:8 + (attrs.saqueForca ?? 50) * 0.18 + (attrs.saquePrecisao ?? 50) * 0.18 },
+    { id:'BH_WALL', weight:8 + (attrs.bhControle ?? 50) * 0.28 + (attrs.defesa ?? 50) * 0.12 },
+    { id:'SERVE_FH_KILL', weight:8 + (attrs.saqueForca ?? 50) * 0.14 + (attrs.fhPotencia ?? 50) * 0.22 },
+    { id:'SHORT_ANGLE_ASSASSIN', weight:6 + (attrs.fhControle ?? 50) * 0.15 + (attrs.visaoTatica ?? 50) * 0.18 },
+    { id:'SLICE_DISRUPTOR', weight:5 + (attrs.slice ?? 50) * 0.30 + (attrs.leitura ?? 50) * 0.10 },
+    { id:'DEEP_COURT_GRINDER', weight:6 + (attrs.resistencia ?? 50) * 0.16 + (attrs.regularidade ?? 50) * 0.16 },
+    { id:'NET_CLOSER', weight:4 + (attrs.volley ?? 50) * 0.24 + (attrs.smash ?? 50) * 0.14 + (styleId === 'NET_SPEC' || styleId === 'SRV_VOL' ? 16 : 0) },
+    { id:'LATE_MATCH_HUNTER', weight:5 + (attrs.mentalidade ?? 50) * 0.18 + (attrs.recuperacao ?? 50) * 0.14 },
+  ];
+  return weightedRandom(candidates);
+}
+
+function legacySignatureLabel(naturalSignature) {
+  return ({
+    FH_TOPSPIN_CROSS:'TOPSPIN_CROSS', FH_FLAT_BOMB:'FLAT_WINNER', FH_SHORT_ANGLE:'SHORT_ANGLE_FH',
+    BH_TOPSPIN_CROSS:'DTL_BH', BH_SLICE_DEEP:'SLICE_BH', DROP_HIDDEN:'DROP_SHOT',
+    SERVE_FLAT_BOMB:'BIG_SERVE', SERVE_SLICE_WIDE:'BIG_SERVE', SERVE_KICK_HIGH:'BIG_SERVE',
+    VOLLEY_PUNCH:'VOLLEY_FINISH', LOB_DEFENSIVE_PRECISE:'TOPSPIN_CROSS',
+  })[naturalSignature] ?? null;
 }
 
 
@@ -1319,6 +1372,7 @@ export function generateNewgen(seasonYear, options = {}) {
   const {
     nationality: forcedNationality,
     forcePotential,
+    forceDevelopmentStyle,
     ageRange = [15, 19],
   } = options;
 
@@ -1326,11 +1380,16 @@ export function generateNewgen(seasonYear, options = {}) {
   const nationality = forcedNationality ?? pickNationality();
   const nameObj     = generateName(nationality);
   const age         = randInt(ageRange[0], ageRange[1]);
-  const birthYear   = seasonYear - age;
+  const currentMonth = Math.max(1, Math.min(12, Math.round(options.month ?? 1)));
+  const birthMonth = randInt(1, 12);
+  // A idade é a idade completa no mês em que o jogador entra no circuito.
+  const birthYear = seasonYear - age - (birthMonth > currentMonth ? 1 : 0);
 
   // ── 2. Arco de carreira e desenvolvimento ─────────────────────
   const potential        = rollPotential(forcePotential);
-  const developmentStyle = rollDevelopmentStyle();
+  const developmentStyle = forceDevelopmentStyle && CAREER_ARCS[forceDevelopmentStyle]
+    ? forceDevelopmentStyle
+    : rollDevelopmentStyle();
   const styleId          = rollStyleId(nationality);
   const arc              = getCareerArc(developmentStyle);
 
@@ -1348,7 +1407,7 @@ export function generateNewgen(seasonYear, options = {}) {
   const weight = randInt(68, 98);
 
   // ── 6. Montar objeto ──────────────────────────────────────────
-  const player = {
+  let player = {
     id,
     name:      nameObj.lastName,
     firstName: nameObj.firstName,
@@ -1362,6 +1421,7 @@ export function generateNewgen(seasonYear, options = {}) {
 
     // Campos de desenvolvimento
     birthYear,
+    birthDate: { year: birthYear, month: birthMonth },
     potential,
     developmentStyle,
     peakAge,
@@ -1390,15 +1450,12 @@ export function generateNewgen(seasonYear, options = {}) {
     // Identidade individual — signature natural e padrão de rally
     naturalSignature: rollPlayerSignature(styleId, attrs),
     rallyPattern:   rollRallyPattern(styleId),
-    signaturePattern: null,  // [SignaturePatterns will be rebuilt separately]
+    signaturePattern: rollSignaturePattern(styleId, attrs),
+    courtIdentitySeed: `${id}:${seasonYear}:${nationality}:${styleId}`,
 
     // Flag para distinguir de jogadores originais
     isNewgen:   true,
     generatedIn: seasonYear,
-
-    // Coaching System — inicializado sem técnico
-    coach:        null,
-    coachHistory: [],
 
     // FASE 2 — Forma recente: afeta qualidade, erro e saque no motor de jogo.
     // Distinto de formPoints (macro/ranking) — este é micro (por superfície, por partida).
@@ -1418,8 +1475,13 @@ export function generateNewgen(seasonYear, options = {}) {
       GRASS:  { wins: 0, losses: 0, titlesWon: 0 },
       HARD:   { wins: 0, losses: 0, titlesWon: 0 },
       INDOOR: { wins: 0, losses: 0, titlesWon: 0 },
+      CARPET: { wins: 0, losses: 0, titlesWon: 0 },
+      STREET: { wins: 0, losses: 0, titlesWon: 0 },
     },
   };
+
+  player.signatureShot = legacySignatureLabel(player.naturalSignature);
+  player.signatureShots = player.signatureShot ? [player.signatureShot] : [];
 
   // ── 7. Atribuir foto do pool por continente ───────────────────
   // poolState é passado por opções — deve vir do state.newgenImagePool.
@@ -1442,11 +1504,38 @@ export function generateNewgen(seasonYear, options = {}) {
 
   // ── 10. Gerar personalidade off-court ────────────────────────
   player.personality = generatePersonality(player);
+  player.careerTrajectory = createCareerTrajectory(player, seasonYear, 'NEWGEN');
+  player.youthProfile = createYouthProfile(player, seasonYear, 'NEWGEN');
+  // A preferencia de piso nasce da formacao, antes de qualquer resultado
+  // profissional. O DNA fica travado; experiencia e confianca continuam vivos.
+  player = ensureSurfaceProfile(player, { year: seasonYear, source: 'NEWGEN' });
+
+  // ── 10.1. Marca em Quadra: ids persistidos para newgens ──────
+  const courtIdentity = getCourtIdentity(player);
+  player.courtIdentity = {
+    favoritePlay: courtIdentity.favoritePlay.id,
+    competitiveInstinct: courtIdentity.competitiveInstinct.id,
+    blindSpot: courtIdentity.blindSpot.id,
+    positioning: courtIdentity.positioning,
+    timing: courtIdentity.timing,
+    movement: courtIdentity.movement,
+    shotVocabulary: courtIdentity.shotVocabulary,
+    construction: courtIdentity.construction,
+    adaptation: courtIdentity.adaptation,
+    returnIdentity: courtIdentity.returnIdentity,
+    serveIdentity: courtIdentity.serveIdentity,
+  };
 
   // ── 11. Gerar dados de vida fora da quadra ───────────────────
   player.lifeData     = generateLifeData(player);
   player.lifeEventLog = [];
   ensureTalentProfile(player);
+  // A identidade nasce junto do jogador: origem + três fundamentos + uma
+  // rota já escolhida a partir de seus atributos, sem criar newgens genéricos.
+  initializeTalentIdentity(player, { source: 'NEWGEN', seasonYear });
+
+  // Potencial alto pode nascer cedo; atributos de adulto, não.
+  player = applyYouthAgeCaps(player, { age });
 
   return player;
 }

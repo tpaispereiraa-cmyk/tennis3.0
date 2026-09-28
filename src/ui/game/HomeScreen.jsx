@@ -12,9 +12,9 @@ import UniverseManager from '../universe/UniverseManager.jsx';
 import SimulatorScreen from './SimulatorScreen.jsx';
 import { HOME_THEME as C } from '../theme/uiTheme.js';
 
-// ������ Design Tokens � História Viva Identity ������������������������������������������������
+// -—-—-—- Design Tokens -— História Viva Identity -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 
-// ������ Global CSS ��������������������������������������������������������������������������������������������������������
+// -—-—-—- Global CSS -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 function injectCSS() {
   if (document.getElementById('hv3-css')) return;
   const css = `
@@ -46,7 +46,7 @@ html,body,#root{height:100%}
 .sc::-webkit-scrollbar{width:3px}
 .sc::-webkit-scrollbar-thumb{background:#8B3410}
 
-/* ���� NAV ITEMS ���� */
+/* -—-—- NAV ITEMS -—-—- */
 .nav-item{
   position:relative;display:flex;align-items:center;
   width:100%;background:none;border:none;cursor:pointer;
@@ -84,7 +84,7 @@ html,body,#root{height:100%}
 .nav-item:hover .nav-arr{opacity:1;transform:translateX(0)}
 .nav-item.off{pointer-events:none;opacity:.2}
 
-/* ���� PLAYER CARDS (tenistas grid) ���� */
+/* -—-—- PLAYER CARDS (tenistas grid) -—-—- */
 .pcard{
   position:relative;overflow:hidden;cursor:pointer;
   background:#0F1518;border:1px solid rgba(242,237,228,.07);
@@ -99,7 +99,7 @@ html,body,#root{height:100%}
 }
 .pcard:hover .pcard-img{filter:brightness(.95) saturate(1.05);transform:scale(1.03)}
 
-/* ���� PLAYER ROWS (match setup) ���� */
+/* -—-—- PLAYER ROWS (match setup) -—-—- */
 .prow{
   display:flex;align-items:center;gap:10px;cursor:pointer;
   border:1px solid rgba(242,237,228,.06);margin-bottom:2px;
@@ -108,7 +108,7 @@ html,body,#root{height:100%}
 .prow:hover{background:rgba(242,237,228,.04);border-color:rgba(242,237,228,.14)}
 .prow.sel{border-color:#D4561E;background:rgba(212,86,30,.08)}
 
-/* ���� COURT OPTIONS ���� */
+/* -—-—- COURT OPTIONS -—-—- */
 .copt{
   display:flex;align-items:center;gap:10px;cursor:pointer;
   border:1px solid rgba(242,237,228,.06);margin-bottom:2px;
@@ -117,7 +117,7 @@ html,body,#root{height:100%}
 .copt:hover{background:rgba(242,237,228,.04);border-color:rgba(242,237,228,.14)}
 .copt.sel{border-color:#D4561E;background:rgba(212,86,30,.07)}
 
-/* ���� SURFACE ROWS ���� */
+/* -—-—- SURFACE ROWS -—-—- */
 .surf-row{
   display:flex;align-items:center;gap:14px;
   padding:13px 18px;
@@ -136,7 +136,7 @@ html,body,#root{height:100%}
 .surf-indoor::before{background:#8B2FAA}
 .surf-row:hover{background:rgba(242,237,228,.04);border-color:rgba(242,237,228,.14)}
 
-/* ���� BACK BUTTON ���� */
+/* -—-—- BACK BUTTON -—-—- */
 .back-btn{
   font-family:'Space Mono',monospace;font-size:9px;
   letter-spacing:.22em;text-transform:uppercase;
@@ -273,7 +273,7 @@ html,body,#root{height:100%}
   document.head.appendChild(el);
 }
 
-// ������ Top Chrome ��������������������������������������������������������������������������������������������������������
+// -—-—-—- Top Chrome -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 function TopChrome() {
   return (
     <div style={{
@@ -311,7 +311,7 @@ function TopChrome() {
   );
 }
 
-// ������ Back Chrome ������������������������������������������������������������������������������������������������������
+// -—-—-—- Back Chrome -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 function BackChrome({ label, sub, onBack }) {
   return (
     <div style={{
@@ -321,7 +321,7 @@ function BackChrome({ label, sub, onBack }) {
       display:'flex', alignItems:'center',
       padding:'0 24px', gap:14, flexShrink:0, zIndex:30,
     }}>
-      <button className="back-btn" onClick={onBack}>� � Voltar</button>
+      <button className="back-btn" onClick={onBack}>Voltar</button>
       <div style={{width:1,height:16,background:C.line}}/>
       <div>
         <div style={{fontFamily:C.D,fontSize:16,letterSpacing:'.1em',color:C.chalk,textTransform:'uppercase',lineHeight:1}}>
@@ -337,7 +337,7 @@ function BackChrome({ label, sub, onBack }) {
   );
 }
 
-// ������ Ticker �������������������������������������������������������������������������������������������������������������€��
+// -—-—-—- Ticker -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—€-—-
 function Ticker() {
   const txt = NAMED_PLAYER_KEYS.map(k=>{
     const p = NAMED_PLAYERS[k];
@@ -367,7 +367,7 @@ function Ticker() {
   );
 }
 
-// ������ HOME ���������������������������������������������������������������������������������������������������������������”€����
+// -—-—-—- HOME -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-”€-—-—-
 function Home({ onPlay, onTenistas, onUniverse, onLoadGame, onSimular }) {
   const canRef = useRef(null);
 
@@ -451,7 +451,7 @@ function Home({ onPlay, onTenistas, onUniverse, onLoadGame, onSimular }) {
               <button className="home-aaa-action" onClick={onLoadGame} style={{ minHeight: 70 }}>
                 <div className="home-aaa-action-num">SAVE</div>
                 <div className="home-aaa-action-title" style={{ fontSize: 26 }}>Carregar Jogo</div>
-                <div className="home-aaa-action-sub">Abrir um save JSON e entrar direto no BroadcastHub.</div>
+                <div className="home-aaa-action-sub">Abrir um .tennis-save comprimido ou um JSON antigo e entrar direto no BroadcastHub.</div>
               </button>
               {actionCards.map(card => (
                 <button key={card.n} className={`home-aaa-action${card.primary ? ' primary' : ''}`} onClick={card.fn}>
@@ -602,7 +602,7 @@ function UniverseModeSelect({ onBack, onSelectMode }) {
   );
 }
 
-// ������ TENISTAS ������������������������������������������������������������������������������������������������������������
+// -—-—-—- TENISTAS -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 function Tenistas({ onBack, onSelect }) {
   const [q, setQ] = useState('');
   const keys = NAMED_PLAYER_KEYS.filter(k=>{
@@ -627,7 +627,7 @@ function Tenistas({ onBack, onSelect }) {
         background:C.ink1, borderBottom:`1px solid ${C.line}`,
         padding:'10px 24px', display:'flex', alignItems:'center', gap:10, flexShrink:0,
       }}>
-        <span style={{color:C.dim,fontFamily:C.M,fontSize:12}}>��"</span>
+        <span style={{color:C.dim,fontFamily:C.M,fontSize:12}}>⌕</span>
         <input
           value={q} onChange={e=>setQ(e.target.value)}
           placeholder="Buscar por nome, país ou estilo⬦"
@@ -707,8 +707,6 @@ function Tenistas({ onBack, onSelect }) {
                   <div style={{fontFamily:C.M,fontSize:8,color:C.dim,letterSpacing:'.15em'}}>{p.nationality}</div>
                   <div style={{display:'flex',flexDirection:'column',gap:3,marginTop:4}}>
                     {ATTR_CATEGORIES.slice(0,3).map(cat=>{
-                      const { widthPct, color: barC } = (() => { const { widthPct: w, color: clr } = require ? {widthPct:60,color:cat.color} : {widthPct:60,color:cat.color}; return {widthPct:w,color:clr}; })();
-                      const { grade: cg } = (() => { const avg2 = catAvg(cat.id,p.attrs); return avg2>=90?{grade:'S'}:avg2>=78?{grade:'A'}:avg2>=65?{grade:'B'}:avg2>=52?{grade:'C'}:{grade:'D'}; })();
                       const avg2 = catAvg(cat.id,p.attrs);
                       const cgv = avg2>=90?{g:'S',c:cat.color}:avg2>=78?{g:'A',c:cat.color}:avg2>=65?{g:'B',c:'rgba(116,172,223,.7)'}:avg2>=52?{g:'C',c:'rgba(237,232,223,.25)'}:{g:'D',c:'rgba(239,68,68,.5)'};
                       return (
@@ -728,7 +726,7 @@ function Tenistas({ onBack, onSelect }) {
                   <div style={{
                     marginTop:6,paddingTop:6,borderTop:`1px solid ${C.line}`,
                     fontFamily:C.M,fontSize:7,letterSpacing:'.28em',color:C.dim,textAlign:'right',
-                  }}>VER FICHA � </div>
+                  }}>VER FICHA</div>
                 </div>
               </button>
             );
@@ -740,11 +738,19 @@ function Tenistas({ onBack, onSelect }) {
   );
 }
 
-// ������ MATCH SETUP ������������������������������������������������������������������������������������������������������
+// -—-—-—- MATCH SETUP -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-
 function MatchSetup({ onStart, onBack }) {
-  const [selA, setSelA] = useState(NAMED_PLAYER_KEYS[0]);
-  const [selB, setSelB] = useState(NAMED_PLAYER_KEYS[1]);
-  const [court, setCourt] = useState(COURT_KEYS[0]);
+  const quickParams = new URLSearchParams(window.location.search);
+  const quickA = quickParams.get('a');
+  const quickB = quickParams.get('b');
+  const quickCourt = quickParams.get('court');
+  const [selA, setSelA] = useState(NAMED_PLAYERS[quickA] ? quickA : NAMED_PLAYER_KEYS[0]);
+  const [selB, setSelB] = useState(NAMED_PLAYERS[quickB] ? quickB : NAMED_PLAYER_KEYS[1]);
+  const [court, setCourt] = useState(COURTS[quickCourt] ? quickCourt : COURT_KEYS[0]);
+  const [queryA, setQueryA] = useState('');
+  const [queryB, setQueryB] = useState('');
+  const [filterA, setFilterA] = useState('all');
+  const [filterB, setFilterB] = useState('all');
 
   const npA  = NAMED_PLAYERS[selA], npB = NAMED_PLAYERS[selB];
   const scA  = PLAY_STYLES[npA?.styleId]?.barColor ?? C.clay;
@@ -754,13 +760,59 @@ function MatchSetup({ onStart, onBack }) {
   const phA  = getPlayerPhoto(selA);
   const phB  = getPlayerPhoto(selB);
   const sc   = COURTS[court];
+  const playerRows = NAMED_PLAYER_KEYS.map(key => {
+    const p = NAMED_PLAYERS[key];
+    return { key, player: p, rating: p ? overallRating(p.attrs) : 0 };
+  });
+  const top20 = new Set([...playerRows].sort((a,b)=>b.rating-a.rating).slice(0,20).map(r=>r.key));
+  const top50 = new Set([...playerRows].sort((a,b)=>b.rating-a.rating).slice(0,50).map(r=>r.key));
+  const filterDefs = [
+    { id:'all', label:'Todos' },
+    { id:'top20', label:'Top 20' },
+    { id:'top50', label:'Top 50' },
+    { id:'big', label:'Big Servers' },
+    { id:'picked', label:'Selecionados' },
+  ];
+  const normalizeSearch = value => String(value ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const filterPlayers = (slot, query, filter) => {
+    const q = normalizeSearch(query);
+    const selected = new Set([selA, selB].filter(Boolean));
+    return playerRows.filter(({ key, player:p, rating }) => {
+      if (!p) return false;
+      if (filter === 'top20' && !top20.has(key)) return false;
+      if (filter === 'top50' && !top50.has(key)) return false;
+      if (filter === 'big') {
+        const styleText = `${p.styleId ?? ''} ${PLAY_STYLES[p.styleId]?.label ?? ''} ${PLAY_STYLES[p.styleId]?.abbr ?? ''}`.toUpperCase();
+        const servePower = Math.max(
+          Number(p.attrs?.srv1Vel ?? 0),
+          Number(p.attrs?.saqueForca ?? 0),
+          Number(p.attrs?.saque ?? 0)
+        );
+        if (!styleText.includes('BIG') && !styleText.includes('SRV') && servePower < 82) return false;
+      }
+      if (filter === 'picked' && !selected.has(key)) return false;
+      if (!q) return true;
+      const haystack = normalizeSearch([
+        p.name, p.nationality, p.country, p.styleId,
+        PLAY_STYLES[p.styleId]?.label, PLAY_STYLES[p.styleId]?.abbr,
+        rating,
+      ].filter(Boolean).join(' '));
+      return haystack.includes(q);
+    });
+  };
 
   const PlayerCol = ({ slot }) => {
     const isB   = slot==='B';
     const sel   = isB ? selB : selA;
     const setSel = isB ? setSelB : setSelA;
+    const query = isB ? queryB : queryA;
+    const setQuery = isB ? setQueryB : setQueryA;
+    const filter = isB ? filterB : filterA;
+    const setFilter = isB ? setFilterB : setFilterA;
     const np    = NAMED_PLAYERS[sel];
     const psc   = PLAY_STYLES[np?.styleId]?.barColor ?? C.clay;
+    const visiblePlayers = filterPlayers(slot, query, filter);
 
     return (
       <div className="sc" style={{
@@ -775,8 +827,43 @@ function MatchSetup({ onStart, onBack }) {
           textAlign:isB?'right':'left',textTransform:'uppercase',
         }}>Jogador {slot}</div>
 
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:10}}>
+          <input
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            placeholder="Buscar nome, pais, estilo ou rating"
+            style={{
+              width:'100%',background:C.ink2,border:`1px solid ${C.line}`,
+              color:C.chalk,padding:'9px 10px',outline:'none',
+              fontFamily:C.M,fontSize:9,letterSpacing:'.12em',
+              textTransform:'uppercase',
+              textAlign:isB?'right':'left',
+            }}
+          />
+          <div style={{display:'flex',gap:5,flexWrap:'wrap',justifyContent:isB?'flex-end':'flex-start'}}>
+            {filterDefs.map(def => {
+              const active = filter === def.id;
+              return (
+                <button key={def.id} onClick={()=>setFilter(def.id)}
+                  style={{
+                    border:`1px solid ${active ? psc+'88' : C.line}`,
+                    background:active ? `${psc}18` : 'transparent',
+                    color:active ? C.chalk : C.faint,
+                    fontFamily:C.M,fontSize:7,letterSpacing:'.14em',
+                    textTransform:'uppercase',padding:'5px 7px',cursor:'pointer',
+                  }}>
+                  {def.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontFamily:C.M,fontSize:7,color:C.faint,letterSpacing:'.18em',textTransform:'uppercase',textAlign:isB?'right':'left'}}>
+            {visiblePlayers.length} jogadores
+          </div>
+        </div>
+
         <div style={{display:'flex',flexDirection:'column',marginBottom:14}}>
-          {NAMED_PLAYER_KEYS.map(key=>{
+          {visiblePlayers.map(({ key })=>{
             const p    = NAMED_PLAYERS[key];
             const isSel = key===sel;
             const ksc  = PLAY_STYLES[p.styleId]?.barColor ?? C.clay;
@@ -821,6 +908,15 @@ function MatchSetup({ onStart, onBack }) {
               </div>
             );
           })}
+          {visiblePlayers.length === 0 && (
+            <div style={{
+              border:`1px solid ${C.line}`,background:C.ink2,padding:'18px 12px',
+              fontFamily:C.B,fontSize:12,color:C.dim,lineHeight:1.45,
+              textAlign:isB?'right':'left',
+            }}>
+              Nenhum jogador encontrado nesse filtro.
+            </div>
+          )}
         </div>
 
         {np && (
@@ -855,6 +951,8 @@ function MatchSetup({ onStart, onBack }) {
     );
   };
 
+  const duelRead = `${npA?.name ?? 'Jogador A'} chega como ${PLAY_STYLES[npA?.styleId]?.label ?? 'perfil versátil'}; ${npB?.name ?? 'Jogador B'} responde com ${PLAY_STYLES[npB?.styleId]?.label ?? 'um jogo próprio'}. A ${COURTS[court]?.meta?.name ?? 'quadra'} pode decidir onde a troca de estilos pesa mais.`;
+
   return (
     <div style={{width:'100%',height:'100vh',background:C.ink,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <BackChrome label="Nova Partida" onBack={onBack}/>
@@ -887,6 +985,11 @@ function MatchSetup({ onStart, onBack }) {
             </div>
           </div>
 
+          <div style={{ marginBottom:16, padding:'11px 10px', borderLeft:`2px solid ${C.gold}`, background:'rgba(232,200,74,.045)' }}>
+            <div style={{ fontFamily:C.M, fontSize:7, color:C.gold, letterSpacing:'.2em', marginBottom:6 }}>LEITURA DO DUELO</div>
+            <div style={{ fontFamily:C.B, fontSize:11, color:C.dim, lineHeight:1.45 }}>{duelRead}</div>
+          </div>
+
           <div style={{fontFamily:C.M,fontSize:8,letterSpacing:'.38em',color:C.dim,marginBottom:8,textTransform:'uppercase'}}>
             Quadra
           </div>
@@ -911,10 +1014,10 @@ function MatchSetup({ onStart, onBack }) {
                   <div style={{fontFamily:C.M,fontSize:8,color:C.faint,letterSpacing:'.12em',marginTop:2}}>{c.meta.location}</div>
                   {(favA||penA||favB||penB) && (
                     <div style={{display:'flex',gap:4,marginTop:3}}>
-                      {favA && <span style={{fontSize:8,color:'#3DEB6A',fontFamily:C.M}}>�SA</span>}
-                      {penA && <span style={{fontSize:8,color:'#FF5555',fontFamily:C.M}}>�SA</span>}
-                      {favB && <span style={{fontSize:8,color:'#3DEB6A',fontFamily:C.M}}>�SB</span>}
-                      {penB && <span style={{fontSize:8,color:'#FF5555',fontFamily:C.M}}>�SB</span>}
+                      {favA && <span title="Favorece Jogador A" style={{fontSize:8,color:'#3DEB6A',fontFamily:C.M}}>+A</span>}
+                      {penA && <span title="Penaliza Jogador A" style={{fontSize:8,color:'#FF5555',fontFamily:C.M}}>-A</span>}
+                      {favB && <span title="Favorece Jogador B" style={{fontSize:8,color:'#3DEB6A',fontFamily:C.M}}>+B</span>}
+                      {penB && <span title="Penaliza Jogador B" style={{fontSize:8,color:'#FF5555',fontFamily:C.M}}>-B</span>}
                     </div>
                   )}
                 </div>
@@ -958,11 +1061,11 @@ function MatchSetup({ onStart, onBack }) {
             </div>
           )}
           <span style={{fontFamily:C.D,fontSize:'clamp(16px,2vw,28px)',color:C.chalk,textTransform:'uppercase',letterSpacing:'.04em',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'22vw'}}>
-            {npA?.name??'�'}
+            {npA?.name??'Jogador A'}
           </span>
           <span style={{fontFamily:C.D,fontSize:'clamp(13px,1.5vw,20px)',color:C.clay,letterSpacing:'.32em',flexShrink:0}}>VS</span>
           <span style={{fontFamily:C.D,fontSize:'clamp(16px,2vw,28px)',color:C.chalk,textTransform:'uppercase',letterSpacing:'.04em',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'22vw'}}>
-            {npB?.name??'�'}
+            {npB?.name??'Jogador B'}
           </span>
           {phB && (
             <div style={{width:34,height:34,overflow:'hidden',flexShrink:0,border:`2px solid ${scB}`}}>
@@ -1001,14 +1104,14 @@ function MatchSetup({ onStart, onBack }) {
           onMouseEnter={e=>{ if(selA!==selB) e.currentTarget.style.background=C.clayHi; }}
           onMouseLeave={e=>{ if(selA!==selB) e.currentTarget.style.background=C.clay; }}
         >
-          {selA===selB?'Adversários iguais':'���  Jogar Agora'}
+          {selA===selB?'Adversários iguais':'Jogar Agora'}
         </button>
       </div>
     </div>
   );
 }
 
-// ������ ROOT ���������������������������������������������������������������������������������������������������������������”€����
+// -—-—-—- ROOT -—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-—-”€-—-—-
 export default function HomeScreen({ onStartGame }) {
   const [page, setPage]     = useState('home');
   const [fichaKey, setFicha] = useState(null);

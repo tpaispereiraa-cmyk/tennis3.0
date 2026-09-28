@@ -1,6 +1,6 @@
-﻿/**
+/**
  * NewsEngine.js
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  * Motor de jornalismo do Tennis Universe.
  *
  * Gera artigos automáticos após cada torneio com base nos dados
@@ -8,7 +8,7 @@
  * personalidades dos jornalistas e contexto narrativo acumulado.
  *
  * CONCEITOS CENTRAIS
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  *  Journalist  — entidade com estilo, especialidade e voz própria.
  *                Influencia o ângulo e o tom de cada matéria.
  *
@@ -19,7 +19,7 @@
  *                Artigos mais antigos são comprimidos mas mantidos.
  *
  * TIPOS DE MATÉRIA
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  *  CHAMPION       — campeão do torneio
  *  UPSET          — azarão elimina top-seed
  *  EPIC_MATCH     — duelo de 3+ sets com drama
@@ -34,24 +34,24 @@
  *  COLUMN         — coluna de opinião (mais longa, mais pessoal)
  *
  * INTEGRAÇÃO
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  *  Chamar generateTournamentNews(tournament, bracket, state) após
  *  cada APPLY_TOURNAMENT_RESULT no reducer do UniverseManager.
  *
- *  O retorno é um array de Article que deve ser salvo em
+ *  O retorno — um array de Article que deve ser salvo em
  *  state.newsFeed = [...state.newsFeed, ...articles].
  *
  * EXPORTS PRINCIPAIS
- * ─────────────────────────────────────────────────────────────────
- *  generateTournamentNews(tournament, bracket, state) → Article[]
- *  generateYearEndNews(state) → Article[]
+ * -----------------------------------------------------------------
+ *  generateTournamentNews(tournament, bracket, state) ? Article[]
+ *  generateYearEndNews(state) ? Article[]
  *  JOURNALISTS         — catálogo de jornalistas
  *  NEWS_TYPES          — tipos de matéria com metadados
  */
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // JORNALISTAS
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 import { narrateMatch, narrateMatchWithRivalry } from './MatchNarrator.js';
 import { INJURY_TYPES, INJURY_GRADES, getRecidiveInfo, getInjuryDisplayName } from '../health/InjurySystem.js';
@@ -66,21 +66,25 @@ import {
   buildRivalryImpact,
   buildTournamentTrendImpact,
 } from '../narrative/NarrativeImpactEngine.js';
+import { YOUTH_CIRCUIT_JOURNALISTS } from './YouthJournalists.js';
+import { repairLegacyArticle } from '../../core/textEncoding.js';
 
 export const JOURNALISTS = {
+
+  ...YOUTH_CIRCUIT_JOURNALISTS,
 
   CARVALHO: {
     id:          'CARVALHO',
     name:        'Paulo Carvalho',
     outlet:      'Circuit Report',
     specialty:   'Grand Slams e histórico',
-    style:       'LITERARY',      // prosa rica, citações, contexto histórico profundo
-    icon:        '🖊️',
+    style:       'ANALYTICAL',    // história lida por registros, séries e comparação histórica
+    icon:        '???',
     color:       '#D4A017',
     bias:        'CLAY',          // faz mais matérias sobre saibro
     verbosity:   'LONG',          // matérias longas
     voice: {
-      opening:   ['O circuito tem memória longa.', 'Há momentos que o tênis guarda como troféu.', 'Alguns jogos não acabam quando o último ponto é marcado.'],
+      opening:   ['O circuito tem memória longa.', 'HÁ momentos que o tênis guarda como troféu.', 'Alguns jogos não acabam quando o último ponto é marcado.'],
       transition:['O contexto importa.', 'Para entender o que aconteceu hoje, é preciso recuar.', 'A história não começa aqui.'],
       closing:   ['O circuito continua. A memória, também.', 'O placar registra. A narrativa vai mais fundo.', 'Isso é tênis — e tênis raramente é só tênis.'],
     },
@@ -92,13 +96,13 @@ export const JOURNALISTS = {
     outlet:      'TennisStats Weekly',
     specialty:   'Estatísticas e análise tática',
     style:       'ANALYTICAL',    // dados, porcentagens, comparações
-    icon:        '📊',
+    icon:        '??',
     color:       '#4A90D9',
     bias:        'HARD',
     verbosity:   'MEDIUM',
     voice: {
       opening:   ['Os números dizem o seguinte.', 'A análise desta semana aponta para algo claro.', 'Vamos ao que os dados revelam.'],
-      transition:['Traduzindo para números.', 'O que as estatísticas mostram é.', 'Em termos táticos.'],
+      transition:['Traduzindo para números.', 'O que as estatísticas mostram:', 'Em termos táticos.'],
       closing:   ['A tendência é essa. Os próximos torneios vão confirmar ou refutar.', 'Esses números são difíceis de ignorar.', 'O padrão está estabelecido.'],
     },
   },
@@ -108,8 +112,8 @@ export const JOURNALISTS = {
     name:        'Isabelle Fontaine',
     outlet:      'Le Circuit Mondial',
     specialty:   'Bastidores e personagens',
-    style:       'GOSSIP',        // boatos, personalidades, drama fora da quadra
-    icon:        '🎙️',
+    style:       'ANALYTICAL',    // bastidor só entra quando altera dado, calendário ou desempenho
+    icon:        '???',
     color:       '#E040FB',
     bias:        null,
     verbosity:   'SHORT',         // matérias curtas e diretas
@@ -125,13 +129,13 @@ export const JOURNALISTS = {
     name:        'Yuki Nakano',
     outlet:      'Ace Magazine',
     specialty:   'Jovens talentos e futuro do tênis',
-    style:       'HYPE',          // entusiasmo, superlativos, foco em prospects
-    icon:        '🌟',
+    style:       'ANALYTICAL',    // prospectos lidos por idade, ranking e curva de resultados
+    icon:        '??',
     color:       '#2ECC71',
     bias:        'PROSPECT',
     verbosity:   'MEDIUM',
     voice: {
-      opening:   ['O futuro chegou cedo desta vez.', 'Há talentos que não pedem licença para aparecer.', 'Uma geração não anuncia quando vai chegar — ela simplesmente aparece.'],
+      opening:   ['O futuro chegou cedo desta vez.', 'HÁ talentos que não pedem licença para aparecer.', 'Uma geração não anuncia quando vai chegar — ela simplesmente aparece.'],
       transition:['O que torna esse jogador diferente.', 'A trajetória fala por si.', 'Para entender o impacto.'],
       closing:   ['O circuito não vai esquecer esse nome tão cedo.', 'Isso é só o começo.', 'O futuro do tênis está sendo escrito agora.'],
     },
@@ -142,14 +146,14 @@ export const JOURNALISTS = {
     name:        'James Reed',
     outlet:      'The Hard Court',
     specialty:   'Opiniões polêmicas e crítica',
-    style:       'OPINION',       // colunista opinativo, não tem medo de criticar
-    icon:        '🔥',
+    style:       'ANALYTICAL',    // crítica sustentada por evidência e comparação
+    icon:        '??',
     color:       '#D4561E',
     bias:        null,
     verbosity:   'MEDIUM',
     voice: {
       opening:   ['Vou ser direto.', 'Alguém tem que dizer.', 'O circuito prefere não falar sobre isso. Eu prefiro.'],
-      transition:['O problema real é.', 'O que ninguém está dizendo.', 'Para além da narrativa oficial.'],
+      transition:['O problema real:', 'O que ninguém está dizendo.', 'Para além da narrativa oficial.'],
       closing:   ['Não é opinião popular. É o que os dados e a lógica mostram.', 'Discorde. Mas olhe para os fatos antes.', 'O circuito vai discutir isso. Deveria.'],
     },
   },
@@ -159,8 +163,8 @@ export const JOURNALISTS = {
     name:        'Marina Santos',
     outlet:      'Tênis Brasil',
     specialty:   'Cobertura emocional e humana',
-    style:       'NARRATIVE',     // foco no jogador como pessoa, não atleta
-    icon:        '❤️',
+    style:       'ANALYTICAL',    // contexto humano traduzido em impacto competitivo mensurável
+    icon:        '??',
     color:       '#F48FB1',
     bias:        null,
     verbosity:   'LONG',
@@ -171,15 +175,15 @@ export const JOURNALISTS = {
     },
   },
 
-  // ── NOVOS JORNALISTAS ─────────────────────────────────────────
+  // -- NOVOS JORNALISTAS -----------------------------------------
 
   SILVA: {
     id:          'SILVA',
     name:        'Rodrigo Silva',
     outlet:      'The Grind — Challenger Circuit',
     specialty:   'Challenger e ATP 100 — o circuito de base',
-    style:       'GRITTY',        // cru, direto, fala de ranking em pontos não em posições
-    icon:        '🥈',
+    style:       'ANALYTICAL',    // circuito de base lido por pontos, corte e progressão
+    icon:        '??',
     color:       '#78909C',
     bias:        'CHALLENGER',
     verbosity:   'SHORT',
@@ -195,8 +199,8 @@ export const JOURNALISTS = {
     name:        'Helena Kowalski',
     outlet:      'Season Review',
     specialty:   'Finals e narrativa de temporada completa',
-    style:       'SEASON',        // amarra o ano inteiro, lembra promessas de janeiro
-    icon:        '🏅',
+    style:       'ANALYTICAL',    // temporada comparada por metas, ranking e produção
+    icon:        '??',
     color:       '#9C27B0',
     bias:        'FINALS',
     verbosity:   'LONG',
@@ -209,41 +213,42 @@ export const JOURNALISTS = {
 
 };
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // TIPOS DE MATÉRIA
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 export const NEWS_TYPES = {
-  BREAKING:        { id: 'BREAKING',        label: 'Urgente',             icon: '🚨', color: '#FF5252', priority: 10 },
-  PREVIEW:         { id: 'PREVIEW',         label: 'Pré-Torneio',         icon: '🗞️', color: '#5CB8E4', priority: 6  },
-  PREDICTION:      { id: 'PREDICTION',      label: 'Palpites',            icon: '🎯', color: '#26C6DA', priority: 7  },
-  CHAMPION:    { id: 'CHAMPION',   label: 'Campeão',        icon: '🏆', color: '#E8C84A', priority: 10 },
-  UPSET:       { id: 'UPSET',      label: 'Zebra',          icon: '⚡', color: '#FF6B35', priority: 9  },
-  EPIC_MATCH:  { id: 'EPIC_MATCH', label: 'Duelo Épico',   icon: '🔥', color: '#EF5350', priority: 8  },
-  RIVALRY:     { id: 'RIVALRY',    label: 'Rivalidade',     icon: '⚔️', color: '#E040FB', priority: 8  },
-  RECORD:      { id: 'RECORD',     label: 'Recorde',        icon: '📈', color: '#2ECC71', priority: 7  },
-  INJURY:          { id: 'INJURY',          label: 'Lesão',              icon: '🩹', color: '#F44336', priority: 7  },
-  INJURY_FOLLOWUP: { id: 'INJURY_FOLLOWUP', label: 'Atualização: Lesão', icon: '🏥', color: '#FF7043', priority: 6  },
-  INJURY_SURGERY:  { id: 'INJURY_SURGERY',  label: 'Cirurgia',           icon: '🔪', color: '#B71C1C', priority: 8  },
-  COMEBACK:    { id: 'COMEBACK',   label: 'Retorno',        icon: '🔄', color: '#00BCD4', priority: 6  },
-  PROSPECT:    { id: 'PROSPECT',   label: 'Revelação',      icon: '🌱', color: '#66BB6A', priority: 6  },
-  RETIREMENT:  { id: 'RETIREMENT', label: 'Aposentadoria',  icon: '🌅', color: '#90A4AE', priority: 7  },
-  OLYMPIC_GOLD:  { id: 'OLYMPIC_GOLD',   label: 'Ouro Olímpico',   icon: '🥇', color: '#FFD700', priority: 10 },
-  OLYMPIC_MEDAL: { id: 'OLYMPIC_MEDAL',  label: 'Medalha Olímpica', icon: '🏅', color: '#90A4AE', priority: 8  },
-  ANALYSIS:        { id: 'ANALYSIS',        label: 'Análise',            icon: '📋', color: '#4A90D9', priority: 4  },
-  COLUMN:          { id: 'COLUMN',          label: 'Coluna',             icon: '✍️', color: '#D4A017', priority: 3  },
-  RUMOR:           { id: 'RUMOR',           label: 'Rumor',              icon: '🔮', color: '#AB47BC', priority: 5  },
-  TOURNAMENT_WRAP: { id: 'TOURNAMENT_WRAP', label: 'Balanço do Torneio', icon: '📰', color: '#5CB8E4', priority: 6  },
-  SPONSOR:         { id: 'SPONSOR',         label: 'Patrocínio',          icon: '🤝', color: '#60C8FF', priority: 5  },
-  SPONSOR_ELITE:   { id: 'SPONSOR_ELITE',   label: 'Patrocínio Elite',    icon: '👑', color: '#FFD700', priority: 9  },
-  LIFE_EVENT:      { id: 'LIFE_EVENT',      label: 'Vida',                icon: '🌍', color: '#A5D6A7', priority: 5  },
-  LIFE_RUMOR:      { id: 'LIFE_RUMOR',      label: 'Bastidores',          icon: '👀', color: '#CE93D8', priority: 6  },
-  SEASON_PULSE:    { id: 'SEASON_PULSE',    label: 'Pulso da temporada',  icon: '📡', color: '#8BC34A', priority: 5  },
+  BREAKING:        { id: 'BREAKING',        label: 'Urgente',             icon: '??', color: '#FF5252', priority: 10 },
+  PREVIEW:         { id: 'PREVIEW',         label: 'Pré-Torneio',         icon: '???', color: '#5CB8E4', priority: 6  },
+  PREDICTION:      { id: 'PREDICTION',      label: 'Palpites',            icon: '??', color: '#26C6DA', priority: 7  },
+  CHAMPION:    { id: 'CHAMPION',   label: 'Campeão',        icon: '??', color: '#E8C84A', priority: 10 },
+  UPSET:       { id: 'UPSET',      label: 'Zebra',          icon: '?', color: '#FF6B35', priority: 9  },
+  EPIC_MATCH:  { id: 'EPIC_MATCH', label: 'Duelo épico',   icon: '??', color: '#EF5350', priority: 8  },
+  RIVALRY:     { id: 'RIVALRY',    label: 'Rivalidade',     icon: '??', color: '#E040FB', priority: 8  },
+  RECORD:      { id: 'RECORD',     label: 'Recorde',        icon: '??', color: '#2ECC71', priority: 7  },
+  INJURY:          { id: 'INJURY',          label: 'Lesão',              icon: '??', color: '#F44336', priority: 7  },
+  INJURY_FOLLOWUP: { id: 'INJURY_FOLLOWUP', label: 'Atualização: Lesão', icon: '??', color: '#FF7043', priority: 6  },
+  INJURY_SURGERY:  { id: 'INJURY_SURGERY',  label: 'Cirurgia',           icon: '??', color: '#B71C1C', priority: 8  },
+  COMEBACK:    { id: 'COMEBACK',   label: 'Retorno',        icon: '??', color: '#00BCD4', priority: 6  },
+  PROSPECT:    { id: 'PROSPECT',   label: 'Revelação',      icon: '??', color: '#66BB6A', priority: 6  },
+  RETIREMENT:  { id: 'RETIREMENT', label: 'Aposentadoria',  icon: '??', color: '#90A4AE', priority: 7  },
+  OLYMPIC_GOLD:  { id: 'OLYMPIC_GOLD',   label: 'Ouro Olímpico',   icon: '??', color: '#FFD700', priority: 10 },
+  OLYMPIC_MEDAL: { id: 'OLYMPIC_MEDAL',  label: 'Medalha Olímpica', icon: '??', color: '#90A4AE', priority: 8  },
+  ANALYSIS:        { id: 'ANALYSIS',        label: 'Análise',            icon: '??', color: '#4A90D9', priority: 4  },
+  COLUMN:          { id: 'COLUMN',          label: 'Coluna',             icon: '??', color: '#D4A017', priority: 3  },
+  RUMOR:           { id: 'RUMOR',           label: 'Rumor',              icon: '??', color: '#AB47BC', priority: 5  },
+  TOURNAMENT_WRAP: { id: 'TOURNAMENT_WRAP', label: 'Balanço do Torneio', icon: '??', color: '#5CB8E4', priority: 6  },
+  SPONSOR:         { id: 'SPONSOR',         label: 'Patrocínio',          icon: '??', color: '#60C8FF', priority: 5  },
+  SPONSOR_ELITE:   { id: 'SPONSOR_ELITE',   label: 'Patrocínio Elite',    icon: '??', color: '#FFD700', priority: 9  },
+  COACHING:        { id: 'COACHING',        label: 'Banco Vivo',          icon: '??', color: '#80DEEA', priority: 7  },
+  LIFE_EVENT:      { id: 'LIFE_EVENT',      label: 'Vida',                icon: '??', color: '#A5D6A7', priority: 5  },
+  LIFE_RUMOR:      { id: 'LIFE_RUMOR',      label: 'Bastidores',          icon: '??', color: '#CE93D8', priority: 6  },
+  SEASON_PULSE:    { id: 'SEASON_PULSE',    label: 'Pulso da temporada',  icon: '??', color: '#8BC34A', priority: 5  },
 };
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // CONFIGURAÇÃO POR TIER DE TORNEIO
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // Cada categoria de torneio tem identidade editorial própria:
 //  maxArticles          — teto de artigos gerados
 //  preferredJournalists — IDs preferidos (têm 65% de prioridade)
@@ -255,7 +260,7 @@ export const NEWS_TYPES = {
 //  upsetMaxLoserRank    — ranking máximo do perdedor para ser "interesse público"
 //  specialArticles      — artigos exclusivos do tier
 //  coverDeepRounds      — se R16/R32 podem gerar artigos de upset
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 export const TOURNAMENT_TIER_CONFIG = {
 
@@ -360,7 +365,7 @@ export const TOURNAMENT_TIER_CONFIG = {
   FINALS: {
     maxArticles:          6,
     preferredJournalists: ['KOWALSKI', 'CARVALHO'],
-    disabledTypes:        new Set(['UPSET']),  // sem zebras — campo é os 8 melhores
+    disabledTypes:        new Set(['UPSET']),  // sem zebras — campo — os 8 melhores
     analysisChance:       1.0,
     rumorChance:          0.2,
     epicMinRound:         1,
@@ -387,11 +392,14 @@ export const TOURNAMENT_TIER_CONFIG = {
 
 };
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // HELPERS INTERNOS
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function pick(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return undefined;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 function rng(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function chance(p) { return Math.random() < p; }
 
@@ -405,8 +413,8 @@ function isEpic(match) {
   const sets = match.result.setsDetail;
   // 3+ sets e pelo menos um set foi para 7-5 ou tiebreak (6-7 ou 7-6)
   if (sets.length < 3) return false;
-  const hasTiebreak = sets.some(([a, b]) => (a === 7 && b === 6) || (a === 6 && b === 7));
-  const hasDecider  = sets.some(([a, b]) => Math.abs(a - b) <= 1 && Math.max(a, b) >= 6);
+  const hasTiebreak = sets.some(([a, b]) => (a === 4 && b === 3) || (a === 3 && b === 4));
+  const hasDecider  = sets.some(([a, b]) => Math.abs(a - b) <= 1 && Math.max(a, b) >= 4);
   return hasTiebreak || hasDecider;
 }
 
@@ -440,10 +448,21 @@ function catLabel(category) {
   return map[category] ?? category;
 }
 
+function hasJournalistVoice(journalist) {
+  return Boolean(
+    journalist &&
+    journalist.id &&
+    Array.isArray(journalist.voice?.opening) && journalist.voice.opening.length &&
+    Array.isArray(journalist.voice?.closing) && journalist.voice.closing.length
+  );
+}
+
 function pickJournalist(preferredStyle, excludeIds = []) {
-  const all = Object.values(JOURNALISTS).filter(j => !excludeIds.includes(j.id));
+  const all = Object.values(JOURNALISTS).filter(
+    journalist => hasJournalistVoice(journalist) && !excludeIds.includes(journalist.id)
+  );
   if (preferredStyle) {
-    const match = all.filter(j => j.style === preferredStyle);
+    const match = all.filter(journalist => journalist.style === preferredStyle);
     if (match.length) return pick(match);
   }
   return pick(all);
@@ -454,6 +473,8 @@ function tournamentSurfaceLabel(surface) {
     HARD: 'quadra dura',
     CLAY: 'saibro',
     GRASS: 'grama',
+    STREET: 'asfalto',
+    CARPET: 'veludo',
     INDOOR: 'indoor',
   };
   return map[surface] ?? 'piso principal';
@@ -1122,10 +1143,10 @@ export function generateUpcomingTournamentNews(tournament, preparedPackage, stat
   return articles.sort((a, b) => (NEWS_TYPES[b.type]?.priority ?? 0) - (NEWS_TYPES[a.type]?.priority ?? 0));
 }
 
-// ─────────────────────────────────────────────────────────────────
-// HELPERS DE PERSONALIDADE — lêem player.personality para modular
+// -----------------------------------------------------------------
+// HELPERS DE PERSONALIDADE — leem player.personality para modular
 // cobertura jornalística (Bloco 2 do sistema de personalidade dinâmica)
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 /**
  * Retorna o jornalista preferido para cobrir um jogador com base
@@ -1145,12 +1166,12 @@ function _journalistForPlayer(player) {
   const age    = player.age ?? 25;
   const moments= pers.careerMoments ?? [];
 
-  // PETROV/CARVALHO (analítico/literário) → dominância, legado, ícone
+  // PETROV/CARVALHO (analítico/literário) ? dominância, legado, ícone
   if (['DOMINANT','LEGACY_AWARE','AT_PEAK'].includes(mood) && repId === 'ICON') {
     return chance(0.6) ? JOURNALISTS.PETROV : JOURNALISTS.CARVALHO;
   }
 
-  // SANTOS (narrativa humana) → retorno, vulnerabilidade, despedida, lesão
+  // SANTOS (narrativa humana) ? retorno, vulnerabilidade, despedida, lesão
   if (['COMEBACK','VULNERABLE','FAREWELL_TOUR'].includes(mood)) {
     return JOURNALISTS.SANTOS;
   }
@@ -1158,19 +1179,20 @@ function _journalistForPlayer(player) {
     return JOURNALISTS.SANTOS;
   }
 
-  // FONTAINE (gossip/bastidores) → crise, isolamento, persona shift, esgotamento
+  // FONTAINE (gossip/bastidores) ? crise, isolamento, persona shift, esgotamento
   if (['ISOLATED','CRISIS','DESTABILIZED','BURNED_OUT'].includes(mood)) {
     return JOURNALISTS.FONTAINE;
   }
   if (moments.some(m => m.type === 'PERSONA_SHIFT' && m.year === player._currentYear)) {
     return JOURNALISTS.FONTAINE;
   }
-  const bondScore = player.coach?.bondScore ?? null;
-  if (bondScore != null && bondScore < 20) {
+  const coachTrust = player.coaching?.trust ?? null;
+  const coachFriction = player.coaching?.friction ?? null;
+  if ((coachTrust != null && coachTrust < 28) || (coachFriction != null && coachFriction > 78)) {
     return JOURNALISTS.FONTAINE;
   }
 
-  // REED (opinião/crítica) → vilão, amargura, drought longo
+  // REED (opinião/crítica) ? vilão, amargura, drought longo
   if (repId === 'VILLAIN' || mood === 'BITTER') {
     return JOURNALISTS.REED;
   }
@@ -1184,7 +1206,7 @@ function _journalistForPlayer(player) {
   })();
   if (droughtYears >= 3) return JOURNALISTS.REED;
 
-  // NAKANO (hype) → jovens prodigiosos
+  // NAKANO (hype) ? jovens prodigiosos
   if (age < 22 && ['PRODIGY','RISING_STAR'].includes(repId)) {
     return JOURNALISTS.NAKANO;
   }
@@ -1295,7 +1317,7 @@ function genPersonalityColumns(allPlayers, year) {
 
     let headline, deck, body, type, tags;
 
-    // ── FAREWELL_TOUR ──
+    // -- FAREWELL_TOUR --
     if (mood === 'FAREWELL_TOUR' && !used.has('farewell')) {
       used.add('farewell');
       headline = `${name} e o fim que o circuito não quer que chegue`;
@@ -1310,21 +1332,21 @@ function genPersonalityColumns(allPlayers, year) {
       type = 'COLUMN'; tags = ['despedida', 'carreira', 'farewell'];
     }
 
-    // ── COMEBACK após lesão ──
+    // -- COMEBACK após lesão --
     else if (mood === 'COMEBACK' && !used.has('comeback')) {
       used.add('comeback');
       headline = `O retorno de ${name} — e o que foi provado ao voltar`;
       deck     = narrative || `Voltou. E o circuito lembrou por que sente falta.`;
       body     = [
         pick(j.voice.opening),
-        `Há retornos que são só físicos. E há retornos que mudam quem o atleta é. O de ${name} parece ser do segundo tipo.`,
+        `HÁ retornos que são só físicos. E há retornos que mudam quem o atleta é. O de ${name} parece ser do segundo tipo.`,
         `O circuito acompanhou de perto. Houve um momento — dentro ou fora da quadra — em que ficou claro que ${name} não voltou apenas para competir. Voltou para provar algo que só ele sabia que precisava provar.`,
         pick(j.voice.closing),
       ].filter(Boolean).join(' ');
       type = 'COMEBACK'; tags = ['retorno', 'comeback', 'superação'];
     }
 
-    // ── CRISIS ──
+    // -- CRISIS --
     else if (mood === 'CRISIS' && !used.has('crisis')) {
       used.add('crisis');
       headline = `O que está acontecendo com ${name}?`;
@@ -1339,21 +1361,21 @@ function genPersonalityColumns(allPlayers, year) {
       type = 'COLUMN'; tags = ['crise', 'bastidores', 'análise'];
     }
 
-    // ── DOMINANT + ICON ──
+    // -- DOMINANT + ICON --
     else if (mood === 'DOMINANT' && repId === 'ICON' && !used.has('dominant')) {
       used.add('dominant');
       headline = `${name}: ninguém tem resposta. Ele sabe disso`;
       deck     = narrative || `Uma dominância que o circuito tenta processar.`;
       body     = [
         pick(j.voice.opening),
-        `Há um ponto na carreira de poucos jogadores em que a pergunta deixa de ser "ele vai vencer?" e passa a ser "quem vai conseguir parar isso?". ${name} chegou nesse ponto.`,
+        `HÁ um ponto na carreira de poucos jogadores em que a pergunta deixa de ser "ele vai vencer?" e passa a ser "quem vai conseguir parar isso?". ${name} chegou nesse ponto.`,
         `A temporada confirmou o que os últimos anos vinham construindo. O circuito não está perdendo para ${name} por falta de talento. Está perdendo porque ${name} encontrou uma versão de si mesmo que ainda não tem resposta conhecida.`,
         pick(j.voice.closing),
       ].filter(Boolean).join(' ');
       type = 'COLUMN'; tags = ['dominância', 'ícone', 'análise'];
     }
 
-    // ── LEGACY_AWARE ──
+    // -- LEGACY_AWARE --
     else if (mood === 'LEGACY_AWARE' && !used.has('legacy')) {
       used.add('legacy');
       headline = `${name} fala com quem já chegou lá — o peso de ser histórico`;
@@ -1361,13 +1383,13 @@ function genPersonalityColumns(allPlayers, year) {
       body     = [
         pick(j.voice.opening),
         `Tem um tipo de entrevista que só acontece numa fase específica de carreira: quando o jogador já não precisa provar nada, mas ainda está no processo de entender o que construiu. ${name} está nessa fase.`,
-        `As respostas são mais longas. As pausas são diferentes. Há algo em ${name} que transcende o resultado — e o circuito começa a perceber isso de um jeito que vai demorar para ser processado completamente.`,
+        `As respostas são mais longas. As pausas são diferentes. HÁ algo em ${name} que transcende o resultado — e o circuito começa a perceber isso de um jeito que vai demorar para ser processado completamente.`,
         pick(j.voice.closing),
       ].filter(Boolean).join(' ');
       type = 'COLUMN'; tags = ['legado', 'carreira', 'ícone'];
     }
 
-    // ── BITTER/RESISTANT (estados secundários) ──
+    // -- BITTER/RESISTANT (estados secundários) --
     else if (SECONDARY_MOODS.has(mood) && !used.has(mood)) {
       used.add(mood);
       const moodTemplates = {
@@ -1382,7 +1404,7 @@ function genPersonalityColumns(allPlayers, year) {
           ].filter(Boolean).join(' '),
         },
         OBSESSED: {
-          headline: `Há um adversário que mora na cabeça de ${name}`,
+          headline: `HÁ um adversário que mora na cabeça de ${name}`,
           deck:     narrative || `A rivalidade passou a ser sobre mais que tênis.`,
           body:     [
             pick(j.voice.opening),
@@ -1397,7 +1419,7 @@ function genPersonalityColumns(allPlayers, year) {
           body:     [
             pick(j.voice.opening),
             `${name} tem uma relação particular com a realidade quando o assunto é declínio: nega, combate, ignora. Funciona mais vezes do que deveria.`,
-            `Mas há algo diferente nesta temporada. O discurso combativo está lá — sempre esteve. O que mudou é o que está por baixo dele.`,
+            `Mas há algo diferente nesta temporada. O discurso combativo está lá — sempre esteve. O que mudou — o que está por baixo dele.`,
             pick(j.voice.closing),
           ].filter(Boolean).join(' '),
         },
@@ -1412,11 +1434,11 @@ function genPersonalityColumns(allPlayers, year) {
           ].filter(Boolean).join(' '),
         },
         SEARCHING: {
-          headline: `${name} em busca de resposta — a temporada que mais levantou dúvidas`,
+          headline: `${name} em busca de resposta é a temporada que mais levantou dúvidas`,
           deck:     narrative || `As perguntas chegaram mais rápido do que as respostas.`,
           body:     [
             pick(j.voice.opening),
-            `Há temporadas que produzem troféus. Há temporadas que produzem perguntas. A de ${name} foi do segundo tipo — e isso não é necessariamente ruim.`,
+            `HÁ temporadas que produzem troféus. HÁ temporadas que produzem perguntas. A de ${name} foi do segundo tipo — e isso não é necessariamente ruim.`,
             `Quem está em busca ainda tem algo a encontrar. O problema é quando a busca dura mais do que a paciência — do atleta ou do circuito.`,
             pick(j.voice.closing),
           ].filter(Boolean).join(' '),
@@ -1463,11 +1485,11 @@ function genPersonalityColumns(allPlayers, year) {
   return articles;
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // GERADORES DE ARTIGO POR TIPO
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
-// ── EDITORIAL BRAIN ──────────────────────────────────────────────
+// -- EDITORIAL BRAIN ----------------------------------------------
 // Fase 2: a redação escolhe uma tese antes de publicar.
 // Isso não substitui os textos ainda; injeta angulo, stakes e memoria
 // para a Fase 3 transformar voz/formato sem depender de templates cegos.
@@ -1652,7 +1674,7 @@ function pickEditorialAngle(article, ctx) {
   if (article?.type === 'CHAMPION' && (recentChampionArticles >= 2 || mood === 'DOMINANT' || mood === 'AT_PEAK')) {
     return EDITORIAL_ANGLES.DYNASTY;
   }
-  if (article?.type === 'CHAMPION' && tournamentSurface && ['CLAY', 'HARD', 'GRASS', 'INDOOR', 'CARPET'].includes(tournamentSurface)) {
+  if (article?.type === 'CHAMPION' && tournamentSurface && ['CLAY', 'HARD', 'GRASS', 'STREET', 'CARPET', 'INDOOR'].includes(tournamentSurface)) {
     return EDITORIAL_ANGLES.SURFACE_IDENTITY;
   }
   if (article?.type === 'CHAMPION' && (rank > 12 || recentPlayerArticles === 0)) {
@@ -2082,7 +2104,7 @@ function applyEditorialBrain(article, ctx) {
   return polishEditorialArticle(enriched, angle, thesis, ctx);
 }
 
-// ── CAMPEÃO ──────────────────────────────────────────────────────
+// -- CAMPEÃO ------------------------------------------------------
 
 function genChampion({ tournament, bracket, year, rivalrySystem, allPlayers }) {
   const champ = bracket.champion;
@@ -2101,7 +2123,7 @@ function genChampion({ tournament, bracket, year, rivalrySystem, allPlayers }) {
   const score     = finalMatch ? formatScore(finalMatch.result?.setsDetail) : '';
   const rank      = champ.rankPosition ?? '?';
 
-  // ── Personalidade do campeão ─────────────────────────────────
+  // -- Personalidade do campeão ---------------------------------
   const champFull     = allPlayers.find(p => p.id === champ.id) ?? champ;
   const cMood         = champFull.personality?.currentState?.mood;
   const cNarrative    = champFull.personality?.currentState?.publicNarrative ?? '';
@@ -2188,7 +2210,7 @@ function genChampion({ tournament, bracket, year, rivalrySystem, allPlayers }) {
     deck = `Uma análise do desempenho de ${champ.name} em ${tournament.location} e o que ele significa para o ranking.`;
     body = [
       pick(j.voice.opening),
-      `${champ.name} terminou o torneio sem perder um set nos primeiros rounds — padrão que se tornou marca registrada do jogador em ${tournament.surface === 'CLAY' ? 'saibro' : tournament.surface === 'GRASS' ? 'grama' : 'quadra dura'}.`,
+      `${champ.name} terminou o torneio sem perder um set nos primeiros rounds — padrão que se tornou marca registrada do jogador em ${tournamentSurfaceLabel(tournament.surface)}.`,
       finalist ? `A vitória sobre ${finalist.name} na final (${score || 'placar não disponível'}) foi a mais complicada da semana, mas ${champ.name} nunca perdeu o controle do jogo.` : '',
       `Com este título, ${champ.name} consolida sua posição no ${rankLabel(rank)}.`,
       pick(j.voice.closing),
@@ -2242,7 +2264,7 @@ function genChampion({ tournament, bracket, year, rivalrySystem, allPlayers }) {
   }));
 }
 
-// ── ZEBRA / UPSET ────────────────────────────────────────────────
+// -- ZEBRA / UPSET ------------------------------------------------
 
 function genUpset({ tournament, match, year, round }) {
   const winner = match.winner;
@@ -2260,7 +2282,7 @@ function genUpset({ tournament, match, year, round }) {
   const j          = journalist;
   const score      = formatScore(match.result?.setsDetail);
   const cat        = catLabel(tournament.category);
-  const roundLabel = { F:'Final', SF:'Semifinal', QF:'Quartas', R16:'Oitavas', R32:'3ª Rodada' }[round] ?? round;
+  const roundLabel = { F:'Final', SF:'Semifinal', QF:'Quartas', R16:'Oitavas', R32:'3º Rodada' }[round] ?? round;
 
   const isEpicMatch = isEpic(match);
 
@@ -2268,15 +2290,15 @@ function genUpset({ tournament, match, year, round }) {
     ? `A zebra mais improvável da temporada: ${winner.name} (${wRank}º) elimina ${loser.name} (${lRank}º) na ${roundLabel}`
     : `Surpresa em ${tournament.location}: ${winner.name} derruba ${loser.name}${isEpicMatch ? ' num jogo que vai ser lembrado' : ''}`;
 
-  const deck = `${cat} · ${tournament.name}. ${score ? score + '. ' : ''}O ${lRank}º do mundo foi eliminado na ${roundLabel}.`;
+  const deck = `${cat} — ${tournament.name}. ${score ? score + '. ' : ''}O ${lRank}º do mundo foi eliminado na ${roundLabel}.`;
 
   const body = [
     pick(j.voice.opening),
     `${winner.name} derrotou ${loser.name}${score ? ' por ' + score : ''} e provocou o resultado mais surpreendente da semana em ${tournament.location}.`,
     isEpicMatch
-      ? `Não foi um acidente. ${winner.name} produziu tênis de altíssimo nível durante toda a partida — o tipo de jogo que obriga o adversário a reconhecer que perdeu, não apenas que o outro ganhou.`
+      ? `Não foi um acidente. ${winner.name} produziu tênis de altíssimo nível durante toda a partida é o tipo de jogo que obriga o adversário a reconhecer que perdeu, não apenas que o outro ganhou.`
       : `${loser.name} nunca encontrou o ritmo. O placar conta uma história mais simples do que o jogo foi, mas o resultado é inegável.`,
-    `Para ${winner.name}, a vitória sobre o ${rankLabel(lRank)} é o maior resultado da carreira.`,
+    `Para ${winner.name}, a vitória sobre o ${rankLabel(lRank)} — o maior resultado da carreira.`,
     pick(j.voice.closing),
   ].filter(Boolean).join(' ');
 
@@ -2297,7 +2319,7 @@ function genUpset({ tournament, match, year, round }) {
   }, buildUpsetImpact({ tournament, match, round }));
 }
 
-// ── DUELO ÉPICO ──────────────────────────────────────────────────
+// -- DUELO ÉPICO --------------------------------------------------
 
 function genEpicMatch({ tournament, match, year, round }) {
   if (!isEpic(match)) return null;
@@ -2349,7 +2371,7 @@ function genEpicMatch({ tournament, match, year, round }) {
   }, buildEpicMatchImpact({ tournament, match, round }));
 }
 
-// ── RIVALIDADE ───────────────────────────────────────────────────
+// -- RIVALIDADE ---------------------------------------------------
 
 function genRivalry({ tournament, match, year, round, rivalrySystem }) {
   if (!rivalrySystem || !match.playerA || !match.playerB) return null;
@@ -2375,7 +2397,7 @@ function genRivalry({ tournament, match, year, round, rivalrySystem }) {
 
   const headline = totalMatches >= 10
     ? `Capítulo ${totalMatches + 1} da rivalidade: ${winner.name} vence ${loser.name} na ${roundLabel} de ${tournament.name}`
-    : `${winner.name} × ${loser.name}: mais um encontro, mais uma história no ${tournament.name}`;
+    : `${winner.name} — ${loser.name}: mais um encontro, mais uma história no ${tournament.name}`;
 
   const deck = rivalry.narrative
     ? rivalry.narrative
@@ -2386,7 +2408,7 @@ function genRivalry({ tournament, match, year, round, rivalrySystem }) {
     rivalry.narrative
       ? rivalry.narrative
       : `${pA.name} e ${pB.name} se conhecem bem demais para que um confronto entre eles seja simples.`,
-    `A ${roundLabel} de ${tournament.name} adicionou mais um capítulo. ${winner.name} venceu${score ? ' por ' + score : ''} e o head-to-head vai a ${wWins + 1} × ${lWins}.`,
+    `A ${roundLabel} de ${tournament.name} adicionou mais um capítulo. ${winner.name} venceu${score ? ' por ' + score : ''} e o head-to-head vai a ${wWins + 1} — ${lWins}.`,
     `Cada confronto entre esses dois pesa diferente. Não é só o ranking em jogo — é uma narrativa que os dois carregam.`,
     pick(j.voice.closing),
   ].filter(Boolean).join(' ');
@@ -2409,11 +2431,11 @@ function genRivalry({ tournament, match, year, round, rivalrySystem }) {
   }, buildRivalryImpact({ tournament, match, rivalry, round }));
 }
 
-// ── LESÃO ────────────────────────────────────────────────────────
+// -- LESÃO --------------------------------------------------------
 
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // HELPER INTERNO — Grand Slams que o jogador vai perder
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 /**
  * Retorna os nomes dos Grand Slams que ocorrem enquanto o jogador está fora.
@@ -2427,7 +2449,7 @@ function getMissedSlams(currentWeekIndex, slotsOut) {
   const missed = [];
   for (const slam of slams) {
     const wi = slam.weekIndex;
-    // Cobre a janela do próximo ciclo (até 41 slots à frente — 1 temporada)
+    // Cobre a janela do próximo ciclo (até 41 slots — frente — 1 temporada)
     const normalizedWi = wi >= currentWeekIndex ? wi : wi + 41;
     if (normalizedWi > currentWeekIndex && normalizedWi <= currentWeekIndex + slotsOut) {
       missed.push(slam.name);
@@ -2436,9 +2458,9 @@ function getMissedSlams(currentWeekIndex, slotsOut) {
   return missed.slice(0, 4);
 }
 
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // GERAÇÃO DE ARTIGO — LESÃO INICIAL
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 function genInjury({ player, injury, tournament, year }) {
   if (!player || !injury) return null;
@@ -2447,7 +2469,7 @@ function genInjury({ player, injury, tournament, year }) {
   const isGrade3   = injury.grade === 3 && !isSurgery;
   const isSerious  = injury.grade >= 2;
 
-  // Jornalista: cirurgia/grave → narrativo ou literário; leve → gossip ou opinião
+  // Jornalista: cirurgia/grave ? narrativo ou literário; leve ? gossip ou opinião
   const journalistStyle = isSurgery || isGrade3
     ? (chance(0.5) ? 'NARRATIVE' : 'LITERARY')
     : (chance(0.5) ? 'NARRATIVE' : 'GOSSIP');
@@ -2465,7 +2487,7 @@ function genInjury({ player, injury, tournament, year }) {
       : (TYPE_NAMES[injury.type] ?? injury.type.toLowerCase()))
     : 'região não divulgada';
 
-  // ── Slams perdidos ───────────────────────────────────────────
+  // -- Slams perdidos -------------------------------------------
   const currentWeekIndex = tournament?.weekIndex ?? 0;
   const slotsOut         = injury.slotsRemaining ?? 0;
   const missedSlams      = getMissedSlams(currentWeekIndex, slotsOut);
@@ -2473,10 +2495,10 @@ function genInjury({ player, injury, tournament, year }) {
     ? `${missedSlams.join(', ')}`
     : null;
 
-  // ── Recidiva / crônico ───────────────────────────────────────
+  // -- Recidiva / crônico ---------------------------------------
   const { isChronic, repeatCount, chronicLabel } = getRecidiveInfo(player, injury.type);
 
-  // ── Artigo de CIRURGIA (grau 4) ──────────────────────────────
+  // -- Artigo de CIRURGIA (grau 4) ------------------------------
   if (isSurgery) {
     const monthsOut = Math.round(slotsOut / 3.5 * 10) / 10; // ~3.5 slots/mês
     const returnEstimate = slotsOut >= 24
@@ -2495,7 +2517,7 @@ function genInjury({ player, injury, tournament, year }) {
 
     const bodyParts = [
       pick(j.voice.opening),
-      `A notícia que o circuito temia chegou: ${player.name} vai à cirurgia. A lesão no ${typeName} — confirmada após exames — não deixou alternativa.`,
+      `A notícia que o circuito temia chegou: ${player.name} vai à cirurgia. A lesão no ${typeName} é confirmada após exames — não deixou alternativa.`,
       chronicLabel
         ? `Não é a primeira vez. O histórico de ${player.name} com o ${typeName} já era conhecido. Desta vez, o corpo enviou um ultimato.`
         : `A pressão acumulada de torneios consecutivos cobrou o seu preço. O circuito vai sentir a ausência.`,
@@ -2522,7 +2544,7 @@ function genInjury({ player, injury, tournament, year }) {
     };
   }
 
-  // ── Artigo grau 3 (grave, sem cirurgia) ─────────────────────
+  // -- Artigo grau 3 (grave, sem cirurgia) ---------------------
   if (isGrade3) {
     const headline = chronicLabel
       ? `${player.name} fora por até ${slotsOut} torneios — ${chronicLabel}`
@@ -2536,7 +2558,7 @@ function genInjury({ player, injury, tournament, year }) {
 
     const bodyParts = [
       pick(j.voice.opening),
-      `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} — classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
+      `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} é classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
       chronicLabel
         ? `O histórico é um fator. Esse ${typeName} de ${player.name} já foi motivo de preocupação antes. ${repeatCount >= 3 ? 'Terceira ocorrência. O circuito não consegue mais fingir surpresa.' : 'Segunda vez. O risco de sequelas a longo prazo começa a entrar na conversa.'}`
         : `A decisão de abandonar era inevitável. O circuito entende. O corpo tem o seu próprio cronograma, e ele não respeita calendários de torneios.`,
@@ -2563,7 +2585,7 @@ function genInjury({ player, injury, tournament, year }) {
     };
   }
 
-  // ── Artigo grau 2 (moderado) ─────────────────────────────────
+  // -- Artigo grau 2 (moderado) ---------------------------------
   if (isSerious) {
     const headline = chronicLabel
       ? `${player.name} para — ${chronicLabel}. Afastamento de ${slotsOut} torneio(s)`
@@ -2573,7 +2595,7 @@ function genInjury({ player, injury, tournament, year }) {
 
     const bodyParts = [
       pick(j.voice.opening),
-      `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} — classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
+      `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} é classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
       chronicLabel
         ? `Não é novidade para quem acompanha: ${chronicLabel}. O risco de se tornar um problema estrutural é real.`
         : `Jogar com dor diz algo sobre a mentalidade do atleta. Mas o circuito vai acompanhar de perto os próximos passos.`,
@@ -2597,7 +2619,7 @@ function genInjury({ player, injury, tournament, year }) {
     };
   }
 
-  // ── Artigo grau 1 (leve) ─────────────────────────────────────
+  // -- Artigo grau 1 (leve) -------------------------------------
   const headline = chronicLabel
     ? `${player.name} joga machucado: ${chronicLabel} ressurge no ${tournament?.name ?? 'circuito'}`
     : `${player.name} joga machucado: dores no ${typeName} acompanham o circuito nesta semana`;
@@ -2606,7 +2628,7 @@ function genInjury({ player, injury, tournament, year }) {
 
   const bodyParts = [
     pick(j.voice.opening),
-    `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} — classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
+    `${player.name} confirmou o que alguns já suspeitavam. A lesão no ${typeName} é classificada como grau ${injury.grade} — passou a ser parte do ambiente desta semana.`,
     chronicLabel
       ? `${chronicLabel.charAt(0).toUpperCase() + chronicLabel.slice(1)}. O circuito vai observar com atenção o quanto essa limitação vai pesar.`
       : `Por ora, ${player.name} mantém o compromisso com a temporada. Quanto tempo isso vai durar com as dores presentes é a questão.`,
@@ -2630,9 +2652,9 @@ function genInjury({ player, injury, tournament, year }) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // GERAÇÃO DE ARTIGO — ACOMPANHAMENTO DE LESÃO
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 /**
  * Gera artigo de follow-up para jogadores com lesão ativa (slotsRemaining > 0).
@@ -2675,7 +2697,7 @@ function genInjuryFollowUp({ player, injury, tournament, year }) {
   else if (elapsed <= 2)             phase = 'EARLY';
   else                               phase = 'MID';
 
-  // ── Fase LATE — véspera do retorno ───────────────────────────
+  // -- Fase LATE — véspera do retorno ---------------------------
   if (phase === 'LATE') {
     const headline = isSurgery
       ? `${player.name} volta ao treino. Retorno ao circuito na próxima semana após cirurgia`
@@ -2713,7 +2735,7 @@ function genInjuryFollowUp({ player, injury, tournament, year }) {
     };
   }
 
-  // ── Fase EARLY — confirmação da extensão ─────────────────────
+  // -- Fase EARLY — confirmação da extensão ---------------------
   if (phase === 'EARLY') {
     const headline = isSurgery
       ? `Cirurgia de ${player.name} confirmada: ${slots} torneio(s) fora${missedSlamStr ? ` — e sem ${missedSlamStr}` : ''}`
@@ -2755,7 +2777,7 @@ function genInjuryFollowUp({ player, injury, tournament, year }) {
     };
   }
 
-  // ── Fase MID — o circuito sem ele ────────────────────────────
+  // -- Fase MID — o circuito sem ele ----------------------------
   const headline = chronicLabel
     ? `Onde está ${player.name}? ${chronicLabel} — semanas de silêncio`
     : `${player.name} ainda fora. Reabilitação avança, retorno sem data confirmada`;
@@ -2790,7 +2812,7 @@ function genInjuryFollowUp({ player, injury, tournament, year }) {
   };
 }
 
-// ── PROSPECT ─────────────────────────────────────────────────────
+// -- PROSPECT -----------------------------------------------------
 
 function genProspect({ player, tournament, year, milestone }) {
   const journalist = pickJournalist('HYPE');
@@ -2830,7 +2852,7 @@ function genProspect({ player, tournament, year, milestone }) {
   };
 }
 
-// ── APOSENTADORIA ────────────────────────────────────────────────
+// -- APOSENTADORIA ------------------------------------------------
 
 function genRetirement({ player, retirementType, year }) {
   const journalist = pickJournalist('LITERARY');
@@ -2879,9 +2901,9 @@ function genRetirement({ player, retirementType, year }) {
   };
 }
 
-// ── RUMOR ────────────────────────────────────────────────────────
+// -- RUMOR --------------------------------------------------------
 
-// ── APOSENTADORIA DE TÉCNICO ────────────────────────────────────
+// -- APOSENTADORIA DE TÉCNICO ------------------------------------
 /**
  * Gera notícia de aposentadoria de um coach.
  * @param {object} coach          - coach que se aposentou
@@ -2967,11 +2989,12 @@ function genRumor({ player, tournament, year, topic }) {
   const journalist = pickJournalist('GOSSIP');
   const j          = journalist;
 
-  // ── Personalidade guia a escolha de tópico se não foi especificado ──
+  // -- Personalidade guia a escolha de típico se não foi especificado --
   if (!topic && player.personality?.currentState) {
     const mood      = player.personality.currentState.mood;
-    const bondScore = player.coach?.bondScore ?? null;
-    if (bondScore != null && bondScore < 25)           topic = 'TREINADOR_TROCA';
+    const coachTrust = player.coaching?.trust ?? null;
+    const coachFriction = player.coaching?.friction ?? null;
+    if ((coachTrust != null && coachTrust < 32) || (coachFriction != null && coachFriction > 76)) topic = 'TREINADOR_TROCA';
     else if (['VULNERABLE','CRISIS'].includes(mood))   topic = 'LESAO_ESCONDIDA';
     else if (['ISOLATED','BURNED_OUT'].includes(mood)) topic = 'CALENDARIO_MUDANCA';
     else if (mood === 'OBSESSED')                      topic = 'RIVAL_STATEMENT';
@@ -2997,7 +3020,7 @@ function genRumor({ player, tournament, year, topic }) {
     RIVAL_STATEMENT: {
       headline: `"Não é só tênis" — declaração de ${player.name} acende debate nos bastidores`,
       deck:     `Fontes dizem que a obsessão com um adversário específico já afeta decisões de calendário.`,
-      body:     `${pick(j.voice.opening)} ${player.name} não precisa citar o nome. Quem acompanha sabe. Há um adversário que mora nas decisões de calendário, nos comentários em entrevista, na postura em quadra. ${pick(j.voice.closing)}`,
+      body:     `${pick(j.voice.opening)} ${player.name} não precisa citar o nome. Quem acompanha sabe. HÁ um adversário que mora nas decisões de calendário, nos comentários em entrevista, na postura em quadra. ${pick(j.voice.closing)}`,
     },
   };
 
@@ -3020,7 +3043,7 @@ function genRumor({ player, tournament, year, topic }) {
   };
 }
 
-// ── COLUNA DE ANÁLISE ────────────────────────────────────────────
+// -- COLUNA DE ANÁLISE --------------------------------------------
 
 function genAnalysis({ tournament, bracket, year, allPlayers }) {
   const journalist = chance(0.6) ? JOURNALISTS.PETROV : JOURNALISTS.REED;
@@ -3040,7 +3063,7 @@ function genAnalysis({ tournament, bracket, year, allPlayers }) {
       ? `O ${cat} de ${tournament.location} produziu dados interessantes. O número de sets decididos por tiebreak ficou acima da média histórica — sinal de paridade competitiva ou de candidatos ao título sub-entregando?`
       : `O problema do ${tournament.name} este ano não foi o campeão${champ ? (' — ' + champ.name + ' merecia') : ''}. Foi o que não aconteceu: confrontos que deveriam ter sido finais terminaram antes da hora por razões que o ranking não captura.`,
     journalist.style === 'ANALYTICAL'
-      ? `${champ ? champ.name + ' venceu com consistência que os números confirmam.' : 'O campeão produziu tênis de alto nível ao longo da semana.'} Em ${tournament.surface === 'CLAY' ? 'saibro' : tournament.surface === 'GRASS' ? 'grama' : 'quadra dura'}, isso não é trivial.`
+      ? `${champ ? champ.name + ' venceu com consistência que os números confirmam.' : 'O campeão produziu tênis de alto nível ao longo da semana.'} Em ${tournamentSurfaceLabel(tournament.surface)}, isso não é trivial.`
       : `O circuito continua produzindo resultados que cabem na narrativa esperada. Mas o que não cabe é igualmente importante.`,
     pick(j.voice.closing),
   ].filter(Boolean).join(' ');
@@ -3061,9 +3084,9 @@ function genAnalysis({ tournament, bracket, year, allPlayers }) {
   }, buildTournamentTrendImpact({ tournament, champion: champ, strongestSignal: null }));
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // ORQUESTRADOR PRINCIPAL
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 /**
  * Gera artigos após um torneio ser simulado.
@@ -3073,7 +3096,7 @@ function genAnalysis({ tournament, bracket, year, allPlayers }) {
  * @param {object} state       — state completo do UniverseManager
  * @returns {Article[]}        — array de artigos gerados
  */
-// ── BALANÇO DO TORNEIO ────────────────────────────────────────────
+// -- BALANÇO DO TORNEIO --------------------------------------------
 /**
  * Gera o artigo de balanço final do torneio: média de heat de todos
  * os jogos e lista de jogadores que saíram lesionados com o tempo
@@ -3083,7 +3106,7 @@ function genAnalysis({ tournament, bracket, year, allPlayers }) {
  * @param {object} opts.tournament
  * @param {object} opts.bracket         — bracket completo com rounds
  * @param {number} opts.year
- * @param {object} opts.updatedByInjury — mapa playerId → playerObj pós-torneio
+ * @param {object} opts.updatedByInjury — mapa playerId ? playerObj pós-torneio
  * @param {Set}    opts.injuryWithdrawals — ids que se retiraram
  * @param {Array}  opts.allPlayers       — todos os jogadores do estado
  */
@@ -3091,7 +3114,7 @@ export function genTournamentWrap({ tournament, bracket, year, updatedByInjury =
   const rounds = bracket.rounds ?? [];
   const cat    = catLabel(tournament.category);
 
-  // ── 1. Média de Heat ────────────────────────────────────────────
+  // -- 1. Média de Heat --------------------------------------------
   const heatScores = [];
   for (const round of rounds) {
     for (const match of round) {
@@ -3130,7 +3153,7 @@ export function genTournamentWrap({ tournament, bracket, year, updatedByInjury =
     return `Média de ${n} pontos. A maioria das partidas transcorreu sem grandes emoções — semana de trabalho, não de teatro.`;
   }
 
-  // ── 2. Lesionados: pós-torneio (updatedByInjury) + withdrawals ──
+  // -- 2. Lesionados: pós-torneio (updatedByInjury) + withdrawals --
   const injuredList = [];
 
   // Jogadores que sofreram lesão durante o torneio (têm injury com slotsRemaining > 0)
@@ -3181,7 +3204,7 @@ export function genTournamentWrap({ tournament, bracket, year, updatedByInjury =
     return (a.rank ?? 999) - (b.rank ?? 999);
   });
 
-  // ── 3. Monta texto de afastamento ──────────────────────────────
+  // -- 3. Monta texto de afastamento ------------------------------
   function afastamentoText(entry) {
     if (entry.playing)  return 'jogando com restrições';
     if (entry.slots === 0) return 'retornando — debuff leve';
@@ -3189,7 +3212,7 @@ export function genTournamentWrap({ tournament, bracket, year, updatedByInjury =
     return `fora por ${entry.slots} torneio(s)`;
   }
 
-  // ── 4. Monta corpo do artigo ────────────────────────────────────
+  // -- 4. Monta corpo do artigo ------------------------------------
   const journalist = pickJournalist('ANALYTICAL');
   const j          = journalist;
   const champName  = bracket.champion?.name ?? null;
@@ -3268,9 +3291,9 @@ export function genTournamentWrap({ tournament, bracket, year, updatedByInjury =
   };
 }
 
-// ─────────────────────────────────────────────────────────────────
-// FASE 2: careerMoments → linha narrativa para qualquer artigo
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
+// FASE 2: careerMoments ? linha narrativa para qualquer artigo
+// -----------------------------------------------------------------
 
 /**
  * Gera uma linha de narrativa personalizada baseada nos careerMoments do jogador.
@@ -3331,9 +3354,9 @@ export function careerMomentNarrativeLine(player, opts = {}) {
   return builder ? builder() : (best.title ? `${name}: ${best.title}.` : '');
 }
 
-// ─────────────────────────────────────────────────────────────────
-// FASE 2: SPONSOR events → artigos NewsEngine
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
+// FASE 2: SPONSOR events ? artigos NewsEngine
+// -----------------------------------------------------------------
 
 /**
  * Converte chronicle events de patrocínio (do runSponsorshipWindow) em
@@ -3378,7 +3401,7 @@ export function generateSponsorNewsFromChronicleEvents(chronicleEvents, allPlaye
         ].filter(Boolean).join(' '),
         journalist:     journalist.id,
         journalistName: journalist.name,
-        icon:           '👑',
+        icon:           '??',
         color:          '#FFD700',
         playerIds:      [player.id],
         year,
@@ -3405,7 +3428,7 @@ export function generateSponsorNewsFromChronicleEvents(chronicleEvents, allPlaye
         ].filter(Boolean).join(' '),
         journalist:     journalist.id,
         journalistName: journalist.name,
-        icon:           '💔',
+        icon:           '??',
         color:          '#FF6060',
         playerIds:      [player.id],
         year,
@@ -3418,16 +3441,16 @@ export function generateSponsorNewsFromChronicleEvents(chronicleEvents, allPlaye
   return articles;
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // LIFE EVENT ARTICLES
 // Transforma eventos do LifeEventSystem em artigos do feed de notícias.
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 // Transforma eventos do LifeEventSystem em artigos do feed de notícias.
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 const LIFE_EVENT_JOURNALIST_MAP = {
-  // Categoria → estilo preferido de jornalista
+  // Categoria ? estilo preferido de jornalista
   PERSONAL:    'GOSSIP',
   HOME:        'GOSSIP',
   SOCIAL:      'NARRATIVE',
@@ -3440,9 +3463,9 @@ const LIFE_EVENT_JOURNALIST_MAP = {
   WELLNESS:    'NARRATIVE',  // novo
 };
 
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // SISTEMA DE PUBLICAÇÃO — decide se um evento merece ir ao feed
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 /**
  * Valor intrínseco de cada evento (0-10).
@@ -3532,7 +3555,6 @@ const LIFE_EVENT_NEWS_VALUE = {
   ATP_FINE:                6,
   SUSPENSION:              9,
   RIVAL_PUBLIC_FEUD:       7,
-  COACH_DRAMA:             6,
   FEDERATION_CONFLICT:     7,
   SOCIAL_MEDIA_MELTDOWN:   7,
   CHEATING_ALLEGATION:     8,
@@ -3558,13 +3580,11 @@ const LIFE_EVENT_NEWS_VALUE = {
   ANTI_MATERIALISM:        4,
   // CAREER
   COMEBACK_STATEMENT:      7,
-  COACH_RESET:             5,
   RANKING_CRISIS:          6,
   WILDCARD_ACCEPTANCE:     5,
   NATIONAL_CAPTAINCY:      6,
   RETIREMENT_THREAT:       8,
   RECORD_CHASE:            6,
-  COACHING_REFUSAL:        4,
   EARLY_PEAK_LAMENT:       5,
   // WELLNESS
   DIET_REVOLUTION:         3,
@@ -3585,7 +3605,7 @@ const LIFE_EVENT_NEWS_VALUE = {
 const LIFE_EVENT_IS_RUMOR = new Set([
   'AFFAIR_RUMOR', 'GAMBLING_RUMOR', 'CHEATING_ALLEGATION',
   'DOPING_ALLEGATION', 'TAX_EVASION', 'ESTRANGEMENT',
-  'RIVAL_PUBLIC_FEUD', 'COACH_DRAMA', 'SOCIAL_MEDIA_MELTDOWN',
+  'RIVAL_PUBLIC_FEUD', 'SOCIAL_MEDIA_MELTDOWN',
   'RANKING_CRISIS', 'RETIREMENT_THREAT',
 ]);
 
@@ -3593,10 +3613,10 @@ const LIFE_EVENT_IS_RUMOR = new Set([
  * Decide se um evento de vida deve ser publicado no feed.
  *
  * TIER DE PUBLICAÇÃO:
- *  S — Rank ≤10 ou marketability ≥80: tudo com newsValue ≥ 2
- *  A — Rank ≤30 ou marketability ≥60: eventos com newsValue ≥ 4
- *  B — Rank ≤60 ou marketability ≥40: eventos com newsValue ≥ 6
- *  C — Rank >60 ou marketability <40:  apenas eventos com newsValue ≥ 8 (crises graves)
+ *  S — Rank =10 ou marketability =80: tudo com newsValue = 2
+ *  A — Rank =30 ou marketability =60: eventos com newsValue = 4
+ *  B — Rank =60 ou marketability =40: eventos com newsValue = 6
+ *  C — Rank >60 ou marketability <40:  apenas eventos com newsValue = 8 (crises graves)
  *
  * @param {object} player
  * @param {object} event — { type, category, newsworthy }
@@ -3626,7 +3646,7 @@ export function shouldPublishLifeEvent(player, event, state = {}) {
 
   if (value < minValue) return { publish: false };
 
-  // Chance residual para tier B/C (não é garantido)
+  // Chance residual para tier B/C (não — garantido)
   if (tier === 'B' && value < 8) {
     if (Math.random() > 0.65) return { publish: false };
   }
@@ -3727,43 +3747,43 @@ const LIFE_EVENT_VOICES = {
     ENGAGEMENT:   (p, j) => `${pick(j.voice.opening)} ${p.name} saiu do circuito de boatos e entrou para o registro oficial: está noivado. Quem acompanha o jogador sabe que essa estabilidade pessoal costuma refletir em quadra. ${pick(j.voice.closing)}`,
     MARRIAGE:     (p, j) => `${pick(j.voice.opening)} ${p.name} se casa. Fora das câmeras de torneio, há uma vida que acontece. O circuito deseja os melhores votos. ${pick(j.voice.closing)}`,
     SEPARATION:   (p, j) => `${pick(j.voice.opening)} ${p.name} confirma separação. O comunicado foi breve. O impacto, ninguém sabe ainda. O tênis exige presença total — e o lado pessoal cobra o preço em silêncio. ${pick(j.voice.closing)}`,
-    DIVORCE:      (p, j) => `${pick(j.voice.opening)} O divórcio de ${p.name} foi confirmado. Mais um capítulo fechado fora da quadra. O que pesa mais no atleta — o que acontece dentro ou fora do jogo? Ninguém responde essa pergunta com facilidade. ${pick(j.voice.closing)}`,
+    DIVORCE:      (p, j) => `${pick(j.voice.opening)} O divórcio de ${p.name} foi confirmado. Mais um capítulo fechado fora da quadra. O que pesa mais no atleta é o que acontece dentro ou fora do jogo? Ninguém responde essa pergunta com facilidade. ${pick(j.voice.closing)}`,
     CHILD_BORN:   (p, j) => `${pick(j.voice.opening)} ${p.name} é pai. Primeiro filho, primeira vez que um Grand Slam deixa de ser a coisa mais importante do mundo. Isso muda um atleta. Sempre. ${pick(j.voice.closing)}`,
     TWINS_BORN:   (p, j) => `${pick(j.voice.opening)} Gêmeos. ${p.name} dobrou a família de uma vez. O circuito vai ter que se adaptar a um calendário que agora compartilha espaço com fraldas e noites sem dormir. ${pick(j.voice.closing)}`,
     ADOPTION:     (p, j) => `${pick(j.voice.opening)} ${p.name} adota. Por trás do ranking e dos títulos, há um ser humano que escolheu ampliar a família de uma forma que não costuma aparecer nos estatísticos. ${pick(j.voice.closing)}`,
     NEW_PARTNER:  (p, j) => `${pick(j.voice.opening)} Os holofotes fora da quadra: ${p.name} visto em companhia. Confirmado ou não, o circuito de boatos já está em movimento. ${pick(j.voice.closing)}`,
-    AFFAIR_RUMOR: (p, j) => `${pick(j.voice.opening)} A imprensa especula. ${p.name} ainda não comentou. O que é fato, o que é rumor e o que é entretenimento — três categorias que o circuito de fofoca raramente distingue. ${pick(j.voice.closing)}`,
+    AFFAIR_RUMOR: (p, j) => `${pick(j.voice.opening)} A imprensa especula. ${p.name} ainda não comentou. O que é fato, o que é rumor e o que é entretenimento é três categorias que o circuito de fofoca raramente distingue. ${pick(j.voice.closing)}`,
     FAMILY_LOSS:  (p, j) => `${pick(j.voice.opening)} ${p.name} comunica perda de familiar. O tênis vai continuar. O ranking vai continuar. Mas há momentos que lembram que o jogo é menor do que a vida. ${pick(j.voice.closing)}`,
     MENTAL_HEALTH_BREAK: (p, j) => `${pick(j.voice.opening)} ${p.name} anuncia pausa para cuidar da saúde mental. Em 2025, isso ainda tem peso de coragem. O circuito começa a entender que um atleta quebrado por dentro não serve a ninguém. ${pick(j.voice.closing)}`,
     THERAPY_PUBLIC: (p, j) => `${pick(j.voice.opening)} ${p.name} fala sobre terapia sem o menor constrangimento. "Faz parte do treino", disse. O circuito precisava ouvir isso de alguém com o ranking que ${p.name} tem. ${pick(j.voice.closing)}`,
     HEALTH_SCARE:  (p, j) => `${pick(j.voice.opening)} Fontes próximas à comissão técnica de ${p.name} confirmam que o atleta passou por bateria de exames esta semana. Os resultados não foram divulgados. O circuito espera. ${pick(j.voice.closing)}`,
     PUBLIC_COMING_OUT: (p, j) => `${pick(j.voice.opening)} ${p.name} fez uma declaração que o tênis vai guardar por anos. Simples, direta, sem pedido de aprovação. O circuito, que raramente sabe como reagir a esses momentos, vai ter que aprender. ${pick(j.voice.closing)}`,
     SOBRIETY_JOURNEY: (p, j) => `${pick(j.voice.opening)} ${p.name} revelou uma batalha que ninguém sabia que estava acontecendo. Meses de sobriedade. A coragem de tornar isso público em um ambiente tão competitivo quanto o circuito profissional é, por si só, uma vitória. ${pick(j.voice.closing)}`,
-    RECONNECT_ROOTS: (p, j) => `${pick(j.voice.opening)} ${p.name} voltou. Não ao circuito — às origens. O país natal, o bairro, as pessoas que estavam lá antes dos títulos. Há quem diga que isso é saudade. Há quem diga que é estratégia. Provavelmente é as duas coisas. ${pick(j.voice.closing)}`,
+    RECONNECT_ROOTS: (p, j) => `${pick(j.voice.opening)} ${p.name} voltou. Não ao circuito — às origens. O país natal, o bairro, as pessoas que estavam lá antes dos títulos. HÁ quem diga que isso é saudade. HÁ quem diga que é estratégia. Provavelmente são as duas coisas. ${pick(j.voice.closing)}`,
     ESTRANGEMENT:  (p, j) => `${pick(j.voice.opening)} Fontes próximas falam em distanciamento entre ${p.name} e familiar próximo. Os motivos não foram revelados — e provavelmente não serão. O que se sabe: a viagem ao país natal foi cancelada. ${pick(j.voice.closing)}`,
     SIBLING_IN_SPORT: (p, j) => `${pick(j.voice.opening)} O sobrenome ${p.name.split(' ').pop()} vai aparecer em dois draw sheets. O irmão acaba de assinar contrato profissional. O tênis adora uma história de família. E essa tem todos os ingredientes. ${pick(j.voice.closing)}`,
   },
   SOCIAL: {
-    FOUNDATION_LAUNCH: (p, j) => `${pick(j.voice.opening)} ${p.name} lança fundação. O dinheiro que o tênis gerou volta para o mundo de uma forma diferente. Há atletas que tratam as vitórias como fim. Há os que tratam como meio. ${pick(j.voice.closing)}`,
-    BIG_DONATION:      (p, j) => `${pick(j.voice.opening)} ${p.name} doa. A cifra é expressiva. A causa, legítima. Há quem veja performance de imagem — há quem veja consequência natural de alguém que chegou lá e não esqueceu de onde veio. ${pick(j.voice.closing)}`,
+    FOUNDATION_LAUNCH: (p, j) => `${pick(j.voice.opening)} ${p.name} lança fundação. O dinheiro que o tênis gerou volta para o mundo de uma forma diferente. HÁ atletas que tratam as vitórias como fim. HÁ os que tratam como meio. ${pick(j.voice.closing)}`,
+    BIG_DONATION:      (p, j) => `${pick(j.voice.opening)} ${p.name} doa. A cifra é expressiva. A causa, legítima. HÁ quem veja performance de imagem — há quem veja consequência natural de alguém que chegou lá e não esqueceu de onde veio. ${pick(j.voice.closing)}`,
     CAUSE_CAMPAIGN:    (p, j) => `${pick(j.voice.opening)} ${p.name} usa sua plataforma. Um atleta de alto nível tem visibilidade que poucas pessoas têm. O que se faz com isso diz tanto sobre o personagem quanto qualquer resultado em quadra. ${pick(j.voice.closing)}`,
-    SCHOOL_OPENING:    (p, j) => `${pick(j.voice.opening)} ${p.name} abre escola. A construção mais duradoura de uma carreira raramente aparece no ranking. Às vezes ela tem endereço fixo, salas de aula e crianças que nunca vão saber o nome do que lhes foi dado. ${pick(j.voice.closing)}`,
+    SCHOOL_OPENING:    (p, j) => `${pick(j.voice.opening)} ${p.name} abre escola. A construção mais duradoura de uma carreira raramente aparece no ranking. às vezes ela tem endereço fixo, salas de aula e crianças que nunca vão saber o nome do que lhes foi dado. ${pick(j.voice.closing)}`,
     ENVIRONMENTAL_PLEDGE: (p, j) => `${pick(j.voice.opening)} ${p.name} firma compromisso ambiental. O tênis percorre o mundo em aviões e deixa rastros. Alguém decidiu começar a medir esse custo. ${pick(j.voice.closing)}`,
     CHARITY_TOURNAMENT:(p, j) => `${pick(j.voice.opening)} ${p.name} organiza torneio beneficente. Um dia fora do circuito oficial, com raquetes e quadra, para lembrar que o jogo pode ter outro propósito. ${pick(j.voice.closing)}`,
     POLITICAL_ENDORSEMENT: (p, j) => `${pick(j.voice.opening)} ${p.name} cruzou uma linha que poucos atletas cruzam voluntariamente: o apoio político público. A declaração dividiu. A ausência de arrependimento, também. ${pick(j.voice.closing)}`,
     REFUGEE_SUPPORT:   (p, j) => `${pick(j.voice.opening)} ${p.name} visitou campo de refugiados. Não como PR. A história do retorno — a viagem, as conversas, o silêncio do avião de volta — foi contada em primeira pessoa. ${pick(j.voice.closing)}`,
     LGBTQ_ALLY:        (p, j) => `${pick(j.voice.opening)} Palavras de ${p.name} que o circuito não estava esperando — e que provavelmente precisava ouvir. A posição não foi calculada para agradar. Foi dita. ${pick(j.voice.closing)}`,
-    ANTI_DOPING_CAMPAIGN: (p, j) => `${pick(j.voice.opening)} ${p.name} como voz pelo esporte limpo. Há um peso específico em ouvir isso de um top-10. A campanha ganhou um rosto que o ranking valida. ${pick(j.voice.closing)}`,
+    ANTI_DOPING_CAMPAIGN: (p, j) => `${pick(j.voice.opening)} ${p.name} como voz pelo esporte limpo. HÁ um peso específico em ouvir isso de um top-10. A campanha ganhou um rosto que o ranking valida. ${pick(j.voice.closing)}`,
     DISASTER_RELIEF:   (p, j) => `${pick(j.voice.opening)} ${p.name} foi pessoalmente. Não mandou cheque — foi. A doação veio depois. O gesto de presença, antes. O circuito vai lembrar isso muito depois dos títulos. ${pick(j.voice.closing)}`,
   },
   BUSINESS: {
     BRAND_LAUNCH:   (p, j) => `${pick(j.voice.opening)} ${p.name} lança marca própria. A segunda carreira começa enquanto a primeira ainda está no pico. É assim que os que planejam se aposentar constroem o que vem depois. ${pick(j.voice.closing)}`,
     RESTAURANT_OPENING: (p, j) => `${pick(j.voice.opening)} ${p.name} abre restaurante. A gastronomia como hobby virou negócio. O circuito vai observar se o mesmo nível de exigência aplicado ao tênis aparece na cozinha. ${pick(j.voice.closing)}`,
-    TECH_STARTUP:   (p, j) => `${pick(j.voice.opening)} ${p.name} investe em tecnologia. Há atletas que encerram a carreira e somem. Há os que somem para dentro de startups. ${pick(j.voice.closing)}`,
+    TECH_STARTUP:   (p, j) => `${pick(j.voice.opening)} ${p.name} investe em tecnologia. HÁ atletas que encerram a carreira e somem. HÁ os que somem para dentro de startups. ${pick(j.voice.closing)}`,
     INVESTMENT:     (p, j) => `${pick(j.voice.opening)} ${p.name} diversifica o patrimônio. O prize money virou ativo. A segunda jogada financeira já está em andamento enquanto a primeira ainda acontece nas quadras. ${pick(j.voice.closing)}`,
     COACHING_ACADEMY: (p, j) => `${pick(j.voice.opening)} ${p.name} cria academia própria. O que foi aprendido em décadas de circuito vai ser transmitido. É o tipo de legado que não aparece no Hall of Fame — e talvez seja o mais duradouro. ${pick(j.voice.closing)}`,
     APP_LAUNCH:     (p, j) => `${pick(j.voice.opening)} ${p.name} lança aplicativo. A interface entre tênis e tecnologia tem um novo rosto. O circuito vai testar se o produto tem a mesma qualidade da marca que o assina. ${pick(j.voice.closing)}`,
-    FASHION_LINE:   (p, j) => `${pick(j.voice.opening)} ${p.name} entra na moda. A coleção esgotou antes da campanha terminar. Há algo no cruzamento entre atleta de elite e design que o mercado invariavelmente recompensa. ${pick(j.voice.closing)}`,
+    FASHION_LINE:   (p, j) => `${pick(j.voice.opening)} ${p.name} entra na moda. A coleção esgotou antes da campanha terminar. HÁ algo no cruzamento entre atleta de elite e design que o mercado invariavelmente recompensa. ${pick(j.voice.closing)}`,
     SPORTS_OWNERSHIP: (p, j) => `${pick(j.voice.opening)} ${p.name} do outro lado da mesa agora: dono. A participação num clube esportivo é a incursão mais significativa no mundo dos que decidem, não dos que jogam. ${pick(j.voice.closing)}`,
     CRYPTO_INVESTMENT: (p, j) => `${pick(j.voice.opening)} ${p.name} entrou no mercado de criptomoedas e não escondeu. "Acredito na tecnologia", disse em entrevista. O mercado vai mostrar se a convicção foi bem investida. ${pick(j.voice.closing)}`,
     CRYPTO_LOSS:    (p, j) => `${pick(j.voice.opening)} ${p.name} admitiu a perda. Sem rodeios, sem advogados falando no lugar. "Me empolguei. Erro meu." O circuito financeiro tem lições que o tênis não ensina. ${pick(j.voice.closing)}`,
@@ -3772,17 +3792,17 @@ const LIFE_EVENT_VOICES = {
   },
   MEDIA: {
     DOCUMENTARY:    (p, j) => `${pick(j.voice.opening)} Um documentário sobre ${p.name}. A câmera vai para onde a imprensa raramente consegue chegar. O que vai aparecer no corte final é a questão que todo mundo quer responder. ${pick(j.voice.closing)}`,
-    AUTOBIOGRAPHY:  (p, j) => `${pick(j.voice.opening)} ${p.name} assina a própria história. Todo autobiografia é uma edição — o que se escolhe contar é tão revelador quanto o que se omite. O circuito vai ler nas entrelinhas. ${pick(j.voice.closing)}`,
+    AUTOBIOGRAPHY:  (p, j) => `${pick(j.voice.opening)} ${p.name} assina a própria história. Toda autobiografia é uma edição — o que se escolhe contar é tão revelador quanto o que se omite. O circuito vai ler nas entrelinhas. ${pick(j.voice.closing)}`,
     MAGAZINE_COVER: (p, j) => `${pick(j.voice.opening)} ${p.name} na capa. A fotografia escolhida, a entrevista editada, a narrativa construída — a indústria da imagem e o esporte se encontram de forma inevitável. ${pick(j.voice.closing)}`,
     TV_APPEARANCE:  (p, j) => `${pick(j.voice.opening)} ${p.name} fora da quadra, dentro das câmeras. Um atleta que sabe se comunicar tem alcance que vai além do tênis. O episódio vai ao ar. O circuito assiste. ${pick(j.voice.closing)}`,
     PODCAST_LAUNCH: (p, j) => `${pick(j.voice.opening)} ${p.name} lança podcast. A voz que responde perguntas em coletivas agora tem um canal próprio. Sem filtro editorial, sem deadline, sem moderador. ${pick(j.voice.closing)}`,
     ACTING_ROLE:    (p, j) => `${pick(j.voice.opening)} ${p.name} no set. A transição do esporte para o entretenimento tem histórico variado. Alguns atletas encontram a segunda vocação. Outros descobrem que a quadra era o único palco certo. ${pick(j.voice.closing)}`,
     SOCIAL_MEDIA_VIRAL: (p, j) => `${pick(j.voice.opening)} ${p.name} viral. O algoritmo e o talento se encontraram no momento certo. Milhões de visualizações depois, o circuito ganhou um novo assunto para a semana. ${pick(j.voice.closing)}`,
-    AMBASSADOR_ROLE: (p, j) => `${pick(j.voice.opening)} ${p.name} assina contrato de embaixador. A face do atleta agora representa mais do que um jogo — representa um produto, um estilo, uma promessa implícita de que a excelência tem marca. ${pick(j.voice.closing)}`,
+    AMBASSADOR_ROLE: (p, j) => `${pick(j.voice.opening)} ${p.name} assina contrato de embaixador. A face do atleta agora representa mais do que um jogo é representa um produto, um estilo, uma promessa implícita de que a excelência tem marca. ${pick(j.voice.closing)}`,
     COLUMN_NEWSPAPER: (p, j) => `${pick(j.voice.opening)} ${p.name} vai escrever. Semanalmente. Sem intermediário. A voz que o circuito costuma filtrar agora tem espaço próprio — e os editores já sabem que as colunas mais lembradas raramente são as mais confortáveis. ${pick(j.voice.closing)}`,
     CHILDREN_BOOK:  (p, j) => `${pick(j.voice.opening)} ${p.name} escreveu um livro para os filhos. E publicou para o mundo. A menor das audiências inspirou a história mais universal que o atleta já contou. ${pick(j.voice.closing)}`,
     MUSIC_COLLAB:   (p, j) => `${pick(j.voice.opening)} ${p.name} no clipe. O cruzamento entre esporte e música tem uma nova entrada. O resultado já acumula visualizações que a maioria dos torneios não consegue no YouTube. ${pick(j.voice.closing)}`,
-    FASHION_CAMPAIGN: (p, j) => `${pick(j.voice.opening)} ${p.name} na semana de moda. A marca escolheu bem — e o atleta também. Há uma linguagem estética no jogo de elite que o mundo da moda leva décadas tentando capturar. ${pick(j.voice.closing)}`,
+    FASHION_CAMPAIGN: (p, j) => `${pick(j.voice.opening)} ${p.name} na semana de moda. A marca escolheu bem — e o atleta também. HÁ uma linguagem estética no jogo de elite que o mundo da moda leva décadas tentando capturar. ${pick(j.voice.closing)}`,
     AWARD_SHOW_HOST: (p, j) => `${pick(j.voice.opening)} ${p.name} no microfone de apresentador. O espontâneo que aparece em coletivas foi testado em palco maior. O veredicto da noite: nasceu comunicador. ${pick(j.voice.closing)}`,
     SPORTS_COMMENTARY: (p, j) => `${pick(j.voice.opening)} ${p.name} como comentarista. A câmera agora está do outro lado. A visão de quem jogou em Grand Slam Final é o tipo de perspectiva que nenhum estudo jornalístico substitui. ${pick(j.voice.closing)}`,
   },
@@ -3790,33 +3810,32 @@ const LIFE_EVENT_VOICES = {
     CONTROVERSIAL_STATEMENT: (p, j) => `${pick(j.voice.opening)} ${p.name} disse algo. O que exatamente foi dito já circula nas redes sem contexto. A nota de esclarecimento, se vier, vai chegar tarde. ${pick(j.voice.closing)}`,
     PUBLIC_DISPUTE: (p, j) => `${pick(j.voice.opening)} ${p.name} em confronto público. A versão oficial ainda não saiu. A versão não oficial já tem dez variações. O que é fato: houve atrito, houve audiência, haverá consequências. ${pick(j.voice.closing)}`,
     DOPING_ALLEGATION: (p, j) => `${pick(j.voice.opening)} A palavra não é fácil de escrever. Suspeita de doping envolvendo ${p.name}. A agência investiga. O processo é longo. A reputação não espera o processo terminar. ${pick(j.voice.closing)}`,
-    DOPING_CLEARED: (p, j) => `${pick(j.voice.opening)} ${p.name} inocentado. Os exames não encontraram nada. O processo terminou. A reputação — essa leva mais tempo para voltar ao que era. ${pick(j.voice.closing)}`,
+    DOPING_CLEARED: (p, j) => `${pick(j.voice.opening)} ${p.name} inocentado. Os exames não encontraram nada. O processo terminou. A reputação é essa leva mais tempo para voltar ao que era. ${pick(j.voice.closing)}`,
     TAX_EVASION: (p, j) => `${pick(j.voice.opening)} Autoridades investigam ${p.name}. Residência fiscal, declarações, movimentações — o tênis entra no território das planilhas e advogados. O atleta não comentou. Os números vão falar. ${pick(j.voice.closing)}`,
     ON_COURT_INCIDENT: (p, j) => `${pick(j.voice.opening)} ${p.name} e o árbitro. A versão do atleta e a versão do regulamento raramente coincidem em momentos assim. A multa foi aplicada. O episódio vai ser lembrado quando o nome aparecer nas manchetes de novo. ${pick(j.voice.closing)}`,
     GAMBLING_RUMOR: (p, j) => `${pick(j.voice.opening)} Circulam rumores. ${p.name} e apostas — dois mundos que o tênis prefere manter separados. Nada confirmado. Nada descartado. O suficiente para a imprensa trabalhar por semanas. ${pick(j.voice.closing)}`,
     RACKET_SMASH_VIRAL: (p, j) => `${pick(j.voice.opening)} O vídeo já tem milhões de visualizações. ${p.name}, a raquete, o momento de raiva que nenhuma assessoria consegue apagar depois. É o tipo de fragmento que define narrativas. ${pick(j.voice.closing)}`,
     ATP_FINE:       (p, j) => `${pick(j.voice.opening)} ${p.name} multado. O valor não é o problema — o problema é o padrão. A ATP registrou. O circuito vai registrar também. ${pick(j.voice.closing)}`,
     SUSPENSION:     (p, j) => `${pick(j.voice.opening)} Suspenso. ${p.name} fora por período determinado — consequência de um acúmulo que a ATP decidiu que chegou no limite. O silêncio do atleta neste momento diz mais do que qualquer declaração poderia. ${pick(j.voice.closing)}`,
-    RIVAL_PUBLIC_FEUD: (p, j) => `${pick(j.voice.opening)} ${p.name} não esperou o próximo confronto em quadra. Declarações trocadas, mídia alimentada, torcida dividida. Há rivalidades que vivem nas quadras. Essa decidiu viver em todo lugar. ${pick(j.voice.closing)}`,
-    COACH_DRAMA:    (p, j) => `${pick(j.voice.opening)} Demissão. ${p.name} e o técnico separaram caminhos de forma que ninguém chamaria de silenciosa. Os motivos oficiais foram vagos. Os bastidores, não. ${pick(j.voice.closing)}`,
+    RIVAL_PUBLIC_FEUD: (p, j) => `${pick(j.voice.opening)} ${p.name} não esperou o próximo confronto em quadra. Declarações trocadas, mídia alimentada, torcida dividida. HÁ rivalidades que vivem nas quadras. Essa decidiu viver em todo lugar. ${pick(j.voice.closing)}`,
     FEDERATION_CONFLICT: (p, j) => `${pick(j.voice.opening)} ${p.name} e a federação nacional estão em rota de colisão. Representar um país é uma relação que raramente é só técnica — e quando quebra, raramente quebra sem barulho. ${pick(j.voice.closing)}`,
     SOCIAL_MEDIA_MELTDOWN: (p, j) => `${pick(j.voice.opening)} O feed de ${p.name} nas últimas 24 horas: mensagens que o assessor vai passar semanas tentando contextualizar. O que fica claro é que havia algo pressionando que encontrou a saída mais pública possível. ${pick(j.voice.closing)}`,
     CHEATING_ALLEGATION: (p, j) => `${pick(j.voice.opening)} Acusação pesada. Um adversário de ${p.name} levou para a imprensa o que devia ter ficado nos bastidores — ou talvez devesse ter chegado aqui mesmo. A ATP abriu investigação. ${pick(j.voice.closing)}`,
   },
   COMMUNITY: {
-    NATIONAL_HERO: (p, j) => `${pick(j.voice.opening)} ${p.name} recebe honraria do governo. A carreira virou patrimônio nacional — ou pelo menos é o que o decreto diz. Há títulos que pesam mais do que os de Grand Slam. ${pick(j.voice.closing)}`,
+    NATIONAL_HERO: (p, j) => `${pick(j.voice.opening)} ${p.name} recebe honraria do governo. A carreira virou patrimônio nacional — ou pelo menos é o que o decreto diz. HÁ títulos que pesam mais do que os de Grand Slam. ${pick(j.voice.closing)}`,
     STREET_NAMED:  (p, j) => `${pick(j.voice.opening)} Uma rua com o nome de ${p.name}. A homenagem mais permanente que uma cidade pode dar. Daqui a cinquenta anos, alguém vai perguntar quem era. E vai ter uma história para contar. ${pick(j.voice.closing)}`,
     NATIONAL_RETURN: (p, j) => `${pick(j.voice.opening)} ${p.name} volta. Depois de anos em paraísos fiscais e residências táticas, o país natal chama de volta. Ou o atleta decidiu que o endereço no passaporte deveria coincidir com o endereço no coração. ${pick(j.voice.closing)}`,
     UNIVERSITY_DEGREE: (p, j) => `${pick(j.voice.opening)} ${p.name} se gradua. Enquanto treinava, competia e viajava, havia aulas também. A disciplina que forma um atleta de elite pode formar qualquer coisa. ${pick(j.voice.closing)}`,
     MENTORING_PROSPECT: (p, j) => `${pick(j.voice.opening)} ${p.name} assume papel de mentor. A sabedoria acumulada em anos de circuito vai ser transmitida. É o tipo de investimento que não aparece no extrato bancário — mas vale. ${pick(j.voice.closing)}`,
     OLYMPIC_AMBASSADOR: (p, j) => `${pick(j.voice.opening)} ${p.name} nomeado embaixador olímpico. O rosto do circuito de tênis agora também representa algo maior do que um esporte. A cerimônia dos Jogos vai ter um novo porta-voz. ${pick(j.voice.closing)}`,
     NATIONAL_AWARD: (p, j) => `${pick(j.voice.opening)} Condecoração nacional para ${p.name}. A cerimônia foi transmitida ao vivo. O discurso foi curto. O peso, não. ${pick(j.voice.closing)}`,
-    HONORARY_CITIZENSHIP: (p, j) => `${pick(j.voice.opening)} Cidadania honorária para ${p.name}. A cidade que o viu treinar por anos decidiu que esse nome pertence ao lugar. Há formas de dizer obrigado que duram mais que qualquer prêmio. ${pick(j.voice.closing)}`,
+    HONORARY_CITIZENSHIP: (p, j) => `${pick(j.voice.opening)} Cidadania honorária para ${p.name}. A cidade que o viu treinar por anos decidiu que esse nome pertence ao lugar. HÁ formas de dizer obrigado que duram mais que qualquer prêmio. ${pick(j.voice.closing)}`,
     INDIGENOUS_HERITAGE: (p, j) => `${pick(j.voice.opening)} ${p.name} escolheu contar essa parte da história. A herança cultural que o circuito não costuma perguntar sobre — e que, quando aparece, muda como um atleta é lido. ${pick(j.voice.closing)}`,
     YOUTH_EVENT:   (p, j) => `${pick(j.voice.opening)} ${p.name} entre jovens tenistas. Sem câmeras de transmissão, sem pontos no ranking. Apenas raquetes e alguém que chegou lá mostrando que é possível. ${pick(j.voice.closing)}`,
   },
   SPIRITUAL: {
-    SPIRITUAL_RETREAT: (p, j) => `${pick(j.voice.opening)} ${p.name} em retiro. O circuito continua girando; o atleta escolheu pausar. Há uma versão mais antiga de si mesmo que precisa ser reencontrada. O tênis pode esperar alguns dias. ${pick(j.voice.closing)}`,
+    SPIRITUAL_RETREAT: (p, j) => `${pick(j.voice.opening)} ${p.name} em retiro. O circuito continua girando; o atleta escolheu pausar. HÁ uma versão mais antiga de si mesmo que precisa ser reencontrada. O tênis pode esperar alguns dias. ${pick(j.voice.closing)}`,
     PILGRIMAGE: (p, j) => `${pick(j.voice.opening)} ${p.name} em peregrinação. O percurso não é pelas raquetes. A jornada que acontece fora das quadras raramente tem narrador — mas é parte da história. ${pick(j.voice.closing)}`,
     CAREER_DOUBT: (p, j) => `${pick(j.voice.opening)} ${p.name} questiona a continuidade. A frase saiu em entrevista: "Estou avaliando". O circuito já sabe o que isso significa quando vem de alguém com mais de 30 anos e menos de dez top-10 nas últimas semanas. ${pick(j.voice.closing)}`,
     MINDFULNESS_ADVOCACY: (p, j) => `${pick(j.voice.opening)} ${p.name} fala sobre saúde mental. A conversa que o esporte evitou por décadas ganhou um porta-voz com ranking e títulos para sustentar o argumento. ${pick(j.voice.closing)}`,
@@ -3832,23 +3851,22 @@ const LIFE_EVENT_VOICES = {
     YACHT_PURCHASE:(p, j) => `${pick(j.voice.opening)} ${p.name} compra iate. A celebração mais cara da temporada não foi no pódio. Aconteceu num cais, com água salgada e um cheque que a maioria das pessoas não consegue imaginar assinar. ${pick(j.voice.closing)}`,
     PRIVATE_JET:   (p, j) => `${pick(j.voice.opening)} ${p.name} e o jato particular. O circuito se torna menor quando você não depende mais de voos comerciais. A logística de uma carreira de tênis de elite tem uma nova peça no tabuleiro. ${pick(j.voice.closing)}`,
     ART_COLLECTION:(p, j) => `${pick(j.voice.opening)} ${p.name} coleciona arte. Não como investimento — como gosto. A coleção que cresceu em silêncio por anos finalmente apareceu em entrevista. O circuito não sabia dessa dimensão do personagem. ${pick(j.voice.closing)}`,
-    WINE_ESTATE:   (p, j) => `${pick(j.voice.opening)} ${p.name} tem vinícola agora. O rótulo com o próprio nome esgotou em 72 horas. Há carreiras que geram marcas que sobrevivem ao último ponto. ${pick(j.voice.closing)}`,
+    WINE_ESTATE:   (p, j) => `${pick(j.voice.opening)} ${p.name} tem vinícola agora. O rótulo com o próprio nome esgotou em 72 horas. HÁ carreiras que geram marcas que sobrevivem ao último ponto. ${pick(j.voice.closing)}`,
     SOLD_PROPERTY: (p, j) => `${pick(j.voice.opening)} ${p.name} vendeu a propriedade. Mudança de base, mudança de fase. Quando um atleta muda de endereço, o circuito especula sobre o que muda junto com a chave. ${pick(j.voice.closing)}`,
   },
-  // ── CAREER — nova categoria ────────────────────────────────────
+  // -- CAREER — nova categoria ------------------------------------
   CAREER: {
-    COMEBACK_STATEMENT: (p, j) => `${pick(j.voice.opening)} ${p.name} foi direto ao ponto: "Não terminei." A frase saiu em entrevista e o circuito parou para ouvir. Há uma diferença entre declarações de retorno e essa. A diferença é o tom — sem desculpas, sem rodeios. ${pick(j.voice.closing)}`,
-    RANKING_CRISIS:     (p, j) => `${pick(j.voice.opening)} ${p.name} falou sobre o número do ranking com uma honestidade rara no circuito. "Não é onde quero estar, e sei exatamente por quê." Há atletas que culpam o calendário. Esse não. ${pick(j.voice.closing)}`,
+    COMEBACK_STATEMENT: (p, j) => `${pick(j.voice.opening)} ${p.name} foi direto ao ponto: "Não terminei." A frase saiu em entrevista e o circuito parou para ouvir. HÁ uma diferença entre declarações de retorno e essa. A diferença é o tom — sem desculpas, sem rodeios. ${pick(j.voice.closing)}`,
+    RANKING_CRISIS:     (p, j) => `${pick(j.voice.opening)} ${p.name} falou sobre o número do ranking com uma honestidade rara no circuito. "Não é onde quero estar, e sei exatamente por quê." HÁ atletas que culpam o calendário. Esse não. ${pick(j.voice.closing)}`,
     WILDCARD_ACCEPTANCE:(p, j) => `${pick(j.voice.opening)} ${p.name} aceitou o wildcard. Em outro momento, esse torneio seria garantia no ranking. Hoje é uma oportunidade pedida. O circuito vai assistir com atenção diferente. ${pick(j.voice.closing)}`,
     NATIONAL_CAPTAINCY: (p, j) => `${pick(j.voice.opening)} ${p.name} assume a capitania. Dentro das quadras, representou o país por anos. Agora, a responsabilidade é diferente: conduzir outros. A liderança mudou de forma — não de compromisso. ${pick(j.voice.closing)}`,
     RETIREMENT_THREAT:  (p, j) => `${pick(j.voice.opening)} A palavra não foi dita — mas foi deixada na mesa. ${p.name} e a aposentadoria: o circuito está em modo de espera depois de uma entrevista que revelou mais do que a pergunta pedia. ${pick(j.voice.closing)}`,
     RECORD_CHASE:       (p, j) => `${pick(j.voice.opening)} ${p.name} confirmou o que muitos especulavam: está perseguindo um recorde de forma intencional. "Quero aquele número. Ponto final." Em um esporte cheio de respostas diplomáticas, essa é uma declaração rara. ${pick(j.voice.closing)}`,
-    COACHING_REFUSAL:   (p, j) => `${pick(j.voice.opening)} ${p.name} recusou. O nome do técnico que foi recusado não foi revelado — mas foi descrito como "o mais respeitado do circuito". A recusa diz algo sobre a direção que o atleta quer tomar. ${pick(j.voice.closing)}`,
-    EARLY_PEAK_LAMENT:  (p, j) => `${pick(j.voice.opening)} ${p.name} olhou para trás e disse o que poucos dizem: "Cheguei rápido demais e paguei um preço que demorei para entender." A reflexão é de alguém que aprendeu — tarde, mas aprendeu. ${pick(j.voice.closing)}`,
+    EARLY_PEAK_LAMENT:  (p, j) => `${pick(j.voice.opening)} ${p.name} olhou para trás e disse o que poucos dizem: "Cheguei rápido demais e paguei um preço que demorei para entender." A reflexão é de alguém que aprendeu à tarde, mas aprendeu. ${pick(j.voice.closing)}`,
   },
-  // ── WELLNESS — nova categoria ──────────────────────────────────
+  // -- WELLNESS — nova categoria ----------------------------------
   WELLNESS: {
-    DIET_REVOLUTION:  (p, j) => `${pick(j.voice.opening)} ${p.name} mudou tudo no prato. A dieta nova gerou melhora mensurável — pelo menos é o que o atleta afirma. O circuito vai acompanhar os resultados para saber se a correlação vira causalidade. ${pick(j.voice.closing)}`,
+    DIET_REVOLUTION:  (p, j) => `${pick(j.voice.opening)} ${p.name} mudou tudo no prato. A dieta nova gerou melhora mensurável — pelo menos — o que o atleta afirma. O circuito vai acompanhar os resultados para saber se a correlação vira causalidade. ${pick(j.voice.closing)}`,
     SLEEP_PROTOCOL:   (p, j) => `${pick(j.voice.opening)} ${p.name} e o sono. O protocolo — temperatura, escuridão, horário rígido — virou post viral. A resposta do circuito foi entre risos e anotações. Alguns estão copiando. ${pick(j.voice.closing)}`,
     RECOVERY_VIRAL:   (p, j) => `${pick(j.voice.opening)} O vídeo de ${p.name} às 5h da manhã com gelo até a cintura tem milhões de visualizações. O que o circuito achou bizarro na terça virou trend na quinta. ${pick(j.voice.closing)}`,
     ALTITUDE_CAMP:    (p, j) => `${pick(j.voice.opening)} ${p.name} sumiu por um mês. Voltou de altitude. A preparação específica que não aparece nos treinos convencionais — e que raramente aparece nas entrevistas — virou tema de conversa. ${pick(j.voice.closing)}`,
@@ -3858,9 +3876,9 @@ const LIFE_EVENT_VOICES = {
   },
 };
 
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 // HEADLINES POR EVENTO — lookup completo
-// ─────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 const LIFE_EVENT_HEADLINES = {
   // PERSONAL
@@ -3881,7 +3899,7 @@ const LIFE_EVENT_HEADLINES = {
   SOBRIETY_JOURNEY:        p => `${p.name} revela batalha com dependência e jornada de recuperação`,
   RECONNECT_ROOTS:         p => `${p.name} volta às origens em projeto pessoal`,
   ESTRANGEMENT:            p => `Distanciamento familiar de ${p.name} confirmado por fontes próximas`,
-  SIBLING_IN_SPORT:        p => `Irmão(ã) de ${p.name} estreia no profissionalismo`,
+  SIBLING_IN_SPORT:        p => `Irmão/irmã de ${p.name} estreia no profissionalismo`,
   // HOME
   MOVE_TO_TAX_HAVEN:       p => `${p.name} transfere residência`,
   NEW_PROPERTY:            p => `${p.name} adquire nova propriedade`,
@@ -3943,7 +3961,6 @@ const LIFE_EVENT_HEADLINES = {
   ATP_FINE:                p => `${p.name} multado pela ATP`,
   SUSPENSION:              p => `${p.name} suspenso — ATP aplica punição após acúmulo`,
   RIVAL_PUBLIC_FEUD:       p => `${p.name} e rival trocam declarações: a briga saiu da quadra`,
-  COACH_DRAMA:             p => `${p.name} demite técnico de forma abrupta`,
   FEDERATION_CONFLICT:     p => `${p.name} em rota de colisão com federação nacional`,
   SOCIAL_MEDIA_MELTDOWN:   p => `${p.name}: posts erráticos nas redes geram preocupação`,
   CHEATING_ALLEGATION:     p => `Adversário acusa ${p.name} — ATP abre investigação`,
@@ -3974,7 +3991,6 @@ const LIFE_EVENT_HEADLINES = {
   NATIONAL_CAPTAINCY:      p => `${p.name} assume capitania da equipe nacional`,
   RETIREMENT_THREAT:       p => `${p.name} não descarta aposentadoria: "Preciso pensar"`,
   RECORD_CHASE:            p => `${p.name} assume: está perseguindo recorde histórico`,
-  COACHING_REFUSAL:        p => `${p.name} recusa técnico renomado: "Não é a direção certa"`,
   EARLY_PEAK_LAMENT:       p => `${p.name}: "Cheguei rápido demais. Paguei um preço."`,
   // WELLNESS
   DIET_REVOLUTION:         p => `${p.name} muda dieta e atribui melhora de performance`,
@@ -4152,7 +4168,7 @@ export function generateLifeEventNews(playerEventPairs, year, state = {}, opts =
 }
 
 
-// ── OURO OLÍMPICO ─────────────────────────────────────────────────
+// -- OURO OLÍMPICO -------------------------------------------------
 
 function genOlympicGold({ tournament, bracket, year, allPlayers }) {
   const champ = bracket.champion;
@@ -4185,7 +4201,7 @@ function genOlympicGold({ tournament, bracket, year, allPlayers }) {
   const body = [
     pick(j.voice.opening),
     isFirstGold
-      ? `Há títulos que cabem no ranking. Há títulos que não cabem em lugar nenhum — só na memória. ${champ.name} conquistou o ouro olímpico e o tênis vai guardar esse momento por tempo suficiente para entender o que aconteceu.`
+      ? `HÁ títulos que cabem no ranking. HÁ títulos que não cabem em lugar nenhum — só na memória. ${champ.name} conquistou o ouro olímpico e o tênis vai guardar esse momento por tempo suficiente para entender o que aconteceu.`
       : `${champ.name} volta ao pódio mais alto. O segundo ouro olímpico é mais raro que qualquer Grand Slam — e carrega um peso diferente, porque representa algo que nenhum troféu de circuito pode traduzir: o país, a bandeira, o que vem antes do ranking.`,
     finalist ? `A final foi contra ${finalist.name}${score ? ', por ' + score : ''}. O tênis não parou para assistir — parou o mundo inteiro.` : '',
     `${countryName} tem seu campeão. ${champ.name} tem seu ouro. E o circuito vai recomeçar na próxima semana como se nada tivesse acontecido — mas algo aconteceu.`,
@@ -4211,12 +4227,12 @@ function genOlympicGold({ tournament, bracket, year, allPlayers }) {
   };
 }
 
-// ── MEDALHA OLÍMPICA (prata / bronze) ─────────────────────────────
+// -- MEDALHA OLÍMPICA (prata / bronze) -----------------------------
 
 function genOlympicMedal({ tournament, player, medal, year, opponent }) {
   const journalist = JOURNALISTS.SANTOS;
   const j = journalist;
-  const icon = medal === 'SILVER' ? '🥈' : '🥉';
+  const icon = medal === 'SILVER' ? '??' : '??';
   const medalName = medal === 'SILVER' ? 'prata' : 'bronze';
 
   const headline = `${icon} ${player.name} leva a ${medalName} olímpica — e ninguém vai esquecer essa performance`;
@@ -4226,7 +4242,7 @@ function genOlympicMedal({ tournament, player, medal, year, opponent }) {
     pick(j.voice.opening),
     medal === 'SILVER'
       ? `${player.name} chegou à final olímpica. A prata dói de um jeito que os outros torneios não conseguem reproduzir — porque a final era para ouro, e o ouro foi${opponent ? ' para ' + opponent.name : ' para outro lado'}.`
-      : `O bronze olímpico de ${player.name} vai aparecer em bios e verbetes por décadas. Não importa o que o circuito regular diz sobre a semana — essa medalha fica.`,
+      : `O bronze olímpico de ${player.name} vai aparecer em bios e verbetes por décadas. Não importa o que o circuito regular diz sobre a semana é essa medalha fica.`,
     pick(j.voice.closing),
   ].filter(Boolean).join(' ');
 
@@ -4248,7 +4264,7 @@ function genOlympicMedal({ tournament, player, medal, year, opponent }) {
   };
 }
 
-// ── TIRADA DO TORNEIO OLÍMPICO ────────────────────────────────────
+// -- TIRADA DO TORNEIO OLÍMPICO ------------------------------------
 
 /**
  * Gera todos os artigos do torneio olímpico.
@@ -4303,11 +4319,11 @@ export function generateOlympicNews(tournament, bracket, state) {
   return articles;
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // GERADORES EXCLUSIVOS POR TIER
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
-// ── SCOUT REPORT (ATP_PROSPECTS) ─────────────────────────────────
+// -- SCOUT REPORT (ATP_PROSPECTS) ---------------------------------
 function genScoutReport({ tournament, player, year }) {
   const j   = JOURNALISTS.NAKANO;
   const age = player.age ?? 18;
@@ -4341,7 +4357,7 @@ function genScoutReport({ tournament, player, year }) {
   };
 }
 
-// ── RANKING IMPACT (ATP_100) ──────────────────────────────────────
+// -- RANKING IMPACT (ATP_100) --------------------------------------
 function genRankingImpact({ tournament, player, year, pointsGained }) {
   const j          = JOURNALISTS.SILVA;
   const rank       = player.rankPosition ?? '?';
@@ -4369,7 +4385,7 @@ function genRankingImpact({ tournament, player, year, pointsGained }) {
   };
 }
 
-// ── POINTS RACE (ATP_500) ─────────────────────────────────────────
+// -- POINTS RACE (ATP_500) -----------------------------------------
 function genPointsRace({ tournament, bracket, year }) {
   const champ = bracket.champion;
   if (!champ) return null;
@@ -4401,7 +4417,7 @@ function genPointsRace({ tournament, bracket, year }) {
   };
 }
 
-// ── MANDATORY FIELD (MASTERS_1000) ───────────────────────────────
+// -- MANDATORY FIELD (MASTERS_1000) -------------------------------
 function genMandatoryField({ tournament, bracket, year, allPlayers }) {
   const champ = bracket.champion;
   const j     = chance(0.6) ? JOURNALISTS.CARVALHO : JOURNALISTS.PETROV;
@@ -4445,7 +4461,7 @@ function genMandatoryField({ tournament, bracket, year, allPlayers }) {
   };
 }
 
-// ── BO5 BATTLE (GRAND_SLAM) ───────────────────────────────────────
+// -- BO5 BATTLE (GRAND_SLAM) ---------------------------------------
 function genBO5Battle({ tournament, bracket, year }) {
   const rounds = bracket.rounds ?? [];
   let bestMatch = null, bestRound = null, bestSets = 0;
@@ -4475,7 +4491,7 @@ function genBO5Battle({ tournament, bracket, year }) {
     year,
     player:  winner,
     playerB: loser,
-    headline: `A batalha de ${bestSets} sets que ${tournament.location} vai guardar: ${winner.name} × ${loser.name}`,
+    headline: `A batalha de ${bestSets} sets que ${tournament.location} vai guardar: ${winner.name} — ${loser.name}`,
     deck:     `${score}. ${roundLabel} de ${tournament.name}. Isso é o que o melhor de cinco sets permite que aconteça.`,
     body:     [
       pick(j.voice.opening),
@@ -4491,7 +4507,7 @@ function genBO5Battle({ tournament, bracket, year }) {
   };
 }
 
-// ── SLAM HISTORY (GRAND_SLAM) ─────────────────────────────────────
+// -- SLAM HISTORY (GRAND_SLAM) -------------------------------------
 function genSlamHistory({ tournament, bracket, year, allPlayers }) {
   const champ = bracket.champion;
   if (!champ) return null;
@@ -4517,7 +4533,7 @@ function genSlamHistory({ tournament, bracket, year, allPlayers }) {
     body:     [
       pick(j.voice.opening),
       slams >= 5
-        ? `Há um número de Grand Slams a partir do qual o circuito para de contar e começa a comparar. ${champ.name} está nesse território agora.`
+        ? `HÁ um número de Grand Slams a partir do qual o circuito para de contar e começa a comparar. ${champ.name} está nesse território agora.`
         : `O ${ordinal} Grand Slam tem sabor diferente do primeiro. O primeiro é alívio, surpresa, prova. O ${ordinal} é confirmação — e a confirmação tem seu próprio peso.`,
       `${tournament.name} em ${tournament.location} entra na lista. O que essa lista vai significar no final da carreira de ${champ.name} é a pergunta que o circuito ainda não tem resposta.`,
       pick(j.voice.closing),
@@ -4529,7 +4545,7 @@ function genSlamHistory({ tournament, bracket, year, allPlayers }) {
   };
 }
 
-// ── SEASON NARRATIVE (FINALS) ─────────────────────────────────────
+// -- SEASON NARRATIVE (FINALS) -------------------------------------
 function genSeasonNarrative({ tournament, bracket, year }) {
   const j     = JOURNALISTS.KOWALSKI;
   const champ = bracket.champion;
@@ -4560,7 +4576,7 @@ function genSeasonNarrative({ tournament, bracket, year }) {
   };
 }
 
-// ── EARNED SPOT (FINALS) ──────────────────────────────────────────
+// -- EARNED SPOT (FINALS) ------------------------------------------
 function genEarnedSpot({ tournament, bracket, year, allPlayers }) {
   const champ = bracket.champion;
   if (!champ) return null;
@@ -4593,9 +4609,38 @@ function genEarnedSpot({ tournament, bracket, year, allPlayers }) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// RECORTE ESTATÍSTICO — assinatura obrigatória da redação
+// -------------------------------------------------------------------
+function attachStatisticalBrief(article, bracket) {
+  if (!article) return article;
+  const subjectId = article.player?.id ?? article.playerB?.id ?? null;
+  const matches = (bracket?.rounds ?? []).flatMap(round => round ?? []).filter(match => match?.winner && !match?.isBye);
+  const relevant = subjectId ? matches.filter(match => match.playerA?.id === subjectId || match.playerB?.id === subjectId) : [];
+  const wins = subjectId ? relevant.filter(match => match.winner?.id === subjectId).length : 0;
+  const losses = Math.max(0, relevant.length - wins);
+  const rank = article.player?.rankPosition ?? article.playerB?.rankPosition ?? null;
+  const decidingSets = relevant.filter(match => (match.result?.setsDetail ?? []).length >= 3).length;
+  const evidence = [
+    rank ? `ranking de entrada #${rank}` : null,
+    relevant.length ? `campanha ${wins}V-${losses}D` : null,
+    decidingSets ? `${decidingSets} duelo${decidingSets > 1 ? 's' : ''} em três ou mais sets` : null,
+  ].filter(Boolean);
+  const statLine = evidence.length
+    ? `Recorte estatístico: ${evidence.join(' · ')}.`
+    : `Recorte estatístico: dados consolidados do chaveamento e do ranking desta semana.`;
+  return {
+    ...article,
+    dataFocus: true,
+    statLine,
+    deck: article.deck ? `${article.deck} ${statLine}` : statLine,
+    body: article.body?.includes('Recorte estatístico:') ? article.body : [article.body, statLine].filter(Boolean).join('\n\n'),
+  };
+}
+
+// -------------------------------------------------------------------
 // ORQUESTRADOR PRINCIPAL — TIER-AWARE
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 export function generateTournamentNews(tournament, bracket, state, result = null) {
   // Olimpíadas têm geração de notícias própria
@@ -4612,7 +4657,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     ?? state?.preparedTournamentPackageCache?.[tournament?.id]?.calendarContext?.tournamentChapter
     ?? null;
 
-  // ── Tier config ───────────────────────────────────────────────
+  // -- Tier config -----------------------------------------------
   const tier       = TOURNAMENT_TIER_CONFIG[tournament.category] ?? TOURNAMENT_TIER_CONFIG.ATP_250;
   const isProspect = tournament.category === 'ATP_PROSPECTS';
 
@@ -4630,7 +4675,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
   // Verifica se tipo de artigo está habilitado para este tier
   function typeAllowed(type) { return !tier.disabledTypes.has(type); }
 
-  // ── 1. CAMPEÃO (sempre) ───────────────────────────────────────
+  // -- 1. CAMPEÃO (sempre) ---------------------------------------
   const champArticle = genChampion({ tournament, bracket, year, rivalrySystem, allPlayers });
   if (champArticle) {
     // Injeta preferência de jornalista do tier
@@ -4646,7 +4691,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     articles.push(champArticle);
   }
 
-  // ── 2. ARTIGOS ESPECIAIS DO TIER ─────────────────────────────
+  // -- 2. ARTIGOS ESPECIAIS DO TIER -----------------------------
   for (const special of tier.specialArticles) {
     if (articles.length >= tier.maxArticles) break;
     let art = null;
@@ -4662,7 +4707,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     if (art) articles.push(art);
   }
 
-  // ── 3. RIVALIDADE NA FINAL ────────────────────────────────────
+  // -- 3. RIVALIDADE NA FINAL ------------------------------------
   if (typeAllowed('RIVALRY') && articles.length < tier.maxArticles) {
     const finalMatch = bracket.rounds?.at(-1)?.[0];
     if (finalMatch && !finalMatch.isBye && finalMatch.playerA && finalMatch.playerB) {
@@ -4671,7 +4716,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 4. DUELOS ÉPICOS ─────────────────────────────────────────
+  // -- 4. DUELOS ÉPICOS -----------------------------------------
   if (typeAllowed('EPIC_MATCH')) {
   const maxEpics = (tournament.category === 'GRAND_SLAM' || tournament.category === 'SLAM_CLASH' || tournament.category === 'MASTERS_1000') ? 2 : 1;
     let epicCount  = 0;
@@ -4690,7 +4735,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 5. ZEBRAS ────────────────────────────────────────────────
+  // -- 5. ZEBRAS ------------------------------------------------
   if (typeAllowed('UPSET')) {
   const maxUpsets = (tournament.category === 'GRAND_SLAM' || tournament.category === 'SLAM_CLASH' || tournament.category === 'MASTERS_1000') ? 2 : 1;
     let upsetCount  = 0;
@@ -4713,7 +4758,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 6. LESÕES ─────────────────────────────────────────────────
+  // -- 6. LESÕES -------------------------------------------------
   if (typeAllowed('INJURY') && articles.length < tier.maxArticles) {
   const injChance = tournament.category === 'GRAND_SLAM' ? 0.75
     : tournament.category === 'SLAM_CLASH' ? 0.68
@@ -4723,7 +4768,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
       if (!player.injury) continue;
       // Nota: injuryHistory só recebe entradas após a cura (tickInjury),
       // portanto a guarda `!hist.at(-1)` silenciava artigos de primeira lesão.
-      // A verificação `!player.injury` acima já é suficiente.
+      // A verificação `!player.injury` acima já — suficiente.
       if (chance(injChance)) {
         const injArticle = genInjury({ player, injury: player.injury, tournament, year });
         if (injArticle) articles.push(injArticle);
@@ -4731,7 +4776,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 6b. ACOMPANHAMENTO DE LESÕES ATIVAS ───────────────────────
+  // -- 6b. ACOMPANHAMENTO DE LESÕES ATIVAS -----------------------
   // Jogadores em recuperação (slotsRemaining > 0) recebem cobertura contínua
   // independente de estarem ou não no chaveamento deste torneio.
   if (typeAllowed('INJURY_FOLLOWUP')) {
@@ -4761,7 +4806,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 7. PROSPECT DESTAQUE ─────────────────────────────────────
+  // -- 7. PROSPECT DESTAQUE -------------------------------------
   if (typeAllowed('PROSPECT') && articles.length < tier.maxArticles) {
     if (isProspect && bracket.champion) {
       // Scout report já gerado acima; artigo padrão como complemento
@@ -4784,13 +4829,13 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 8. ANÁLISE ────────────────────────────────────────────────
+  // -- 8. ANÁLISE ------------------------------------------------
   if (typeAllowed('ANALYSIS') && articles.length < tier.maxArticles && chance(tier.analysisChance)) {
     const analysisArticle = genAnalysis({ tournament, bracket, year, allPlayers });
     if (analysisArticle) articles.push(analysisArticle);
   }
 
-  // ── 9. RUMORES ────────────────────────────────────────────────
+  // -- 9. RUMORES ------------------------------------------------
   if (typeAllowed('RUMOR') && articles.length < tier.maxArticles && chance(tier.rumorChance)) {
     const DRAMA_MOODS = new Set(['CRISIS','ISOLATED','OBSESSED','BITTER','BURNED_OUT','REBUILDING','VULNERABLE']);
     let subjectPool = allPlayers.filter(p => {
@@ -4806,7 +4851,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     }
   }
 
-  // ── 10. BALANÇO DO TORNEIO (sempre) ──────────────────────────
+  // -- 10. BALANÇO DO TORNEIO (sempre) --------------------------
   const wrapArticle = genTournamentWrap({
     tournament,
     bracket,
@@ -4824,14 +4869,14 @@ export function generateTournamentNews(tournament, bracket, state, result = null
     articles[i] = applyEditorialBrain(articles[i], editorialContext);
   }
 
-  // ── Ordena por prioridade ─────────────────────────────────────
+  // -- Ordena por prioridade -------------------------------------
   articles.sort((a, b) => {
     const pa = NEWS_TYPES[a.type]?.priority ?? 0;
     const pb = NEWS_TYPES[b.type]?.priority ?? 0;
     return pb - pa;
   });
 
-  // ── Injetar narração MatchNarrator (F e SF) ───────────────────
+  // -- Injetar narração MatchNarrator (F e SF) -------------------
   const SF_F_ROUNDS = new Set(['F', 'SF']);
   const allRounds2  = bracket.rounds ?? [];
   const matchByRound = new Map();
@@ -4876,7 +4921,7 @@ export function generateTournamentNews(tournament, bracket, state, result = null
       break;
     }
   }
-  return articles;
+  return articles.map(article => attachStatisticalBrief(article, bracket));
 }
 
 /**
@@ -4890,7 +4935,7 @@ export function generateYearEndNews(state) {
   const year     = state.year;
   const allPlayers = [...(state.tourPlayers ?? []), ...(state.prospects ?? [])];
 
-  // ── Aposentadorias ────────────────────────────────────────────
+  // -- Aposentadorias --------------------------------------------
   for (const ev of state.events ?? []) {
     if (ev.type !== 'retirement') continue;
     const player = allPlayers.find(p => p.id === ev.playerId);
@@ -4899,7 +4944,7 @@ export function generateYearEndNews(state) {
     if (retArticle) articles.push(retArticle);
   }
 
-  // ── Eventos de vida do ano (batch) ────────────────────────────
+  // -- Eventos de vida do ano (batch) ----------------------------
   // Coleta eventos do ano atual de todos os jogadores
   const lifeEventPairs = allPlayers
     .map(player => ({
@@ -4916,11 +4961,11 @@ export function generateYearEndNews(state) {
     articles.push(...lifeArticles);
   }
 
-  // ── Colunas de personalidade (até 4, guiadas por mood/estado) ─
+  // -- Colunas de personalidade (até 4, guiadas por mood/estado) -
   const personalityArticles = genPersonalityColumns(allPlayers, year);
   articles.push(...personalityArticles);
 
-  // ── Coluna de fim de ano enriquecida com personalidade ────────
+  // -- Coluna de fim de ano enriquecida com personalidade --------
   const journalist = JOURNALISTS.CARVALHO;
   const j          = journalist;
   const topPlayer  = state.rankingStore?.ranked?.[0];
@@ -5006,7 +5051,7 @@ function _isHistoricFigure(player) {
 
 function _breakingEventCopy(event, player, journalist, headline, deck, body, year) {
   const coverStory = _isHistoricFigure(player)
-    && (event.type === 'HEALTH_CRISIS' || event.type === 'HEALTH_CAREER_ENDING' || event.type === 'RETIREMENT_ANNOUNCED');
+    && (event.type === 'HEALTH_CRISIS' || event.type === 'HEALTH_CAREER_ENDING' || event.type === 'RETIREMENT_ANNOUNCED' || event.scale === 'SEISMIC' || event.scale === 'ERA_DEFINING');
   return {
     id: `breaking-${event.type}-${event.playerId}-${year}-${Date.now()}`,
     type: 'BREAKING',
@@ -5114,6 +5159,19 @@ export function generateBreakingNewsArticles(events = [], players = [], year = n
     const journalist = _breakingJournalist(event.type);
     const j = journalist;
 
+    if (event.shockHeadline || String(event.type ?? '').startsWith('CIRCUIT_SHOCK_')) {
+      articles.push(_breakingEventCopy(
+        event,
+        player,
+        journalist,
+        event.shockHeadline ?? `${player.name}: acontecimento de grande impacto no circuito`,
+        event.shockDeck ?? 'A história continua em desenvolvimento e não permite conclusões antecipadas.',
+        event.shockBody ?? 'A redação acompanha evidências, respostas e consequências antes de publicar qualquer conclusão.',
+        event.year ?? year,
+      ));
+      continue;
+    }
+
     if (event.type === 'RETIREMENT_ANNOUNCED') {
       const age = player.age ?? 0;
       const slamCount = player.careerTitles?.gs ?? 0;
@@ -5154,7 +5212,7 @@ export function generateBreakingNewsArticles(events = [], players = [], year = n
         `${diagnosisName} foi a forma usada pela equipe para nomear publicamente o quadro.`,
         subtypeLine,
         `Nos bastidores, a notícia desloca o debate do ranking para algo mais primitivo: presença, ausência, possibilidade de retorno. Quando um nome desses some, o circuito muda de peso.`,
-        event.careerEnding ? `Há, inclusive, o medo real de que o retorno nunca aconteça. E esse é o tipo de frase que o tênis odeia escrever.` : `A equipe evita prazos absolutos. O foco, por ora, é sobreviver ao processo antes de pensar em qualquer comeback.`,
+        event.careerEnding ? `HÁ, inclusive, o medo real de que o retorno nunca aconteça. E esse é o tipo de frase que o tênis odeia escrever.` : `A equipe evita prazos absolutos. O foco, por ora, é sobreviver ao processo antes de pensar em qualquer comeback.`,
         event.publicStatement ? `"${event.publicStatement}"` : '',
         pick(j.voice.closing),
       ].filter(Boolean).join(' ');
@@ -5213,7 +5271,7 @@ export function generateBreakingNewsArticles(events = [], players = [], year = n
         event.kind === 'FAMILY_BEREAVEMENT'
           ? `A notícia é tratada com discrição, mas o impacto é total. A temporada deixa de ser uma sequência de torneios e passa a ser um espaço de luto.`
           : event.kind === 'MENTAL_HEALTH_COLLAPSE'
-            ? `A equipe fala em preservação, e a palavra é correta. Há períodos em que continuar jogando seria uma forma de aprofundar a queda, não de demonstrar força.`
+            ? `A equipe fala em preservação, e a palavra é correta. HÁ períodos em que continuar jogando seria uma forma de aprofundar a queda, não de demonstrar força.`
             : `Fontes próximas descrevem semanas de absoluta desordem emocional e logística. O tipo de episódio que reescreve prioridades num instante.`,
         `No circuito, a reação é menos analítica e mais humana. Não se discute chave. Discute-se ausência.`,
         pick(j.voice.closing),
@@ -5369,7 +5427,7 @@ export function generateBreakingTournamentFollowups(tournament, result, state = 
           ? `Quando a turnê final entrega troféu, a nostalgia deixa de ser abstrata e ganha fotografia, placar e eco histórico.`
           : run.wins > 0
             ? `Mesmo sem o título, houve jogo suficiente para transformar a semana em algo maior do que simples cerimônia.`
-            : `Há semanas em que o placar pesa menos do que a sensação de que um palco importante acabou de ficar para trás.`,
+            : `HÁ semanas em que o placar pesa menos do que a sensação de que um palco importante acabou de ficar para trás.`,
         `É por isso que cada torneio agora vale por dois: pelo resultado que deixa no ranking e pela lembrança que acrescenta à despedida.`,
         pick(j.voice.closing),
       ].join(' ');
@@ -5477,9 +5535,10 @@ function articleFingerprint(article) {
 
 function normalizeArticle(article) {
   if (!article) return null;
+  const repaired = repairLegacyArticle(article);
   return {
-    ...article,
-    createdAt: article.createdAt ?? Date.now(),
+    ...repaired,
+    createdAt: repaired.createdAt ?? Date.now(),
   };
 }
 

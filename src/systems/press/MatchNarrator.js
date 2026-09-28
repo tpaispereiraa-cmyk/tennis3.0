@@ -14,6 +14,7 @@
 
 import { heatScoreToTier } from '../analytics/MatchHeat.js';
 import { getArchetypeVoice, getPlayProfile, generatePrefs } from '../../domain/players/playerPrefs.js';
+import { isTiebreakSetScore } from '../../core/constants.js';
 
 // ════════════════════════════════════════════════════════════════════
 // UTILS
@@ -31,6 +32,8 @@ const SURFACE_LABEL = {
   CLAY:   'saibro',
   GRASS:  'grama',
   HARD:   'quadra dura',
+  STREET: 'asfalto',
+  CARPET: 'veludo',
   INDOOR: 'indoor',
 };
 
@@ -72,8 +75,8 @@ function extractMetrics(winner, loser, result, surface) {
     const wGames = winnerIsA ? a : b;
     const lGames = winnerIsA ? b : a;
     const wWonSet = wGames > lGames;
-    const isClose  = Math.abs(wGames - lGames) <= 1 || (wGames === 7 && lGames === 6);
-    const isTb     = wGames === 7 || lGames === 7;
+    const isClose  = Math.abs(wGames - lGames) <= 1 || isTiebreakSetScore(wGames, lGames);
+    const isTb     = isTiebreakSetScore(wGames, lGames);
     const isBagel  = lGames === 0;
     const isBread  = lGames === 1;
     return { set: i+1, wGames, lGames, wWonSet, isClose, isTb, isBagel, isBread };

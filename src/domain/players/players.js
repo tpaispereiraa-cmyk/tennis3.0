@@ -42,6 +42,7 @@ export const NAMED_PLAYERS = {
   // ══════════════════════════════════════════════════════════════
   VANTORINI: {
     id: 'VANTORINI',
+    courtIdentity: { favoritePlay: 'FH_INSIDE_OUT', movement: { forehandRunaroundBias: 0.15 }, shotVocabulary: { familyBias: { TOPSPIN: 0.09 }, directionBias: { INSIDE_OUT: 0.08 }, blueprintBias: { TOPSPIN_INSIDE_OUT: 0.10 }, repeatTolerance: 0.13 }, construction: { favoritePatterns: ['SETUP_FOREHAND'] } },
     photo: 'https://files.catbox.moe/xukqks.png',
     name: 'Vantorini',
     nickname: 'Il Cannone',
@@ -108,6 +109,7 @@ export const NAMED_PLAYERS = {
   // ══════════════════════════════════════════════════════════════
   KASPERK: {
     id: 'KASPERK',
+    courtIdentity: { favoritePlay: 'DEFENSIVE_LOB_RESET', timing: { peakContactBias: 0.14, earlyContactBias: -0.08 }, shotVocabulary: { intentBias: { BUILD: 0.08, CONTROL: 0.07, FINISH: -0.07 }, familyBias: { SLICE: 0.07 }, variationTolerance: -0.04 }, positioning: { baselineDepthBias: 0.24 } },
     photo: 'https://files.catbox.moe/cbr6rs.png',
     name: 'Kasperk',
     nickname: 'The Nordic Wall',
@@ -454,12 +456,38 @@ export const NAMED_PLAYERS = {
     initialRank: 38,
     initialPts: 1820,
     birthYear: 2006,
-    potential: 'LENDA',
+    // Teto raro de uma geração, sem garantia de carreira histórica.
+    potential: 'GERACIONAL',
+    careerCeilingOverride: 98,
     developmentStyle: 'EXPLOSIVE',
     peakAge: 25,
     rallyPattern: 'SHORT_ANGLE_BUILDER',
     signaturePattern: 'SERVE_FH_KILL',
     naturalSignature: 'FH_KICK',
+    careerTrajectory: {
+      version: 1,
+      source: 'AUTHORED_MONSTER_PROSPECT',
+      establishedYear: 2025,
+      // Ambição e talento bruto são enormes; estabilidade, resiliência e
+      // profissionalismo ainda vão precisar ser conquistados na carreira.
+      realization: 76,
+      professionalism: 63,
+      resilience: 55,
+      stability: 47,
+      ambition: 93,
+      window: {
+        arcId: 'EXPLOSIVE',
+        startAge: 21,
+        endAge: 27,
+        currentAge: 19,
+        phase: 'FORMATIVE',
+      },
+      history: [{
+        year: 2025,
+        type: 'BASELINE_ESTABLISHED',
+        source: 'AUTHORED_MONSTER_PROSPECT',
+      }],
+    },
     alcunha: null,
     _devState: {
       monthsAtPeak: 0,
@@ -571,6 +599,7 @@ export const NAMED_PLAYERS = {
   // ══════════════════════════════════════════════════════════════
   NAKAMURA: {
     id: 'NAKAMURA',
+    courtIdentity: { favoritePlay: 'DROP_AFTER_DEPTH', positioning: { baselineDepthBias: -0.10, netFollowBias: 0.07 }, timing: { riseContactBias: 0.07, peakContactBias: 0.06 }, shotVocabulary: { familyBias: { SLICE: 0.08, DROP: 0.10 }, blueprintBias: { DROP_DISGUISED_CROSS: 0.11, SLICE_SHORT_POISON: 0.10, TOPSPIN_SHORT_ANGLE: 0.09 }, variationTolerance: 0.16, repeatTolerance: -0.04 }, construction: { favoritePatterns: ['DEPTH_TO_DROP', 'PIN_AND_OPEN'] }, returnIdentity: { chipBias: 0.07 } },
     photo: 'https://files.catbox.moe/q4ojf4.png',
     name: 'Nakamura',
     nickname: 'Seijaku',
@@ -617,7 +646,9 @@ export const NAMED_PLAYERS = {
     },
     prefs: {
       buildStyle:   'VARIED',
-      netGame:      'RELUCTANT',
+      // A rede é arma de fechamento, não plano A: sobe quando constrói a janela.
+      netGame:      'OPPORTUNIST',
+      netGameLocked: true,
       rallyCadence: 'BALANCED',
       riskProfile:  'CALCULATED',
       adaptability: 96,
@@ -704,6 +735,7 @@ export const NAMED_PLAYERS = {
   // ══════════════════════════════════════════════════════════════
   BJORNSTAD: {
     id: 'BJORNSTAD',
+    courtIdentity: { favoritePlay: 'SHORT_BALL_APPROACH', positioning: { netFollowBias: 0.14, baselineDepthBias: -0.08 }, movement: { netTransitionBias: 0.15 }, shotVocabulary: { intentBias: { APPROACH: 0.11, PRESSURE: 0.04 }, blueprintBias: { SLICE_CHIP_APPROACH: 0.10 } }, construction: { favoritePatterns: ['SETUP_NET'] } },
     photo: 'https://files.catbox.moe/n9wkcq.png',
     name: 'Bjornstad',
     nickname: 'Fjord',
@@ -7427,8 +7459,13 @@ function rebalanceNamedPlayerNetGame(playersMap) {
 
   ranked.forEach(({ player }, index) => {
     const generatedPrefs = mergeGeneratedPrefs(player?.attrs ?? {}, player?.prefs ?? {});
-    let netGame;
-    if (index < targetCounts.HUNTER) {
+    const explicitNetGame = player?.prefs?.netGame;
+    const lockedNetGame = player?.prefs?.netGameLocked === true && explicitNetGame;
+    let netGame = lockedNetGame;
+    if (netGame) {
+      // Jogadores de identidade autoral podem declarar uma relação específica
+      // com a rede. O balanceador continua distribuindo o restante do roster.
+    } else if (index < targetCounts.HUNTER) {
       netGame = 'HUNTER';
     } else if (index < targetCounts.HUNTER + targetCounts.PROACTIVE) {
       netGame = 'PROACTIVE';
@@ -7470,6 +7507,7 @@ export function getPlayerPhoto(playerOrKey) {
 
 // ── Inicializar traits 2.0 nos jogadores nomeados ─────────────────
 import { assignRandomInitialTraitsToRoster } from '../../systems/traits/TraitSystem.js';
+import { initializeTalentIdentityRoster } from '../../systems/talents/TalentIdentitySystem.js';
 
 // ── Auto-migração v3: converte attrs antigos (28) para novos (14) ──
 // Qualquer jogador que ainda usa o sistema antigo é migrado automaticamente.
@@ -7477,5 +7515,6 @@ import { assignRandomInitialTraitsToRoster } from '../../systems/traits/TraitSys
 // Migração permanente aplicada em março/2026 — não há mais schema antigo.
 
 assignRandomInitialTraitsToRoster(NAMED_PLAYERS, { seedTag: 'named-roster-v1' });
+initializeTalentIdentityRoster(NAMED_PLAYERS, { source: 'ROSTER', seasonYear: 2025 });
 rebalanceNamedPlayerNetGame(NAMED_PLAYERS);
 

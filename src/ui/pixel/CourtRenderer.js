@@ -59,7 +59,103 @@ const SURFACE_MARK = {
     },
     strokeColor: () => 'transparent',
   },
+  // Asfalto: marca escura, tipo raspadão no concreto
+  STREET: {
+    w: 8, h: 2,
+    color: (age, maxAge) => {
+      const a = Math.max(0, 0.28 - (age / maxAge) * 0.28);
+      return `rgba(255,255,255,${a})`;
+    },
+    strokeColor: (age, maxAge) => {
+      const a = Math.max(0, 0.18 - (age / maxAge) * 0.18);
+      return `rgba(200,200,200,${a})`;
+    },
+  },
+  // Veludo: quase sem marca — bola passa rente
+  CARPET: {
+    w: 5, h: 1,
+    color: (age, maxAge) => {
+      const a = Math.max(0, 0.08 - (age / maxAge) * 0.08);
+      return `rgba(90,65,35,${a})`;
+    },
+    strokeColor: () => 'transparent',
+  },
 };
+
+function drawStreetIso(ctx, corners, hl, hw, W, H, visual) {
+  // Base: asfalto escuro sólido
+  ctx.beginPath();
+  corners.forEach((co, i) => i === 0 ? ctx.moveTo(co.sx, co.sy) : ctx.lineTo(co.sx, co.sy));
+  ctx.closePath();
+  ctx.fillStyle = visual?.courtColor ?? '#2A2A2A';
+  ctx.fill();
+
+  // Textura de asfalto: pontos granulados irregulares
+  const seed = 42;
+  const grainCount = 180;
+  for (let i = 0; i < grainCount; i++) {
+    const gy = -hl + ((i * 137.5 + seed) % (hl * 2));
+    const gx = -hw + ((i * 97.3 + seed * 2) % (hw * 2));
+    const p = toIso(gy, gx, W, H);
+    const alpha = 0.04 + (i % 5) * 0.012;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fillRect(p.sx - 1, p.sy - 1, 2, 1);
+  }
+
+  // Marcações de rua: faixas amarelas nas laterais (como asfalto urbano)
+  const laneY = [-hl * 0.1, hl * 0.1];
+  for (const ly of laneY) {
+    const la = toIso(ly - 0.4, -hw + 0.3, W, H);
+    const lb = toIso(ly + 0.4,  hw - 0.3, W, H);
+    ctx.strokeStyle = 'rgba(255,220,0,0.09)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(la.sx, la.sy);
+    ctx.lineTo(lb.sx, lb.sy);
+    ctx.stroke();
+  }
+}
+
+function drawCarpetIso(ctx, corners, hl, hw, W, H, visual) {
+  // Base bege clara de tapete/veludo
+  ctx.beginPath();
+  corners.forEach((co, i) => i === 0 ? ctx.moveTo(co.sx, co.sy) : ctx.lineTo(co.sx, co.sy));
+  ctx.closePath();
+  ctx.fillStyle = visual?.courtColor ?? '#D8C49A';
+  ctx.fill();
+
+  // Textura de veludo: faixas finas alternadas (fibras do tapete)
+  const fiberCount = 28;
+  const fiberStep = (hl * 2) / fiberCount;
+  for (let i = 0; i < fiberCount; i++) {
+    const y0 = -hl + i * fiberStep;
+    const y1 = y0 + fiberStep * 0.5;
+    const col = i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)';
+    const p00 = toIso(y0, -hw, W, H);
+    const p01 = toIso(y0,  hw, W, H);
+    const p10 = toIso(y1, -hw, W, H);
+    const p11 = toIso(y1,  hw, W, H);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(p00.sx, p00.sy);
+    ctx.lineTo(p01.sx, p01.sy);
+    ctx.lineTo(p11.sx, p11.sy);
+    ctx.lineTo(p10.sx, p10.sy);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Brilho central suave — iluminação de arena fechada
+  const center = toIso(0, 0, W, H);
+  const grd = ctx.createRadialGradient(center.sx, center.sy, 5, center.sx, center.sy, 140);
+  grd.addColorStop(0, 'rgba(255,244,218,0.14)');
+  grd.addColorStop(1, 'rgba(255,244,218,0.00)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  corners.forEach((co, i) => i === 0 ? ctx.moveTo(co.sx, co.sy) : ctx.lineTo(co.sx, co.sy));
+  ctx.closePath();
+  ctx.fill();
+}
 
 // ── Court mark init ───────────────────────────────────────────────────────────
 export function initCourtMarks(gs) {
@@ -406,6 +502,10 @@ export function drawIsoCourtEnhanced(ctx, gs, W, H) {
     drawClayIso(ctx, corners, hl, hw, W, H, visual);
   } else if (surface === 'INDOOR') {
     drawIndoorIso(ctx, corners, hl, hw, W, H, visual, visual?.bercy);
+  } else if (surface === 'STREET') {
+    drawStreetIso(ctx, corners, hl, hw, W, H, visual);
+  } else if (surface === 'CARPET') {
+    drawCarpetIso(ctx, corners, hl, hw, W, H, visual);
   } else {
     drawHardIso(ctx, corners, hl, hw, W, H, visual);
   }
@@ -464,4 +564,3 @@ export function drawTopCourtMarks(ctx, gs) {
     ctx.restore();
   }
 }
-

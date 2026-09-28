@@ -32,7 +32,7 @@ const TONE_META = {
   analytical_profound: { label:'Intelectual',  color:'#26C6DA', icon:'🔬' },
 };
 
-const SURFACE_COLORS = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', INDOOR:'#AB47BC' };
+const SURFACE_COLORS = { CLAY:'#D4561E', GRASS:'#2ECC71', HARD:'#4A90D9', STREET:'#EF9F27', CARPET:'#C4426A', INDOOR:'#AB47BC' };
 const CAT_BADGE = {
   GRAND_SLAM:{ label:'GRAND SLAM', color:'#E8C84A' },
   MASTERS_1000:{ label:'MASTERS 1000', color:'#4A90D9' },

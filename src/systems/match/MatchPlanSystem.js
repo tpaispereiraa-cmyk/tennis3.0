@@ -7,16 +7,13 @@
  *  - rallyPattern e styleId do adversário
  *  - recentForm / surfaceForm (Fase 2 — fallback para 0.5 se ausente)
  *  - histórico h2h via RivalrySystem (opcional — injetado em runtime)
- *  - filosofia do coach
  *
- * O plano produz um array de diretivas que CoachInfluencer aplica
- * como boosts/penalidades de EV de FUNDO — mais suaves e persistentes
- * que as instruções de changeover (que são reativas e de curto prazo).
+ * O plano produz um array de diretivas táticas usadas pelo ShotDecision.
  *
  * Fluxo:
  *   initGameState() → initMatchPlan(playerA, playerB, surface, rivalrySystem)
  *   → player._matchPlan = generateMatchPlan(...)
- *   → applyCoachInfluence() lê player._matchPlan a cada shot
+ *   → ShotDecision lê player._matchPlan a cada shot
  *
  * Garantias:
  *  - Nunca lança exceção mesmo sem recentForm ou RivalrySystem
@@ -53,8 +50,8 @@ export const PLAN_DIRECTIVES = {
  * Estilos que naturalmente preferem rede → LIMIT_NET contra eles é inútil.
  * Estilos que naturalmente sobem à rede → NET_PRESSURE faz sentido.
  */
-const NET_STYLES     = new Set(['NET_SPECIALIST', 'SRV_VOL']);
-const NET_APPROACH_STYLES = new Set(['NET_SPECIALIST', 'SRV_VOL', 'ALL_COURT', 'AGG_BASELINER']);
+const NET_STYLES     = new Set(['NET_SPECIALIST', 'NET_SPEC', 'SRV_VOL']);
+const NET_APPROACH_STYLES = new Set(['NET_SPECIALIST', 'NET_SPEC', 'SRV_VOL', 'ALL_COURT', 'AGG_BASELINER']);
 
 /**
  * rallyPattern → diretiva de resposta recomendada.
@@ -75,13 +72,13 @@ const RALLY_PATTERN_COUNTER = {
 /**
  * Estilos com preferência por servir no corpo → SERVE_BODY como diretiva extra.
  */
-const SERVE_BODY_STYLES = new Set(['SRV_VOL', 'BIG_SERVER', 'AGG_BASELINER', 'POWER_BASELINER']);
+const SERVE_BODY_STYLES = new Set(['SRV_VOL', 'BIG_SERVER', 'AGG_BASELINER', 'POWER_BASELINER', 'PWR_BASE']);
 
 /**
  * Estilos com forehand dominant do adversário → atacar o BH dele é default.
  */
 const FH_DOMINANT_STYLES = new Set([
-  'AGG_BASELINER', 'POWER_BASELINER', 'TAKEALLRISK', 'MOMENTUM_PLAYER',
+  'AGG_BASELINER', 'POWER_BASELINER', 'PWR_BASE', 'TAKEALLRISK', 'MOMENTUM_PLAYER',
 ]);
 
 // ─────────────────────────────────────────────────────────────────
@@ -102,7 +99,10 @@ export function scoutOpponent(player, opponent, surface, rivalSystem = null) {
   // ── Lado mais fraco ────────────────────────────────────────────
   // Inferido de matchCtx (se existe de partida anterior no universo)
   // ou de styleId (fallback heurístico)
-  let weaker_side = _inferWeakerSideFromStyle(opponent.styleId);
+  const attrs = opponent?.attrs ?? {};
+  const fhLevel = (attrs.fhPotencia ?? 50) * 0.46 + (attrs.fhControle ?? 50) * 0.54;
+  const bhLevel = (attrs.bhPotencia ?? 50) * 0.46 + (attrs.bhControle ?? 50) * 0.54;
+  let weaker_side = Math.abs(fhLevel - bhLevel) >= 4 ? (fhLevel > bhLevel ? 'BH' : 'FH') : _inferWeakerSideFromStyle(opponent.styleId);
   const mc = opponent.ctx?.matchCtx;
   if (mc) {
     const bh = mc.oppBhHits ?? 0;
@@ -116,7 +116,10 @@ export function scoutOpponent(player, opponent, surface, rivalSystem = null) {
 
   // ── Forma na superfície ────────────────────────────────────────
   // recentForm é da Fase 2 — opcional, fallback para 0.5
-  const surfForm = opponent.recentForm?.surfaceForm?.[surface] ?? 0.5;
+  const surfaceKey = String(surface ?? 'HARD').toUpperCase();
+  const surfForm = opponent.recentForm?.surfaceForm?.[surfaceKey]
+    ?? opponent.recentForm?.surfaceForm?.[surface]
+    ?? 0.5;
   const formScore = opponent.recentForm?.formScore ?? 0.5;
 
   // ── Padrão de rally ────────────────────────────────────────────
@@ -168,21 +171,41 @@ export function scoutOpponent(player, opponent, surface, rivalSystem = null) {
 // GERAÇÃO DO PLANO
 // ─────────────────────────────────────────────────────────────────
 
+function buildCoachBriefing(player, opponent, focus, directive, influence) {
+  const opponentName = opponent?.name?.split?.(' ')?.pop?.() ?? 'o adversário';
+  const copy = {
+    PRESSURE: ['Tomar a quadra', `Tire tempo de ${opponentName}: saque + primeira bola, sem esperar a troca crescer.`],
+    CONTROL: ['Organizar o ponto', `Faça ${opponentName} jogar mais uma bola. Margem e padrão antes de acelerar.`],
+    RESET: ['Reencontrar a base', `Simplifique contra ${opponentName}: altura, profundidade e uma decisão limpa por vez.`],
+    CLUTCH: ['Ganhar os pontos vivos', `Nos pontos grandes contra ${opponentName}, respire antes de escolher. A primeira decisão vale mais.`],
+    SURFACE: ['Usar a superfície', `A quadra oferece uma rota contra ${opponentName}. Repita o padrão que ela está premiando.`],
+    BUILD: ['Construir por dentro', `Não entregue ritmo a ${opponentName}. Trabalhe o backhand e faça o ponto amadurecer.`],
+  };
+  const [headline, instruction] = copy[focus] ?? ['Ler antes de mudar', `Ajuste o padrão contra ${opponentName} sem abandonar a identidade do jogo.`];
+  return {
+    headline,
+    instruction,
+    directive,
+    influence: Math.round(influence * 100),
+    tone: influence >= 0.42 ? 'FIRME' : influence >= 0.30 ? 'EM AJUSTE' : 'FRÁGIL',
+    playerName: player?.name ?? null,
+  };
+}
+
 /**
  * Gera o match plan completo para um jogador contra um adversário.
  *
  * @param {object} player       — jogador que executa o plano
  * @param {object} opponent     — adversário
  * @param {string} surface      — 'clay' | 'grass' | 'hard' | 'indoor'
- * @param {object|null} coach   — { philosophy, coachAttrs } (opcional)
  * @param {object|null} rivalSystem — instância RivalrySystem (opcional)
  * @returns {{ directives: Array, confidence: number, notes: string }}
  */
-export function generateMatchPlan(player, opponent, surface, coach = null, rivalSystem = null) {
+export function generateMatchPlan(player, opponent, surface, rivalSystem = null) {
   const scout     = scoutOpponent(player, opponent, surface, rivalSystem);
   const styleId   = player.styleId    ?? 'ALL_COURT';
   const oppStyle  = opponent.styleId  ?? 'ALL_COURT';
-  const philosophy = coach?.philosophy ?? null;
+  const prefs = player?.prefs ?? {};
 
   const directives = [];
   const reasonNotes = [];
@@ -210,7 +233,10 @@ export function generateMatchPlan(player, opponent, surface, coach = null, rival
   }
 
   // ── 3. Superfície: vantagem própria ────────────────────────────
-  const playerSurfForm  = player.recentForm?.surfaceForm?.[surface] ?? 0.5;
+  const surfaceKey = String(surface ?? 'HARD').toUpperCase();
+  const playerSurfForm  = player.recentForm?.surfaceForm?.[surfaceKey]
+    ?? player.recentForm?.surfaceForm?.[surface]
+    ?? 0.5;
   const playerFormScore = player.recentForm?.formScore ?? 0.5;
   if (playerSurfForm > 0.62 && playerSurfForm > scout.surface_form + 0.10) {
     directives.push({ type: PLAN_DIRECTIVES.EXPLOIT_SURFACE, strength: 0.60 });
@@ -226,31 +252,43 @@ export function generateMatchPlan(player, opponent, surface, coach = null, rival
   }
 
   // ── 5. Estilo do próprio jogador define diretivas extras ────────
-  if (NET_APPROACH_STYLES.has(styleId) && !NET_STYLES.has(oppStyle)) {
+  if ((NET_APPROACH_STYLES.has(styleId) || ['PROACTIVE', 'HUNTER'].includes(prefs.netGame)) && !NET_STYLES.has(oppStyle)) {
     if (!_hasDirective(directives, PLAN_DIRECTIVES.NET_PRESSURE)) {
       directives.push({ type: PLAN_DIRECTIVES.NET_PRESSURE, strength: 0.50 });
       reasonNotes.push('explorar vocação de rede do jogador');
     }
   }
-  if (SERVE_BODY_STYLES.has(styleId)) {
+  if (prefs.serve1Bias === 'BODY' || (SERVE_BODY_STYLES.has(styleId) && prefs.serve1Bias !== 'WIDE')) {
     directives.push({ type: PLAN_DIRECTIVES.SERVE_BODY, strength: 0.45 });
     reasonNotes.push('estilo favorece saque no corpo');
   }
-
-  // ── 6. Filosofia do coach ──────────────────────────────────────
-  if (philosophy === 'OFFENSIVE') {
-    if (!_hasDirective(directives, PLAN_DIRECTIVES.EARLY_AGGRESSION)) {
-      directives.push({ type: PLAN_DIRECTIVES.EARLY_AGGRESSION, strength: 0.40 });
-      reasonNotes.push('coach ofensivo — pressionar cedo');
-    }
-  } else if (philosophy === 'DEFENSIVE') {
-    if (!_hasDirective(directives, PLAN_DIRECTIVES.FORCE_LONG)) {
-      directives.push({ type: PLAN_DIRECTIVES.FORCE_LONG, strength: 0.40 });
-      reasonNotes.push('coach defensivo — alongar o rally');
-    }
+  if (prefs.serve1Bias === 'WIDE') {
+    directives.push({ type: PLAN_DIRECTIVES.SERVE_WIDE, strength: 0.48 });
+    reasonNotes.push('identidade de saque abre a quadra');
+  }
+  if (['EARLY_ATTACK', 'EXPLOSIVE'].includes(prefs.rallyCadence) && ['GAMBLER', 'ALLOUT', 'CALCULATED'].includes(prefs.riskProfile)) {
+    directives.push({ type: PLAN_DIRECTIVES.EARLY_AGGRESSION, strength: prefs.rallyCadence === 'EXPLOSIVE' ? 0.58 : 0.48 });
+    reasonNotes.push('cadência favorece pressão precoce');
   }
 
-  // ── 7. H2H: se está perdendo consistentemente ─────────────────
+  const coaching = player.coaching ?? null;
+  let coachBriefing = null;
+  if (coaching?.activeCoachId && (coaching.trust ?? 0) >= 42) {
+    const base = Math.max(0.22, Math.min(0.54, ((coaching.confidence ?? 50) + (coaching.alignment ?? 50) - (coaching.friction ?? 30) * 0.55) / 190));
+    const focus = coaching.tacticalFocus;
+    const directive = focus === 'PRESSURE' ? PLAN_DIRECTIVES.EARLY_AGGRESSION
+      : focus === 'CONTROL' || focus === 'RESET' || focus === 'CLUTCH' ? PLAN_DIRECTIVES.FORCE_LONG
+      : focus === 'SURFACE' ? PLAN_DIRECTIVES.EXPLOIT_SURFACE
+      : focus === 'BUILD' ? PLAN_DIRECTIVES.ATTACK_BH
+      : null;
+    if (directive && !_hasDirective(directives, directive)) {
+      directives.push({ type: directive, strength: base, source: 'COACHING' });
+      reasonNotes.push(`banco vivo: foco ${focus}`);
+    }
+    if (directive) coachBriefing = buildCoachBriefing(player, opponent, focus, directive, base);
+  }
+
+  // ── 6. H2H: se está perdendo consistentemente ─────────────────
   if (scout.h2h_record && scout.h2h_record.totalMatches >= 3) {
     const h2hWR = scout.h2h_record.winRate;
     if (h2hWR < 0.30 && !_hasDirective(directives, PLAN_DIRECTIVES.EARLY_AGGRESSION)) {
@@ -288,6 +326,16 @@ export function generateMatchPlan(player, opponent, surface, coach = null, rival
     directives: finalDirectives,
     confidence,
     notes: reasonNotes.join(' · '),
+    coaching: player.coaching ? {
+      coachId: player.coaching.activeCoachId ?? null,
+      partnershipId: player.coaching.partnershipId ?? null,
+      tacticalFocus: player.coaching.tacticalFocus ?? null,
+      confidence: player.coaching.confidence ?? null,
+      trust: player.coaching.trust ?? null,
+      friction: player.coaching.friction ?? null,
+      planInfluence: finalDirectives.filter(d => d.source === 'COACHING').map(d => d.type),
+      briefing: coachBriefing,
+    } : null,
     _scout: scout,  // guardado para debug e narrativa (MatchNarrator fase 7)
   };
 }
@@ -306,8 +354,8 @@ export function generateMatchPlan(player, opponent, surface, coach = null, rival
  * @param {object|null} rivalSystem — instância de RivalrySystem (opcional)
  */
 export function initMatchPlans(playerA, playerB, surface, rivalSystem = null) {
-  playerA._matchPlan = generateMatchPlan(playerA, playerB, surface, playerA.coach ?? null, rivalSystem);
-  playerB._matchPlan = generateMatchPlan(playerB, playerA, surface, playerB.coach ?? null, rivalSystem);
+  playerA._matchPlan = generateMatchPlan(playerA, playerB, surface, rivalSystem);
+  playerB._matchPlan = generateMatchPlan(playerB, playerA, surface, rivalSystem);
 }
 
 // ─────────────────────────────────────────────────────────────────

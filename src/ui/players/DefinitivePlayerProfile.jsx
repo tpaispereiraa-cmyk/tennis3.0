@@ -4,7 +4,7 @@
  * Ficha completa do jogador — 8 abas, reimaginada do zero.
  *
  * ABAS:
- *   1. IDENTIDADE   — quem é fora da quadra (personalidade din�mica)
+ *   1. IDENTIDADE   — quem é fora da quadra (personalidade din?mica)
  *   2. JOGO         — como joga (estilo + todos os atributos)
  *   3. CARREIRA     — o que conquistou (títulos + careerMoments)
  *   4. TRAJETÓRIA   — como evoluiu (gráficos OVR/ranking + desenvolvimento)
@@ -37,9 +37,6 @@ import {
 } from '../../systems/health/InjurySystem.js';
 import { computeRetirementChance, retirementRiskLabel } from '../../systems/career/RetirementSystem.js';
 import { getPlayerTraits, getTraitPresentation } from '../../systems/traits/TraitSystem.js';
-import { COACH_ATTR_CATEGORIES, coachOverallRating, coachGrade } from '../../systems/coaches/CoachProfiles.js';
-import { PARTNERSHIP_STATES, GOAL_TYPES, MILESTONE_TYPES } from '../../systems/coaches/CoachPartnershipSystem.js';
-import { getArchetypeDef } from '../../systems/coaches/CoachArchetypes.js';
 import { getPlayerRank } from '../../systems/ranking/RankingSystem.js';
 import CarreiraTimeline from '../career/CarreiraTimeline.jsx';
 import { migratePlayerLifeData } from '../../domain/players/PlayerLifeData.js';
@@ -56,20 +53,25 @@ import {
   PREFERABLE_TOURNAMENTS, PREFERENCE_BONUS,
   getTopFavoriteTournaments, getBottomTournaments, migrateTournamentPreferences,
 } from '../../systems/tournaments/TournamentPreferences.js';
-import { formatUSD, getFinancialPressure, getCoachSalary, ROUND_PRIZE_LABEL, CAT_PRIZE_LABEL, PRIZE_MONEY, initPlayerFinance } from '../../systems/finance/FinanceSystem.js';
+import { formatUSD, getFinancialPressure, ROUND_PRIZE_LABEL, CAT_PRIZE_LABEL, PRIZE_MONEY, initPlayerFinance } from '../../systems/finance/FinanceSystem.js';
 import { offlineZero as computeIFR, offlineZero as computeVisibility, offlineZero as computeSponsorSignal, offlineTier as getPhaseTwoTier, IFR_TIERS_OFFLINE as IFR_TIERS } from '../../systems/shotlab/ShotEngineOffline.js';
 import { SPONSOR_TIERS } from '../../systems/sponsors/SponsorProfiles.js';
 import { getSponsorshipProfile } from '../../systems/sponsors/SponsorContractSystem.js';
 import { computeRating } from '../game/IndividualRating.jsx';
 import {
   getBuildStyleMeta, getNetGameMeta, getRallyCadenceMeta, getRiskProfileMeta,
-  adaptabilityLabel, generatePrefs, getArchetype,
+  getRallyIntentMeta, adaptabilityLabel, generatePrefs, getArchetype,
 } from '../../domain/players/playerPrefs.js';
 import { buildPlayerIdentity } from '../../domain/players/PlayerIdentity.js';
+import { getCourtIdentity } from '../../domain/players/PlayerCourtIdentity.js';
 import { buildPlayerBiography } from '../../systems/press/BiographyEngine.js';
 import { getPlayerBadges, BADGE_TIER_META } from '../../systems/achievements/BadgeSystem.js';
+import { COACH_METHODS } from '../../systems/coaching/CoachIdentitySystem.js';
+import { getPlayerCoach, getPartnershipForPlayer } from '../../systems/coaching/CoachPartnershipSystem.js';
 import { PROFILE_THEME as T } from '../theme/uiTheme.js';
 import { isJuniorPlayer } from '../../systems/progression/OOutroMundo.js';
+import { getTalentIdentityPresentation } from '../../systems/talents/TalentIdentitySystem.js';
+import { buildCareerTrajectoryForecast } from '../../systems/career/CareerTrajectorySystem.js';
 
 const formatProfileAge = (age) => {
   const n = Number(age);
@@ -78,6 +80,8 @@ const formatProfileAge = (age) => {
 
 const formatProfileYear = (year) => {
   const n = Number(year);
+  // Alguns sistemas de progressão registram checkpoints mensais como 2035.416….
+  // A ficha é um arquivo de temporadas: nunca deve expor esse detalhe técnico.
   return Number.isFinite(n) ? Math.floor(n) : year ?? '---';
 };
 
@@ -89,7 +93,9 @@ const formatProfileYear = (year) => {
 // CSS INJECTION
 // -----------------------------------------------------------------
 function injectCSS() {
-  if (document.getElementById('dpp-css')) return;
+  // Em desenvolvimento, HMR preserva o nó <style>. Não retornar aqui: assim
+  // cada alteração de paleta substitui a folha antiga imediatamente.
+  const existingStyle = document.getElementById('dpp-css');
   const css = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Barlow+Condensed:ital,wght@0,300;0,400;0,600;0,700;0,900;1,600&family=Barlow:wght@300;400;500;600&display=swap');
 
@@ -101,11 +107,8 @@ function injectCSS() {
 
 .upp2-root {
   position:fixed; inset:0;
-  background:
-    radial-gradient(circle at 14% 16%, rgba(0,214,214,.12), transparent 22%),
-    radial-gradient(circle at 86% 12%, rgba(212,86,30,.12), transparent 18%),
-    linear-gradient(180deg, rgba(3,10,14,.96) 0%, rgba(2,7,10,.99) 100%);
-  color:#EDE8DF;
+  background:rgba(25,22,17,.72);
+  color:#241E16;
   font-family:'Barlow',sans-serif;
   display:flex; align-items:center; justify-content:center;
   overflow:hidden; position:relative;
@@ -126,11 +129,11 @@ function injectCSS() {
 
 .upp2-modal {
   position:relative;
-  width:100vw;
-  height:100vh;
-  background:linear-gradient(180deg, rgba(5,16,21,.985) 0%, rgba(5,11,15,.99) 100%);
-  border:1px solid rgba(98,229,229,.14);
-  box-shadow:0 30px 80px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.04);
+  width:min(1480px,94vw);
+  height:min(920px,92vh);
+  background:radial-gradient(circle at 12% 0%, rgba(255,255,255,.75), transparent 25%), repeating-linear-gradient(0deg, rgba(92,72,42,.026) 0px, rgba(92,72,42,.026) 1px, transparent 1px, transparent 4px), #e7ddc5;
+  border:1px solid rgba(70,52,29,.34);
+  box-shadow:0 38px 110px rgba(0,0,0,.62), inset 0 0 0 5px rgba(255,255,255,.22);
   display:flex;
   flex-direction:column;
   overflow:hidden;
@@ -695,9 +698,9 @@ function injectCSS() {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
+/* ---------------------------------------------------------------
    COMPACT HERO — single 78px strip replacing the old tall hero
-═══════════════════════════════════════════════════════════════ */
+--------------------------------------------------------------- */
 .dpp-hero {
   position:relative; flex-shrink:0; height:78px;
   display:grid;
@@ -803,9 +806,9 @@ function injectCSS() {
   font-family:'Barlow Condensed',sans-serif; font-size:9px; letter-spacing:.12em; text-transform:uppercase;
 }
 
-/* ═══════════════════════════════════════════════════════════════
+/* ---------------------------------------------------------------
    SINGLE-LEVEL NAV — replaces the two-tier groupbar/tabbar
-═══════════════════════════════════════════════════════════════ */
+--------------------------------------------------------------- */
 .dpp-nav {
   display:flex; align-items:stretch; height:36px; flex-shrink:0;
   background:linear-gradient(180deg,rgba(5,14,18,.99),rgba(4,10,14,.98));
@@ -835,9 +838,9 @@ function injectCSS() {
   background:var(--sc,#D4561E);
 }
 
-/* ═══════════════════════════════════════════════════════════════
+/* ---------------------------------------------------------------
    FM OVERVIEW — 3-col dashboard, no scroll needed
-═══════════════════════════════════════════════════════════════ */
+--------------------------------------------------------------- */
 .dpp-fm {
   flex:1; min-height:0;
   display:grid; grid-template-columns:minmax(180px,.27fr) minmax(0,.46fr) minmax(180px,.27fr);
@@ -965,11 +968,63 @@ function injectCSS() {
   cursor:pointer; transition:all .12s;
 }
 .dpp-fm-shortcut:hover { background:rgba(237,232,223,.04); color:#EDE8DF; border-color:rgba(237,232,223,.13); }
+
+/* Dossiê em papel: modal de arquivo, separado visualmente da transmissão. */
+.upp2-chrome { background:rgba(242,235,216,.94); border-bottom:1px solid rgba(63,48,29,.20); }
+.upp2-chrome-btn { border-color:rgba(63,48,29,.18); color:rgba(47,37,25,.62); }
+.upp2-chrome-btn:hover { background:rgba(116,83,35,.09); color:#241E16; border-color:rgba(63,48,29,.36); }
+.dpp-hero { background:linear-gradient(90deg,#31271c 0%,#211b15 48%,#292016 100%); border-bottom-color:rgba(63,48,29,.35); }
+.dpp-nav { background:#d8c9aa; border-bottom-color:rgba(63,48,29,.22); }
+.dpp-nav-tab { color:rgba(47,37,25,.58); }
+.dpp-nav-tab:hover { color:#241E16; background:rgba(116,83,35,.10); }
+.dpp-nav-tab.act { color:#241E16; background:rgba(255,255,255,.34); }
+.upp2-content { background:transparent; }
+.archive-page { flex:1; overflow:auto; padding:28px clamp(20px,3vw,46px) 44px; color:#281f15; }
+.archive-kicker { font-family:'Space Mono',monospace; font-size:8px; letter-spacing:.34em; text-transform:uppercase; color:#80633a; }
+.archive-title { margin-top:7px; font-family:'Bebas Neue',sans-serif; font-size:clamp(42px,5.2vw,82px); line-height:.82; letter-spacing:.025em; color:#281f15; text-transform:uppercase; }
+.archive-card { border:1px solid rgba(69,52,28,.23); background:rgba(255,251,239,.50); box-shadow:0 8px 24px rgba(62,45,22,.055); }
+.archive-metric { padding:14px 15px; border-left:1px solid rgba(69,52,28,.16); }
+.archive-metric:first-child { border-left:none; }
+.archive-label { font-family:'Space Mono',monospace; font-size:7px; letter-spacing:.24em; text-transform:uppercase; color:#806f55; }
+.archive-value { margin-top:6px; font-family:'Bebas Neue',sans-serif; font-size:31px; line-height:.86; color:#281f15; }
+.archive-copy { font-family:'Barlow',sans-serif; font-size:12px; line-height:1.65; color:#625441; }
+.archive-season { text-align:left; cursor:pointer; padding:10px 11px; border:1px solid rgba(69,52,28,.18); background:rgba(255,255,255,.25); color:#493925; transition:.16s; }
+.archive-season:hover,.archive-season.active { background:#31271c; color:#f3e9d3; border-color:#31271c; transform:translateY(-2px); }
+.archive-season-year { font-family:'Bebas Neue',sans-serif; font-size:23px; line-height:.9; }
+.archive-season-meta { margin-top:4px; font-family:'Space Mono',monospace; font-size:7px; letter-spacing:.12em; opacity:.7; }
+.archive-bar { height:6px; background:rgba(69,52,28,.10); overflow:hidden; }
+.archive-bar > span { display:block; height:100%; background:var(--bar,#a0562c); }
+
+/* Abas legadas traziam branco explícito do antigo tema de transmissão. Só
+   dentro do corpo do dossiê, convertemos esses neutros para tinta legível;
+   os acentos semânticos (ouro, lesão, superfície) continuam intactos. */
+.upp2-content [style*="237, 232, 223"],
+.upp2-content [style*="246, 240, 232"] { color:#3B2F21 !important; }
+.upp2-content [style*="237,230,216"] { color:#3B2F21 !important; }
+.upp2-content .upp2-scroll { color:#3B2F21; }
+
+/* Regra final de contraste do dossiê. As abas foram escritas ao longo de
+   versões com temas diferentes; texto não pode mais herdar branco translúcido
+   sobre papel. Cores de informação ficam em traços, selos e barras — a tinta
+   permanece sempre legível, independentemente da aba aberta. */
+.upp2-content *,
+.upp2-content button,
+.upp2-content input,
+.upp2-content select,
+.upp2-content textarea { color:#3B2F21 !important; text-shadow:none !important; }
+.upp2-content svg text { fill:#3B2F21 !important; }
+.upp2-content button[disabled] { color:rgba(59,47,33,.34) !important; }
+
+/* O cabeçalho é o único campo escuro. Mesmo nele, a tipografia é pergaminho
+   acinzentado/terracota — sem branco e sem amarelo chamativo. */
+.dpp-hero *, .dpp-hero [style] { color:#C7B89D !important; text-shadow:none !important; }
+.dpp-hero .dpp-badge-gold { color:#B9784A !important; border-color:rgba(185,120,74,.45) !important; background:rgba(185,120,74,.10) !important; }
+.dpp-hero .dpp-hero-name { color:#D4C6AD !important; }
 `;
-  const el = document.createElement('style');
+  const el = existingStyle ?? document.createElement('style');
   el.id = 'dpp-css';
   el.textContent = css;
-  document.head.appendChild(el);
+  if (!existingStyle) document.head.appendChild(el);
 }
 
 // -----------------------------------------------------------------
@@ -977,10 +1032,11 @@ function injectCSS() {
 // -----------------------------------------------------------------
 const ROUND_LABEL = { W:'Título', F:'Final', SF:'Semifinal', QF:'Quartas', R16:'Oitavas', R32:'3ª Rodada', R64:'2ª Rodada', R128:'1ª Rodada' };
 const CAT_COLOR = { GRAND_SLAM:'#FFD700', SLAM_CLASH:'#FF8A3D', MASTERS_1000:'#E040FB', ATP_500:'#00BCD4', ATP_250:'#66BB6A', ATP_100:'#FF7043', FINALS:'#F44336', ATP_PROSPECTS:'#FF7043' };
+const SURFACE_COLOR = { HARD:'#4A90D9', CLAY:'#C4572A', GRASS:'#2E7D32', INDOOR:'#8B2FAA', STREET:'#B45309', CARPET:'#8B1A3A' };
 const CAT_SHORT = { GRAND_SLAM:'GS', SLAM_CLASH:'CS', MASTERS_1000:'M1000', ATP_500:'ATP 500', ATP_250:'ATP 250', ATP_100:'ATP 100', FINALS:'Finals', ATP_PROSPECTS:'Prospects' };
-const SURF_COLOR = { CLAY:'#C4572A', GRASS:'#2ECC71', HARD:'#4A90D9', INDOOR:'#C84FEB' };
-const SURF_LABEL = { CLAY:'Saibro', GRASS:'Grama', HARD:'Dura', INDOOR:'Indoor' };
-const SURF_ICON  = { CLAY:'??', GRASS:'??', HARD:'???', INDOOR:'???' };
+const SURF_COLOR = { CLAY:'#C4572A', GRASS:'#2ECC71', HARD:'#4A90D9', STREET:'#EF9F27', CARPET:'#C4426A', INDOOR:'#C84FEB' };
+const SURF_LABEL = { CLAY:'Saibro', GRASS:'Grama', HARD:'Dura', STREET:'Asfalto', CARPET:'Veludo', INDOOR:'Indoor' };
+const SURF_ICON  = { CLAY:'??', GRASS:'??', HARD:'???', STREET:'???', CARPET:'??', INDOOR:'???' };
 
 const PERSONA_COLOR = {
   CHARISMATIC:'#F59E0B', RESERVED:'#64748B', CONFRONTATIONAL:'#EF4444',
@@ -1040,7 +1096,7 @@ const TIER_COLOR = { NICHE:'#64748B', LOCAL:'#94A3B8', NACIONAL:'#F59E0B', GLOBA
 
 const RIVALRY_META = {
   CLASSIC:      { label:'Clássica',           icon:'??',  color:'#FFD700' },
-  DOMINATION:   { label:'Domin�ncia',         icon:'??',  color:'#EF4444' },
+  DOMINATION:   { label:'Domin?ncia',         icon:'??',  color:'#EF4444' },
   GIANT_KILLER: { label:'Caçador de Gigantes',icon:'??',  color:'#22C55E' },
   GRUDGE:       { label:'Rancor',             icon:'??',  color:'#F97316' },
   FINALS_CURSE: { label:'Maldição das Finais',icon:'??',  color:'#C084FC' },
@@ -1378,17 +1434,97 @@ function buildTrajectorySnapshot(np, rankingStore) {
   };
 }
 
-function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setActiveTab, tournamentResults, coachPool }) {
+function ArchiveDossierOverview({ np, sc, rankingStore, year, identityProfile, setActiveTab, tournamentResults, coachMarket }) {
   const trajectory = useMemo(() => buildTrajectorySnapshot(np, rankingStore), [np, rankingStore]);
+  const biography = useMemo(() => buildPlayerBiography(np, { tournamentResults, rankingStore, currentYear:year }), [np, tournamentResults, rankingStore, year]);
+  const [selectedYear, setSelectedYear] = useState(null);
+  // O ledger pode conter snapshots mensais (2035.0833, 2035.1666...). Para o
+  // dossiê, condensamos isso em uma temporada por ano e preservamos o último
+  // estado conhecido daquele ano, que é o retrato mais fiel do encerramento.
+  const history = useMemo(() => {
+    const byYear = new Map();
+    for (const row of trajectory.history ?? []) {
+      const rawYear = Number(row?.year);
+      if (!Number.isFinite(rawYear)) continue;
+      const season = Math.floor(rawYear);
+      const previous = byYear.get(season);
+      if (!previous || rawYear >= previous._rawYear) byYear.set(season, { ...row, year:season, _rawYear:rawYear });
+    }
+    return [...byYear.values()].sort((a,b) => a.year - b.year);
+  }, [trajectory.history]);
+  const selected = history.find(h => String(h.year) === String(selectedYear)) ?? history[history.length - 1] ?? null;
+  const selectedIndex = selected ? history.indexOf(selected) : -1;
+  const previous = selectedIndex > 0 ? history[selectedIndex - 1] : null;
+  const rank = trajectory.currentRank ?? np?.rankPosition ?? null;
+  const peakRank = trajectory.peakRank ?? np?.careerBest?.rank ?? null;
+  const totalTitles = Object.values(np?.careerTitles ?? {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const talent = getTalentIdentityPresentation(np);
+  const currentCoach = getPlayerCoach(np, coachMarket);
+  const attrs = Object.entries(np?.attrs ?? {}).filter(([,v]) => Number.isFinite(v)).sort((a,b) => b[1]-a[1]).slice(0,4);
+  const attrLabel = key => ATTR_CATEGORIES.flatMap(c=>c.attrs).find(a=>a.key===key)?.label ?? key;
+  const narrative = String(biography.summary ?? biography.fullNarrative ?? identityProfile?.signature?.subline ?? '')
+    .split(/\n{2,}/).map(x=>x.trim()).filter(Boolean)[0] ?? 'A carreira ainda está escrevendo seu primeiro capítulo relevante.';
+  const yearOvrDelta = selected && previous && Number.isFinite(selected.ovr) && Number.isFinite(previous.ovr) ? selected.ovr - previous.ovr : null;
+  const yearRankDelta = selected && previous && Number.isFinite(selected.rank) && Number.isFinite(previous.rank) ? previous.rank - selected.rank : null;
+  const maxOvr = Math.max(1, ...history.map(h => Number(h.ovr) || 0), overallRating(np.attrs));
+  const metric = (label, value, note, color='#281f15') => <div className="archive-metric" key={label}><div className="archive-label">{label}</div><div className="archive-value" style={{color}}>{value}</div><div className="archive-copy" style={{fontSize:10, marginTop:5}}>{note}</div></div>;
+  return (
+    <div className="archive-page">
+      <div style={{ display:'flex', justifyContent:'space-between', gap:24, alignItems:'end', marginBottom:22 }}>
+        <div><div className="archive-kicker">arquivo central do circuito · dossiê vivo</div><div className="archive-title">{biography.headline ?? `${np.name}, em arquivo`}</div></div>
+        <button onClick={() => setActiveTab('biografia')} style={{ cursor:'pointer', padding:'9px 12px', border:'1px solid rgba(69,52,28,.28)', background:'transparent', fontFamily:T.mono, fontSize:7, letterSpacing:'.2em', textTransform:'uppercase', color:'#5e4930' }}>Ler arquivo completo →</button>
+      </div>
+
+      <div className="archive-card" style={{ display:'grid', gridTemplateColumns:'repeat(5,minmax(0,1fr))', marginBottom:16 }}>
+        {metric('ranking atual', rank ? `#${rank}` : '—', 'posição no circuito', sc)}
+        {metric('melhor ranking', peakRank ? `#${peakRank}` : '—', 'pico de carreira', '#9a762c')}
+        {metric('títulos', totalTitles, totalTitles ? 'troféus oficiais' : 'currículo em aberto')}
+        {metric('rota', talent.routeLabel ?? 'em leitura', talent.origin?.label ?? 'origem em leitura', '#7a4f2e')}
+        {metric('banco', currentCoach?.name?.split(' ').slice(-1)[0] ?? 'livre', currentCoach?.methodLabel ?? 'sem técnico ativo', '#516a70')}
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.35fr) minmax(280px,.65fr)', gap:16, marginBottom:16 }}>
+        <article className="archive-card" style={{ padding:'23px 24px', borderLeft:`4px solid ${sc}` }}>
+          <div className="archive-kicker" style={{ color:sc }}>a leitura do momento</div>
+          <p style={{ margin:'11px 0 0', fontFamily:T.body, fontSize:'clamp(15px,1.25vw,18px)', lineHeight:1.72, color:'#382d20', maxWidth:880 }}>{narrative}</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginTop:16 }}>
+            {[talent.origin?.label, talent.routeLabel, talent.routeNodes?.find(n=>n.selected)?.label, ...(biography.narrativeSignals ?? []).slice(0,3)].filter(Boolean).map(tag => <span key={tag} style={{ border:`1px solid ${sc}55`, padding:'5px 7px', fontFamily:T.mono, fontSize:7, letterSpacing:'.13em', textTransform:'uppercase', color:'#5a4328', background:`${sc}0D` }}>{tag}</span>)}
+          </div>
+        </article>
+        <aside className="archive-card" style={{ padding:'18px 19px' }}>
+          <div className="archive-kicker">como ele vence pontos</div>
+          <div style={{ marginTop:12, display:'grid', gap:10 }}>{attrs.map(([key,value]) => <div key={key}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}><span style={{ fontFamily:T.cond, fontWeight:800, fontSize:14, textTransform:'uppercase', color:'#3a2d1f' }}>{attrLabel(key)}</span><span style={{ fontFamily:T.display, fontSize:19, color:sc }}>{value}</span></div><div className="archive-bar" style={{'--bar':sc}}><span style={{width:`${value}%`}}/></div></div>)}</div>
+          <button onClick={() => setActiveTab('jogo')} style={{ marginTop:15, border:0, background:'transparent', padding:0, cursor:'pointer', color:'#75542e', fontFamily:T.mono, fontSize:7, letterSpacing:'.18em', textTransform:'uppercase' }}>abrir scout e rotas →</button>
+        </aside>
+      </div>
+
+      <section className="archive-card" style={{ padding:'20px 22px', marginBottom:16 }}>
+        <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:14, marginBottom:14 }}><div><div className="archive-kicker">história em movimento</div><div style={{ fontFamily:T.display, fontSize:28, color:'#2d2319', textTransform:'uppercase', lineHeight:1 }}>temporada por temporada</div></div><button onClick={() => setActiveTab('trajetoria')} style={{ border:0,background:'transparent',cursor:'pointer',fontFamily:T.mono,fontSize:7,letterSpacing:'.16em',textTransform:'uppercase',color:'#75542e' }}>análise completa →</button></div>
+        {history.length ? <><div style={{ display:'grid', gridTemplateColumns:`repeat(${Math.min(7, history.length)}, minmax(96px,1fr))`, gap:8, overflowX:'auto', paddingBottom:4 }}>{history.slice(-10).map(h => <button key={h.year} className={`archive-season${String(selected?.year)===String(h.year)?' active':''}`} onClick={() => setSelectedYear(h.year)}><div className="archive-season-year">{h.year}</div><div className="archive-season-meta">OVR {h.ovr ?? '—'} · #{h.rank ?? '—'}</div><div className="archive-bar" style={{marginTop:8,'--bar':String(selected?.year)===String(h.year)?sc:'#9f7a49'}}><span style={{width:`${Math.max(8, ((Number(h.ovr)||0)/maxOvr)*100)}%`}}/></div></button>)}</div>
+          <div style={{ marginTop:16, paddingTop:15, borderTop:'1px solid rgba(69,52,28,.16)', display:'grid', gridTemplateColumns:'1.2fr repeat(3,.6fr)', gap:12, alignItems:'center' }}><div><div className="archive-label">ano em foco</div><div style={{fontFamily:T.display,fontSize:30,color:'#2b2117',marginTop:4}}>{selected?.year ?? 'histórico ainda curto'}</div></div><div><div className="archive-label">nível</div><div className="archive-value">{selected?.ovr ?? overallRating(np.attrs)}</div>{yearOvrDelta != null && <div className="archive-copy">{yearOvrDelta >=0?'+':''}{yearOvrDelta} vs. ano anterior</div>}</div><div><div className="archive-label">ranking</div><div className="archive-value">{selected?.rank ? `#${selected.rank}` : '—'}</div>{yearRankDelta != null && <div className="archive-copy">{yearRankDelta >=0?'+':''}{yearRankDelta} posições</div>}</div><div><div className="archive-label">marca</div><div className="archive-copy" style={{marginTop:6}}>{selected?.titleWon ? `Título: ${selected.titleWon}` : selected?.inDecline ? 'Sinal de declínio físico' : 'Temporada de construção'}</div></div></div></> : <div className="archive-copy" style={{padding:'18px 0'}}>O arquivo ganha profundidade quando as temporadas passam. A ficha já está pronta para registrar cada virada.</div>}
+      </section>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:16 }}>
+        {[['Rotas de talento','Origem, fundamentos, rota dominante e as marcas que a carreira deixou.','jogo'],['Arquivo da carreira','Títulos, rivalidades, recordes e os anos que construíram o legado.','carreira'],['Leitura ano a ano','Resultados, forma e a explicação por trás de cada curva.','hist_anual']].map(([title,copy,tab]) => <button key={tab} className="archive-card" onClick={()=>setActiveTab(tab)} style={{cursor:'pointer',textAlign:'left',padding:'18px 19px',color:'#2c2117'}}><div className="archive-kicker">abrir seção</div><div style={{fontFamily:T.display,fontSize:25,lineHeight:.9,textTransform:'uppercase',marginTop:8}}>{title}</div><div className="archive-copy" style={{marginTop:9}}>{copy}</div></button>)}
+      </div>
+    </div>
+  );
+}
+
+function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setActiveTab, tournamentResults, coachMarket }) {
+  const trajectory = useMemo(() => buildTrajectorySnapshot(np, rankingStore), [np, rankingStore]);
+  const biography = useMemo(() => buildPlayerBiography(np, { tournamentResults, rankingStore, currentYear: year }), [np, tournamentResults, rankingStore, year]);
   const prefs = np?.prefs ?? generatePrefs(np?.attrs ?? {});
   const archetype = getArchetype(prefs);
+  const courtIdentity = getCourtIdentity(np);
   const totalTitles = Object.values(np?.careerTitles ?? {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
   const strengths = (identityProfile?.strengths ?? []).slice(0, 2);
   const weaknesses = (identityProfile?.weaknesses ?? []).slice(0, 1);
   const latestRank = trajectory.currentRank;
   const bestRank = trajectory.peakRank ?? np?.careerBest?.rank ?? np?.peakRank ?? null;
   const bestSeasonLabel = trajectory.bestSeason?.year ? `${formatProfileYear(trajectory.bestSeason.year)}` : '—';
-  const currentCoach = (coachPool ?? []).find(c => c.id === np?.coach?.coachId) ?? np?.coach ?? null;
+  const currentCoach = getPlayerCoach(np, coachMarket);
+  const coachMethod = currentCoach ? (COACH_METHODS[currentCoach.method] ?? COACH_METHODS.FORMADOR) : null;
 
   const recentResults = useMemo(() => {
     if (!np?.id) return [];
@@ -1445,11 +1581,177 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
     const vals = catDef.attrs.map(a => np?.attrs?.[a.key] ?? 0);
     return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
   };
+  const narrativeLead = String(biography.fullNarrative ?? biography.summary ?? '')
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const titleMix = [
+    ['GS', np?.careerTitles?.gs ?? 0, '#FFD700'],
+    ['CL', np?.careerTitles?.slamClash ?? 0, '#FF8A3D'],
+    ['M1000', np?.careerTitles?.masters ?? 0, '#E8A020'],
+    ['500', np?.careerTitles?.atp500 ?? 0, '#00BCD4'],
+    ['250', np?.careerTitles?.atp250 ?? 0, '#66BB6A'],
+  ];
+  const topAttrs = Object.entries(np?.attrs ?? {})
+    .filter(([, value]) => Number.isFinite(value))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const attrName = (key) => {
+    for (const cat of ATTR_CATEGORIES) {
+      const found = cat.attrs?.find(a => a.key === key);
+      if (found) return found.label;
+    }
+    return key.replace(/([A-Z])/g, ' $1').trim();
+  };
+  const dossierMetric = [
+    ['Ranking', latestRank ? `#${latestRank}` : '---', sc],
+    ['Pico', bestRank ? `#${bestRank}` : '---', '#E8C84A'],
+    ['Titulos', `${totalTitles}`, '#EDE8DF'],
+    ['Ano-chave', bestSeasonLabel, '#5BB8E4'],
+    ['Banco', currentCoach ? currentCoach.name.split(' ').slice(-1)[0] : 'livre', coachMethod?.color ?? '#A78BFA'],
+  ];
+
+  return (
+    <div className="upp2-scroll" style={{ flex:1, overflowY:'auto', padding:'22px 24px 34px' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.35fr) minmax(320px,.65fr)', gap:16, alignItems:'stretch', marginBottom:16 }}>
+        <div style={{ position:'relative', overflow:'hidden', border:`1px solid ${sc}30`, background:`linear-gradient(135deg, ${sc}12, rgba(237,232,223,.022))`, padding:'22px 24px 24px', minHeight:260 }}>
+          <div style={{ position:'absolute', inset:0, background:`linear-gradient(90deg, ${sc}12, transparent 52%)`, pointerEvents:'none' }} />
+          <div style={{ position:'relative', zIndex:1 }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.42em', color:`${sc}AA`, textTransform:'uppercase', marginBottom:9 }}>dossie de transmissao</div>
+            <div style={{ fontFamily:T.display, fontSize:'clamp(30px,3.8vw,54px)', lineHeight:.88, color:T.ink, textTransform:'uppercase', maxWidth:900 }}>
+              {biography.headline || identityProfile?.signature?.headline || np?.name}
+            </div>
+            <div style={{ display:'grid', gap:12, marginTop:18, maxWidth:980 }}>
+              {(narrativeLead.length ? narrativeLead : [biography.summary]).filter(Boolean).map((p, i) => (
+                <p key={i} style={{ fontFamily:T.body, fontSize:i === 0 ? 15.5 : 14, lineHeight:1.86, color:i === 0 ? 'rgba(237,232,223,.82)' : T.inkDim, margin:0 }}>
+                  {p}
+                </p>
+              ))}
+            </div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginTop:18 }}>
+              {(biography.narrativeSignals ?? []).slice(0, 6).map(signal => (
+                <span key={signal} style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.17em', textTransform:'uppercase', color:`${sc}DD`, border:`1px solid ${sc}2E`, background:`${sc}0B`, padding:'5px 8px' }}>
+                  {signal.replace(/_/g, ' ')}
+                </span>
+              ))}
+              {identityProfile?.signature?.moodTag && <span style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.17em', textTransform:'uppercase', color:'rgba(237,232,223,.72)', border:'1px solid rgba(237,232,223,.12)', padding:'5px 8px' }}>{identityProfile.signature.moodTag}</span>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gap:8, gridTemplateColumns:'1fr 1fr' }}>
+          {dossierMetric.map(([label, value, color]) => (
+            <div key={label} style={{ padding:'14px 15px', border:`1px solid ${color}24`, background:`${color}08`, minHeight:90 }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.24em', color:`${color}B8`, textTransform:'uppercase', marginBottom:7 }}>{label}</div>
+              <div style={{ fontFamily:T.display, fontSize:label === 'Legado' ? 22 : 34, lineHeight:.9, color, textTransform:'uppercase' }}>{value}</div>
+            </div>
+          ))}
+          <button onClick={() => setActiveTab('biografia')} style={{ textAlign:'left', cursor:'pointer', padding:'14px 15px', border:`1px solid ${sc}38`, background:`${sc}12`, color:T.ink }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.24em', color:`${sc}CC`, textTransform:'uppercase', marginBottom:8 }}>abrir biografia</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:18, letterSpacing:'.06em', textTransform:'uppercase' }}>texto completo</div>
+          </button>
+          <button onClick={() => setActiveTab('equipe')} style={{ textAlign:'left', cursor:'pointer', padding:'14px 15px', border:`1px solid ${(coachMethod?.color ?? sc)}38`, background:`${coachMethod?.color ?? sc}12`, color:T.ink }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.24em', color:`${coachMethod?.color ?? sc}CC`, textTransform:'uppercase', marginBottom:8 }}>abrir banco</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:18, letterSpacing:'.06em', textTransform:'uppercase' }}>{coachMethod?.label ?? 'mercado'}</div>
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(0,1fr) minmax(280px,.72fr)', gap:14 }}>
+        <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+          <Sh color={sc}>Scout TV</Sh>
+          <div style={{ display:'grid', gridTemplateColumns:'170px minmax(0,1fr)', gap:16, alignItems:'center' }}>
+            <div className="dpp-radar-wrap" style={{ minHeight:180 }}>
+              <CategoryRadar np={np} sc={sc} />
+            </div>
+            <div style={{ display:'grid', gap:9 }}>
+              {topAttrs.map(([key, value]) => (
+                <div key={key}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:10, marginBottom:4 }}>
+                    <span style={{ fontFamily:T.cond, fontWeight:800, fontSize:13, letterSpacing:'.05em', color:T.ink, textTransform:'uppercase' }}>{attrName(key)}</span>
+                    <span style={{ fontFamily:T.display, fontSize:18, color:attrColor(value), lineHeight:1 }}>{value}</span>
+                  </div>
+                  <MiniBar value={value} color={attrColor(value)} height={4} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:7, marginTop:14 }}>
+            {[
+              ['Jogo', archetype?.name ?? 'Em leitura', archetype?.icon ?? ''],
+              ['Forma', identityProfile?.form?.label ?? scoutPhaseLabel(np)?.label ?? 'Em leitura', ''],
+              ['Superficie', identityProfile?.surface?.label ?? identityProfile?.surface ?? 'Sem recorte', ''],
+            ].map(([label, value, icon]) => (
+              <div key={label} style={{ padding:'10px 11px', border:`1px solid ${sc}20`, background:`${sc}07` }}>
+                <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.22em', color:`${sc}88`, textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+                <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:15, color:T.ink, textTransform:'uppercase', lineHeight:1.05 }}>{icon} {toDisplayText(value)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+          <Sh color={sc}>Marca em Quadra</Sh>
+          {[
+            ['Jogada favorita', courtIdentity.favoritePlay, '#E8C84A'],
+            ['Instinto', courtIdentity.competitiveInstinct, '#5BB8E4'],
+            ['Ponto cego', courtIdentity.blindSpot, '#FF7043'],
+          ].map(([label, meta, color]) => (
+            <div key={label} style={{ padding:'12px 13px', marginBottom:8, border:`1px solid ${color}28`, borderLeft:`3px solid ${color}`, background:`${color}08` }}>
+              <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.26em', color:`${color}AA`, textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
+                <span style={{ fontFamily:T.mono, color, fontWeight:900 }}>{meta.icon}</span>
+                <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:16, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{meta.label}</div>
+              </div>
+              <div style={{ fontFamily:T.body, fontSize:12, lineHeight:1.55, color:T.inkDim }}>{meta.desc}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:'grid', gap:14 }}>
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+            <Sh color={sc}>Palmares</Sh>
+            <div style={{ display:'grid', gap:8 }}>
+              {titleMix.map(([label, value, color]) => (
+                <div key={label} style={{ display:'grid', gridTemplateColumns:'52px 1fr 34px', gap:9, alignItems:'center' }}>
+                  <span style={{ fontFamily:T.mono, fontSize:8, color:`${color}CC`, letterSpacing:'.12em' }}>{label}</span>
+                  <div style={{ height:5, background:'rgba(237,232,223,.06)', overflow:'hidden' }}>
+                    <div style={{ height:'100%', width:`${Math.min(100, (Number(value) || 0) * 18)}%`, background:color }} />
+                  </div>
+                  <span style={{ fontFamily:T.display, fontSize:20, color }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+            <Sh color={sc}>Linha da Carreira</Sh>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:7 }}>
+              {[
+                ['Inicio', biography.facts?.debutYear ?? year ?? '---'],
+                ['Pico', bestRank ? `#${bestRank}` : '---'],
+                ['Fase', biography.careerPhase?.shortTag ?? '---'],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding:'9px 10px', border:'1px solid rgba(237,232,223,.07)', background:'rgba(255,255,255,.018)' }}>
+                  <div style={{ fontFamily:T.mono, fontSize:6.5, color:T.inkFaint, letterSpacing:'.2em', textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+                  <div style={{ fontFamily:T.display, fontSize:20, color:T.ink, lineHeight:1, textTransform:'uppercase' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:12, fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.6 }}>
+              {biography.legacy?.summary ?? identityProfile?.signature?.subline ?? 'A leitura historica ainda esta em formacao.'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="dpp-fm">
 
-      {/* ── LEFT: Attributes ─────────────────────────────── */}
+      {/* -- LEFT: Attributes ------------------------------- */}
       <div className="dpp-fm-col">
         {ATTR_CATEGORIES.map(cat => (
           <React.Fragment key={cat.id}>
@@ -1475,7 +1777,7 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
         ))}
       </div>
 
-      {/* ── CENTER: Radar + Stats + Form ─────────────────── */}
+      {/* -- CENTER: Radar + Stats + Form ------------------- */}
       <div className="dpp-fm-col">
         <div className="dpp-fm-sh">Shape do Jogo</div>
         <div className="dpp-radar-wrap">
@@ -1488,6 +1790,8 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
           ['Hard',      surfaceWinPct('HARD'), '#4A90D9'],
           ['Saibro',    surfaceWinPct('CLAY'), '#C4572A'],
           ['Grama',     surfaceWinPct('GRASS'), '#2ECC71'],
+          ['Asfalto',   surfaceWinPct('STREET'), '#EF9F27'],
+          ['Veludo',    surfaceWinPct('CARPET'), '#C4426A'],
           ['Indoor',    surfaceWinPct('INDOOR'), '#C84FEB'],
         ].map(([lbl, pct, color]) => (
           <div key={lbl} className="dpp-fm-stat">
@@ -1527,7 +1831,7 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
         )}
       </div>
 
-      {/* ── RIGHT: Identity + Palmares + Coach + DNA ──────── */}
+      {/* -- RIGHT: Identity + Palmares + Coach + DNA -------- */}
       <div className="dpp-fm-col">
 
         {/* Identity card */}
@@ -1574,12 +1878,12 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
             </div>
             <div style={{ minWidth:0, flex:1 }}>
               <div className="dpp-fm-coach-name">{currentCoach.fullName ?? currentCoach.name ?? 'Técnico'}</div>
-              <div className="dpp-fm-coach-role">{[currentCoach.philosophy, currentCoach.nationality].filter(Boolean).join(' · ')}</div>
+              <div className="dpp-fm-coach-role">{[coachMethod?.label ?? currentCoach.method, currentCoach.nationality].filter(Boolean).join(' · ')}</div>
             </div>
-            {np.coach?.bondScore != null && (
+            {np.coaching?.trust != null && (
               <div style={{ flexShrink:0, textAlign:'right' }}>
-                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:15, color:sc }}>{np.coach.bondScore}</div>
-                <div style={{ fontFamily:"'Space Mono',monospace", fontSize:5.5, color:'rgba(237,232,223,.26)', letterSpacing:'.2em', textTransform:'uppercase' }}>vínculo</div>
+                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:15, color:sc }}>{np.coaching.trust}</div>
+                <div style={{ fontFamily:"'Space Mono',monospace", fontSize:5.5, color:'rgba(237,232,223,.26)', letterSpacing:'.2em', textTransform:'uppercase' }}>confiança</div>
               </div>
             )}
           </div>
@@ -1611,7 +1915,7 @@ function PremiumOverviewTab({ np, sc, rankingStore, year, identityProfile, setAc
           ['resultados', 'Resultados'],
         ].map(([id, lbl]) => (
           <button key={id} className="dpp-fm-shortcut" onClick={() => setActiveTab(id)}>
-            <span style={{ color:sc, fontSize:9 }}>→</span> {lbl}
+            <span style={{ color:sc, fontSize:9 }}>?</span> {lbl}
           </button>
         ))}
       </div>
@@ -1751,10 +2055,12 @@ function _PremiumOverviewTab_LEGACY({ np, sc, rankingStore, year, identityProfil
               <div style={{ display:'grid', gap:10 }}>
                 {[
                   ['Win Ratio', np?.careerStats?.winPct ? `${np.careerStats.winPct}%` : '—', np?.careerStats?.winPct ?? 0],
-                  ['Hard', np?.surfaceStats?.HARD?.winPct ? `${np.surfaceStats.HARD.winPct}%` : '—', np?.surfaceStats?.HARD?.winPct ?? 0],
-                  ['Clay', np?.surfaceStats?.CLAY?.winPct ? `${np.surfaceStats.CLAY.winPct}%` : '—', np?.surfaceStats?.CLAY?.winPct ?? 0],
-                  ['Grass', np?.surfaceStats?.GRASS?.winPct ? `${np.surfaceStats.GRASS.winPct}%` : '—', np?.surfaceStats?.GRASS?.winPct ?? 0],
-                  ['Indoor', np?.surfaceStats?.INDOOR?.winPct ? `${np.surfaceStats.INDOOR.winPct}%` : '—', np?.surfaceStats?.INDOOR?.winPct ?? 0],
+                  ['Hard', surfaceWinPct('HARD') ? `${surfaceWinPct('HARD')}%` : '—', surfaceWinPct('HARD')],
+                  ['Saibro', surfaceWinPct('CLAY') ? `${surfaceWinPct('CLAY')}%` : '—', surfaceWinPct('CLAY')],
+                  ['Grama', surfaceWinPct('GRASS') ? `${surfaceWinPct('GRASS')}%` : '—', surfaceWinPct('GRASS')],
+                  ['Asfalto', surfaceWinPct('STREET') ? `${surfaceWinPct('STREET')}%` : '—', surfaceWinPct('STREET')],
+                  ['Veludo', surfaceWinPct('CARPET') ? `${surfaceWinPct('CARPET')}%` : '—', surfaceWinPct('CARPET')],
+                  ['Indoor', surfaceWinPct('INDOOR') ? `${surfaceWinPct('INDOOR')}%` : '—', surfaceWinPct('INDOOR')],
                 ].map(([label, value, pct]) => (
                   <div key={label}>
                     <div style={{ display:'flex', justifyContent:'space-between', gap:10, marginBottom:4 }}>
@@ -1946,7 +2252,7 @@ function HeroPhoto({ np, playerKey }) {
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-// TAB: CIRCUITO — Percepções din�micas
+// TAB: CIRCUITO — Percepções din?micas
 // -----------------------------------------------------------------
 function TabPercepcoes({ np, sc, year, tournamentResults, allPlayers = [] }) {
   const perceptions = np.perceptions ?? [];
@@ -2087,7 +2393,7 @@ function TabPercepcoes({ np, sc, year, tournamentResults, allPlayers = [] }) {
       {/* RIGHT — avaliação de mercado + fase */}
       <div className="upp2-scroll" style={{ width: 'clamp(200px,18vw,260px)', flexShrink: 0, background: T.bg2, padding: '22px 16px', overflowY: 'auto' }}>
 
-        {/* Avaliação de mercado din�mica */}
+        {/* Avaliação de mercado din?mica */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontFamily: T.mono, fontSize: 7, letterSpacing: '.38em', color: 'rgba(237,232,223,.3)', textTransform: 'uppercase', marginBottom: 8 }}>
             Avaliação do Mercado
@@ -2265,7 +2571,7 @@ function TabIdentidade({ np, sc, identityProfile = null }) {
           </div>
         )}
 
-        {/* ESTADO ATUAL — só aparece se há dados din�micos */}
+        {/* ESTADO ATUAL — só aparece se há dados din?micos */}
         {moodId && (
           <div style={{ marginBottom:20 }}>
             <Sh color={sc}>Estado Atual</Sh>
@@ -2372,7 +2678,7 @@ function TabIdentidade({ np, sc, identityProfile = null }) {
         {hooks.rivalDynamic && (
           <div style={{ marginTop:14 }}>
             <div style={{ border:`1px solid rgba(239,68,68,.18)`, background:'rgba(239,68,68,.03)', borderLeft:'3px solid rgba(239,68,68,.42)', padding:'12px 15px' }}>
-              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.36em', color:'rgba(239,68,68,.5)', textTransform:'uppercase', marginBottom:4 }}>Din�mica de Rivalidade</div>
+              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.36em', color:'rgba(239,68,68,.5)', textTransform:'uppercase', marginBottom:4 }}>Din?mica de Rivalidade</div>
               <p style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.6, margin:0, fontStyle:'italic' }}>"{hooks.rivalDynamic}"</p>
             </div>
           </div>
@@ -2382,7 +2688,7 @@ function TabIdentidade({ np, sc, identityProfile = null }) {
       {/* -- RIGHT COLUMN -- */}
       <div className="upp2-scroll" style={{ width:'clamp(220px,27vw,300px)', flexShrink:0, padding:'22px 20px', background:'rgba(0,0,0,.12)', overflowY:'auto' }}>
 
-        {/* REPUTAÇ�O */}
+        {/* REPUTAÇ?O */}
         <div style={{ marginBottom:16 }}>
           <Sh color={sc}>Reputação</Sh>
           <DimCard
@@ -2524,7 +2830,7 @@ function TabIdentidade({ np, sc, identityProfile = null }) {
             { label:'Altura', value:np.height ? `${np.height} m` : null },
             { label:'Peso',   value:np.weight ? `${np.weight} kg` : null },
             { label:'Mão',    value:np.hand },
-            { label:'Nasc.',  value:np.birthYear },
+            { label:'Nascimento', value:np.birthDate ? `${String(np.birthDate.month).padStart(2,'0')}/${np.birthDate.year}` : np.birthYear },
           ].filter(r => r.value).map(({ label, value }) => (
             <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 12px', borderBottom:`1px solid ${T.line}` }}>
               <span style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.28em', color:T.inkFaint, textTransform:'uppercase' }}>{label}</span>
@@ -2545,6 +2851,244 @@ function TabIdentidade({ np, sc, identityProfile = null }) {
 // -----------------------------------------------------------------
 // TAB 2: JOGO
 // -----------------------------------------------------------------
+function TacticalCourtMap({ sc, courtIdentity, bs, ri, ng, naturalSig, rallyPat }) {
+  const marks = [
+    { x:'22%', y:'24%', color:'#E8C84A', label:'JOGADA', text:courtIdentity?.favoritePlay?.abbr ?? 'FAV' },
+    { x:'66%', y:'38%', color:'#5BB8E4', label:'INSTINTO', text:courtIdentity?.competitiveInstinct?.abbr ?? 'INS' },
+    { x:'72%', y:'72%', color:'#FF7043', label:'PONTO CEGO', text:courtIdentity?.blindSpot?.abbr ?? 'RISK' },
+  ];
+  return (
+    <div style={{ border:`1px solid ${sc}28`, background:`linear-gradient(180deg, ${sc}0B, rgba(255,255,255,.015))`, padding:14 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
+        <div>
+          <div style={{ fontFamily:T.mono, fontSize:7, color:`${sc}AA`, letterSpacing:'.34em', textTransform:'uppercase', marginBottom:5 }}>mapa de quadra</div>
+          <div style={{ fontFamily:T.display, fontSize:25, color:T.ink, lineHeight:.9, textTransform:'uppercase' }}>Scout TV</div>
+        </div>
+        <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:'.2em', textTransform:'uppercase' }}>{bs?.abbr} · {ri?.abbr} · {ng?.abbr}</div>
+      </div>
+      <div style={{ position:'relative', aspectRatio:'1.75 / 1', minHeight:250, border:`1px solid ${sc}38`, background:'linear-gradient(180deg, rgba(8,34,36,.88), rgba(4,12,16,.94))', overflow:'hidden' }}>
+        <div style={{ position:'absolute', inset:'8% 9%', border:'1px solid rgba(237,232,223,.24)' }} />
+        <div style={{ position:'absolute', left:'50%', top:'8%', bottom:'8%', width:1, background:'rgba(237,232,223,.22)' }} />
+        <div style={{ position:'absolute', left:'9%', right:'9%', top:'50%', height:1, background:'rgba(237,232,223,.2)' }} />
+        <div style={{ position:'absolute', left:'9%', right:'9%', top:'30%', height:1, background:'rgba(237,232,223,.12)' }} />
+        <div style={{ position:'absolute', left:'9%', right:'9%', top:'70%', height:1, background:'rgba(237,232,223,.12)' }} />
+        <div style={{ position:'absolute', left:'29%', top:'8%', bottom:'8%', width:1, background:'rgba(237,232,223,.12)' }} />
+        <div style={{ position:'absolute', left:'71%', top:'8%', bottom:'8%', width:1, background:'rgba(237,232,223,.12)' }} />
+        <div style={{ position:'absolute', inset:0, background:`radial-gradient(circle at 25% 25%, ${sc}24, transparent 30%), radial-gradient(circle at 70% 70%, rgba(255,112,67,.14), transparent 27%)` }} />
+        {marks.map(mark => (
+          <div key={mark.label} style={{ position:'absolute', left:mark.x, top:mark.y, transform:'translate(-50%,-50%)', minWidth:78, padding:'8px 9px', border:`1px solid ${mark.color}55`, borderLeft:`3px solid ${mark.color}`, background:'rgba(0,0,0,.46)', backdropFilter:'blur(4px)' }}>
+            <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.22em', color:`${mark.color}CC`, textTransform:'uppercase', marginBottom:3 }}>{mark.label}</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:14, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{mark.text}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:8, marginTop:10 }}>
+        {[
+          ['Assinatura', naturalSig?.label ?? 'sem golpe definido', '#E8C84A'],
+          ['Rally', rallyPat?.label ?? ri?.label ?? 'em leitura', '#5BB8E4'],
+          ['Rede', ng?.label ?? 'em leitura', sc],
+        ].map(([label, value, color]) => (
+          <div key={label} style={{ padding:'9px 10px', background:`${color}08`, border:`1px solid ${color}24` }}>
+            <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.22em', color:`${color}AA`, textTransform:'uppercase', marginBottom:4 }}>{label}</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:14, color:T.ink, textTransform:'uppercase', lineHeight:1.05 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GameScoutPrefsView({ np, sc, prefs, archetype, naturalSig, rallyPat, year }) {
+  const bs = getBuildStyleMeta(prefs.buildStyle);
+  const ng = getNetGameMeta(prefs.netGame);
+  const ri = getRallyIntentMeta(prefs);
+  const adpt = adaptabilityLabel(prefs.adaptability);
+  const courtIdentity = getCourtIdentity(np);
+  const sortedAttrs = Object.entries(np.attrs ?? {}).sort(([, a], [, b]) => b - a);
+  const topAttrs = sortedAttrs.slice(0, 5);
+  const lowAttrs = sortedAttrs.slice(-4);
+  const attrMeta = (key) => {
+    for (const cat of ATTR_CATEGORIES) {
+      const found = cat.attrs?.find(a => a.key === key);
+      if (found) return { label:found.label, color:cat.color };
+    }
+    return { label:key.replace(/([A-Z])/g, ' $1').trim(), color:sc };
+  };
+
+  return (
+    <>
+      <div className="upp2-scroll" style={{ flex:1, padding:'20px 22px 30px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(360px,1.05fr) minmax(300px,.95fr)', gap:14, alignItems:'start' }}>
+          <TacticalCourtMap sc={sc} courtIdentity={courtIdentity} bs={bs} ri={ri} ng={ng} naturalSig={naturalSig} rallyPat={rallyPat} />
+
+          <div style={{ display:'grid', gap:14 }}>
+            <div style={{ padding:'17px 18px', border:`1px solid ${sc}30`, background:`linear-gradient(135deg, ${sc}12, rgba(237,232,223,.018))`, borderLeft:`4px solid ${sc}` }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.36em', color:`${sc}AA`, textTransform:'uppercase', marginBottom:7 }}>identidade de jogo</div>
+              <div style={{ display:'flex', gap:13, alignItems:'flex-start' }}>
+                <span style={{ fontSize:34, lineHeight:1 }}>{archetype?.icon ?? ''}</span>
+                <div>
+                  <div style={{ fontFamily:T.display, fontSize:30, color:sc, textTransform:'uppercase', lineHeight:.9 }}>{archetype?.name ?? 'Em leitura'}</div>
+                  <p style={{ fontFamily:T.body, fontSize:12.5, lineHeight:1.65, color:T.inkDim, margin:'9px 0 0' }}>{archetype?.desc ?? 'O perfil ainda esta formando uma identidade clara de quadra.'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:8 }}>
+              {[['Construção', bs], ['Intenção', ri], ['Rede', ng]].map(([label, meta]) => (
+                <div key={label} style={{ padding:'12px 13px', border:`1px solid ${sc}22`, background:'rgba(255,255,255,.018)' }}>
+                  <div style={{ fontFamily:T.mono, fontSize:6.5, color:`${sc}88`, letterSpacing:'.24em', textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+                  <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:15, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{meta.icon} {meta.label}</div>
+                  <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:'.16em', marginTop:5 }}>{meta.abbr}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding:'14px 16px', border:`1px solid ${adpt.color}24`, background:`${adpt.color}08`, borderLeft:`3px solid ${adpt.color}` }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.32em', color:`${adpt.color}AA`, textTransform:'uppercase', marginBottom:5 }}>adaptabilidade</div>
+              <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:18, color:adpt.color, textTransform:'uppercase' }}>{adpt.label}</div>
+              <p style={{ fontFamily:T.body, fontSize:12, lineHeight:1.6, color:T.inkDim, margin:'6px 0 0' }}>
+                {prefs.adaptability >= 72 ? 'Detecta padrões que não funcionam e muda o plano mid-match.'
+                  : prefs.adaptability >= 55 ? 'Consegue ajustar o jogo, mas demora para reconhecer o problema.'
+                  : 'Tende a insistir no mesmo padrão mesmo quando está perdendo.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Sh color={`${sc}88`}>Marca em Quadra</Sh>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10, marginBottom:18 }}>
+          {[
+            { label:'Jogada Favorita', meta:courtIdentity.favoritePlay, color:'#E8C84A' },
+            { label:'Instinto', meta:courtIdentity.competitiveInstinct, color:'#5BB8E4' },
+            { label:'Ponto Cego', meta:courtIdentity.blindSpot, color:'#FF7043' },
+          ].map(({ label, meta, color }) => (
+            <div key={label} style={{ padding:'14px 15px', minWidth:0, background:`${color}09`, border:`1px solid ${color}28`, borderTop:`3px solid ${color}` }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.28em', color:`${color}AA`, textTransform:'uppercase', marginBottom:7 }}>{label}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:7 }}>
+                <span style={{ fontFamily:T.mono, fontWeight:900, fontSize:12, color, lineHeight:1 }}>{meta.icon}</span>
+                <span style={{ fontFamily:T.cond, fontWeight:800, fontSize:18, color:T.ink, textTransform:'uppercase', letterSpacing:'.04em', lineHeight:1 }}>{meta.label}</span>
+              </div>
+              <p style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.55, margin:0 }}>{meta.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'16px 18px' }}>
+            <Sh color={sc}>Armas Técnicas</Sh>
+            {topAttrs.map(([key, value]) => {
+              const meta = attrMeta(key);
+              return (
+                <div key={key} style={{ marginBottom:9 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:10, marginBottom:4 }}>
+                    <span style={{ fontFamily:T.cond, fontWeight:800, fontSize:13, color:T.ink, textTransform:'uppercase' }}>{meta.label}</span>
+                    <span style={{ fontFamily:T.display, fontSize:18, color:meta.color, lineHeight:1 }}>{value}</span>
+                  </div>
+                  <MiniBar value={value} color={meta.color} height={4} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'16px 18px' }}>
+            <Sh color="#F59E0B">Alertas</Sh>
+            {lowAttrs.map(([key, value]) => {
+              const meta = attrMeta(key);
+              return (
+                <div key={key} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', marginBottom:6, borderLeft:'3px solid #F59E0B', background:'rgba(245,158,11,.045)' }}>
+                  <span style={{ flex:1, fontFamily:T.cond, fontWeight:800, fontSize:13, color:T.inkDim, textTransform:'uppercase' }}>{meta.label}</span>
+                  <span style={{ fontFamily:T.display, fontSize:18, color:'#F59E0B', lineHeight:1 }}>{value}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="upp2-scroll" style={{ width:'clamp(230px,22vw,300px)', flexShrink:0, padding:'20px 17px', background:'rgba(0,0,0,.14)', overflowY:'auto' }}>
+        <Sh color={sc}>Assinaturas</Sh>
+        {[naturalSig].filter(Boolean).map((sig, idx) => (
+          <div key={`${sig.label}-${idx}`} style={{ padding:'13px 14px', border:'1px solid #E8C84A33', borderLeft:'3px solid #E8C84A', background:'rgba(232,200,74,.06)', marginBottom:9 }}>
+            <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.32em', color:'#E8C84AAA', textTransform:'uppercase', marginBottom:5 }}>natural</div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <span style={{ fontSize:22 }}>{sig.emoji}</span>
+              <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:16, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{sig.label}</div>
+            </div>
+            <div style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.55 }}>{sig.description}</div>
+          </div>
+        ))}
+        {!naturalSig && (
+          <div style={{ padding:'12px 14px', border:'1px solid rgba(237,232,223,.07)', color:T.inkFaint, fontFamily:T.mono, fontSize:8, letterSpacing:'.18em', textTransform:'uppercase' }}>Sem golpe assinatura definido</div>
+        )}
+
+        {rallyPat && (
+          <>
+            <Sh color="#5BB8E4">Padrão de Rally</Sh>
+            <div style={{ padding:'13px 14px', border:'1px solid rgba(91,184,228,.24)', borderLeft:'3px solid #5BB8E4', background:'rgba(91,184,228,.055)', marginBottom:14 }}>
+              <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:16, color:T.ink, textTransform:'uppercase' }}>{rallyPat.icon} {rallyPat.label}</div>
+              <div style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.55, marginTop:6 }}>{rallyPat.desc}</div>
+            </div>
+          </>
+        )}
+
+        <Sh color={sc}>Peso no Engine</Sh>
+        {[
+          { label:'Marca em Quadra', desc:'Aplica viés pequeno e auditável em decisão, instinto e ponto cego.' },
+          { label:'Construção', desc:'Pesa escolha de direção, preparação e paciência do rally.' },
+          { label:'Intenção', desc:'Funde tempo de ataque e tolerância a margem baixa.' },
+          { label:'Rede', desc:'Pesa aproximação, fechamento e risco de subir sem preparar.' },
+        ].map(({ label, desc }) => (
+          <div key={label} style={{ marginBottom:9, paddingLeft:10, borderLeft:`1px solid ${T.line}` }}>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:11, color:T.inkDim, textTransform:'uppercase' }}>{label}</div>
+            <div style={{ fontFamily:T.body, fontSize:10, color:T.inkFaint, lineHeight:1.5 }}>{desc}</div>
+          </div>
+        ))}
+
+        {np.potential && (
+          <>
+            <Sh color={sc}>Mercado</Sh>
+            <p style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint, lineHeight:1.65, margin:0, fontStyle:'italic' }}>
+              {getMarketAssessment(np, year ?? 2025)}
+            </p>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function TalentRoutesView({ np, sc }) {
+  const identity = getTalentIdentityPresentation(np);
+  const Card = ({ item, selected = false, accent = sc }) => !item ? null : (
+    <div style={{ position:'relative', padding:'13px 14px 12px', border:`1px solid ${selected ? accent : 'rgba(237,232,223,.12)'}`, background:selected ? `${accent}12` : 'rgba(255,255,255,.018)', minHeight:90, overflow:'hidden' }}>
+      {selected && <div style={{ position:'absolute', top:0, right:0, padding:'4px 8px', background:accent, color:'#071016', fontFamily:T.mono, fontWeight:800, fontSize:6, letterSpacing:'.14em' }}>ATIVA</div>}
+      <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.25em', color:selected ? accent : T.inkFaint, textTransform:'uppercase', marginBottom:6 }}>{item.kind}</div>
+      <div style={{ fontFamily:T.cond, fontSize:17, fontWeight:800, color:T.ink, textTransform:'uppercase', letterSpacing:'.03em', paddingRight:selected?35:0 }}>{item.label}</div>
+      <div style={{ fontFamily:T.body, fontSize:10, color:T.inkFaint, lineHeight:1.45, marginTop:5 }}>{item.desc}</div>
+    </div>
+  );
+  return (
+    <div className="upp2-scroll" style={{ flex:1, overflowY:'auto', padding:'24px 26px 34px' }}>
+      <div style={{ maxWidth:1100, margin:'0 auto' }}>
+        <div style={{ display:'flex', alignItems:'end', justifyContent:'space-between', gap:18, borderBottom:`1px solid ${T.line}`, paddingBottom:18, marginBottom:20 }}>
+          <div><div style={{ fontFamily:T.mono,fontSize:7,letterSpacing:'.36em',color:sc,textTransform:'uppercase',marginBottom:7 }}>identidade competitiva</div><div style={{ fontFamily:T.display,fontSize:'clamp(34px,4vw,58px)',lineHeight:.85,color:T.ink }}>ROTAS DE TALENTO</div></div>
+          <div style={{ maxWidth:290,fontFamily:T.body,fontSize:11,color:T.inkFaint,lineHeight:1.55 }}>Não são bônus soltos: é o caminho que explica onde o jogador ganha suas pequenas vantagens em quadra.</div>
+        </div>
+        <div style={{ display:'grid',gridTemplateColumns:'minmax(0,.84fr) 42px minmax(0,1.16fr)',gap:0,alignItems:'stretch' }}>
+          <div><div style={{ fontFamily:T.mono,fontSize:7,letterSpacing:'.28em',color:'#D6B66A',textTransform:'uppercase',marginBottom:8 }}>01 · origem</div><Card item={identity.origin} selected accent="#D6B66A" /></div>
+          <div style={{ display:'flex',justifyContent:'center',alignItems:'center',color:sc,fontSize:26 }}>→</div>
+          <div><div style={{ fontFamily:T.mono,fontSize:7,letterSpacing:'.28em',color:sc,textTransform:'uppercase',marginBottom:8 }}>02 · rota dominante · {identity.routeLabel}</div><div style={{ display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8 }}>{identity.routeNodes.map(item=><Card key={item.id} item={item} selected={item.selected} />)}</div></div>
+        </div>
+        <div style={{ height:22, borderLeft:`1px dashed ${sc}55`, marginLeft:'19%', marginTop:0 }} />
+        <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:16 }}>
+          <div><div style={{ fontFamily:T.mono,fontSize:7,letterSpacing:'.28em',color:'#7FD5FF',textTransform:'uppercase',marginBottom:8 }}>03 · fundamentos consolidados</div><div style={{ display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8 }}>{identity.bases.map(item=><Card key={item.id} item={item} selected={item.selected} accent="#7FD5FF" />)}</div></div>
+          <div><div style={{ fontFamily:T.mono,fontSize:7,letterSpacing:'.28em',color:'#E8C84A',textTransform:'uppercase',marginBottom:8 }}>04 · o que a carreira deixou</div><div style={{ display:'grid',gridTemplateColumns:'1fr',gap:8 }}>{identity.legacies.length ? identity.legacies.map(item=><Card key={item.id} item={item} selected accent="#E8C84A" />) : <div style={{ padding:18,border:`1px dashed ${T.line}`,fontFamily:T.body,fontSize:11,color:T.inkFaint,lineHeight:1.5 }}>Ainda sem uma marca de carreira. Títulos, grandes vitórias e cicatrizes podem abrir este espaço.</div>}{identity.mastery && <Card item={identity.mastery} selected accent="#C69CFF" />}</div></div>
+        </div>
+        <div style={{ marginTop:20,padding:'14px 17px',borderLeft:`3px solid ${sc}`,background:`${sc}08`,fontFamily:T.body,fontSize:11,color:T.inkFaint,lineHeight:1.6 }}><strong style={{ color:T.ink }}>Como ler:</strong> origem define a inclinação inicial; a rota escolhe uma das três especializações do estilo; fundamentos dão consistência; legado e maestria só aparecem por feitos ou atributos realmente excepcionais. Nenhuma rota passa por cima do teto 99 — ela torna o talento reconhecível no comportamento do atleta.</div>
+      </div>
+    </div>
+  );
+}
+
 function TabJogo({ np, sc, potCat, arc, year = 2025 }) {
   const ov     = overallRating(np.attrs);
 
@@ -2552,11 +3096,9 @@ function TabJogo({ np, sc, potCat, arc, year = 2025 }) {
   const prefs = np.prefs ?? generatePrefs(np.attrs ?? {});
   const archetype = getArchetype(prefs);
 
-  // Fase 7 — naturalSignature (novo sistema) + signature do técnico
+  // Fase 7 — naturalSignature; assinatura de técnico antigo foi substituida pelo Banco Vivo.
   const naturalSigKey = np.naturalSignature ?? null;
-  const coachSigKey   = np.coach?.signature ?? null;
   const naturalSig    = naturalSigKey ? NEW_SIGNATURE_SHOTS[naturalSigKey] : null;
-  const coachSig      = coachSigKey   ? NEW_SIGNATURE_SHOTS[coachSigKey]   : null;
 
   const rallyPat = np.rallyPattern && RALLY_PATTERNS?.[np.rallyPattern] ? RALLY_PATTERNS[np.rallyPattern] : null;
   const sigPat   = null;  // [Signature system will be rebuilt]
@@ -2577,169 +3119,35 @@ function TabJogo({ np, sc, potCat, arc, year = 2025 }) {
   const catsR = ATTR_CATEGORIES.slice(3);
   const grade = overallGrade(ov);
 
-  const [view, setView] = useState('prefs'); // prefs | atributos
+  const [view, setView] = useState('prefs'); // prefs | atributos | rotas
 
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0 }}>
-      <SubTabBar tabs={[['prefs','?? Preferências'], ['atributos','?? Atributos']]} active={view} onTab={setView} sc={sc} />
+      <SubTabBar tabs={[['prefs','Scout TV'], ['atributos','Atributos'], ['rotas','Rotas de Talento']]} active={view} onTab={setView} sc={sc} />
 
       <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }} key={view}>
 
         {view === 'prefs' && (() => {
           const bs   = getBuildStyleMeta(prefs.buildStyle);
           const ng   = getNetGameMeta(prefs.netGame);
-          const rc   = getRallyCadenceMeta(prefs.rallyCadence);
-          const rp   = getRiskProfileMeta(prefs.riskProfile);
+          const ri   = getRallyIntentMeta(prefs);
           const adpt = adaptabilityLabel(prefs.adaptability);
-
-          const PrefCard = ({ label, meta, color }) => (
-            <div style={{ padding:'13px 15px', background:`${color}0a`, borderLeft:`3px solid ${color}`, marginBottom:10 }}>
-              <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.38em', color:`${color}55`, textTransform:'uppercase', marginBottom:5 }}>{label}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:5 }}>
-                <span style={{ fontSize:17, lineHeight:1 }}>{meta.icon}</span>
-                <div>
-                  <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:15, color, textTransform:'uppercase', lineHeight:1 }}>{meta.label}</div>
-                  <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}55`, letterSpacing:'.25em', marginTop:2 }}>{meta.abbr}</div>
-                </div>
-              </div>
-              <p style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.6, margin:0 }}>{meta.desc}</p>
-            </div>
-          );
+          const courtIdentity = getCourtIdentity(np);
 
           return (
-            <>
-              {/* PREFS — left */}
-              <div className="upp2-scroll" style={{ flex:1, padding:'20px 22px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
-
-                {/* -- Golpes Assinatura — peça central -- */}
-                <Sh color={sc}>Golpes Assinatura</Sh>
-                {(naturalSig || coachSig) ? (
-                  <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
-                    {naturalSig && (
-                      <div style={{ padding:'14px 16px', background:'rgba(255,215,0,.06)', borderLeft:'3px solid #FFD700' }}>
-                        <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.42em', color:'rgba(255,215,0,.5)', textTransform:'uppercase', marginBottom:6 }}>? NATURAL</div>
-                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:5 }}>
-                          <span style={{ fontSize:26, lineHeight:1 }}>{naturalSig.emoji}</span>
-                          <div>
-                            <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:17, color:'#FFD700', textTransform:'uppercase', letterSpacing:'.04em', lineHeight:1 }}>{naturalSig.label}</div>
-                            <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(255,215,0,.4)', letterSpacing:'.2em', marginTop:2 }}>{naturalSig.wing ?? naturalSig.baseType ?? ''}</div>
-                          </div>
-                        </div>
-                        <p style={{ fontFamily:T.body, fontSize:10.5, color:'rgba(237,232,223,.55)', lineHeight:1.6, margin:0 }}>{naturalSig.description}</p>
-                      </div>
-                    )}
-                    {coachSig && coachSigKey !== naturalSigKey && (
-                      <div style={{ padding:'12px 14px', background:'rgba(79,195,247,.05)', borderLeft:'3px solid #4FC3F7' }}>
-                        <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.42em', color:'rgba(79,195,247,.5)', textTransform:'uppercase', marginBottom:5 }}>?? TÉCNICO — {np.coach?.name ?? '—'}</div>
-                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-                          <span style={{ fontSize:22, lineHeight:1 }}>{coachSig.emoji}</span>
-                          <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:15, color:'#4FC3F7', textTransform:'uppercase', letterSpacing:'.04em' }}>{coachSig.label}</div>
-                        </div>
-                        <p style={{ fontFamily:T.body, fontSize:10, color:'rgba(237,232,223,.45)', lineHeight:1.5, margin:0 }}>{coachSig.description}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ padding:'12px 14px', background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.06)', marginBottom:20 }}>
-                    <div style={{ fontFamily:T.mono, fontSize:8, color:'rgba(255,255,255,.2)', textTransform:'uppercase', letterSpacing:'.28em' }}>Sem golpe assinatura definido</div>
-                  </div>
-                )}
-
-                {/* -- Padrão de Rally -- */}
-                {rallyPat && (
-                  <>
-                    <Sh color="rgba(79,195,247,.6)">Padrão de Rally</Sh>
-                    <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'12px 14px', background:'rgba(79,195,247,.05)', borderLeft:'2px solid rgba(79,195,247,.4)', marginBottom:20 }}>
-                      <span style={{ fontSize:20, lineHeight:1, flexShrink:0, marginTop:1 }}>{rallyPat.icon}</span>
-                      <div>
-                        <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:14, color:'#4FC3F7', textTransform:'uppercase', letterSpacing:'.04em', marginBottom:3 }}>{rallyPat.label}</div>
-                        <p style={{ fontFamily:T.body, fontSize:10, color:T.inkDim, lineHeight:1.55, margin:0 }}>{rallyPat.desc}</p>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* -- Grid 2×2 de chips de preferência -- */}
-                <Sh color={`${sc}88`}>Perfil de Jogo</Sh>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
-                  {[
-                    { label:'Construção', meta:bs, color:sc },
-                    { label:'Cadência',   meta:rc, color:'#FFB74D' },
-                    { label:'Risco',      meta:rp, color:'#FF7043' },
-                    { label:'Rede',       meta:ng, color:'#26C6DA' },
-                  ].map(({ label, meta, color }) => (
-                    <div key={label} style={{ padding:'9px 11px', background:`${color}08`, border:`1px solid ${color}22`, borderTop:`2px solid ${color}55` }}>
-                      <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.32em', color:`${color}66`, textTransform:'uppercase', marginBottom:4 }}>{label}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
-                        <span style={{ fontSize:13, lineHeight:1 }}>{meta.icon}</span>
-                        <span style={{ fontFamily:T.cond, fontWeight:700, fontSize:12, color, textTransform:'uppercase', letterSpacing:'.04em', lineHeight:1 }}>{meta.label}</span>
-                      </div>
-                      <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}55`, letterSpacing:'.22em' }}>{meta.abbr}</div>
-                    </div>
-                  ))}
-                </div>
-
-              </div>
-
-              {/* PREFS — right sidebar */}
-              <div className="upp2-scroll" style={{ width:'clamp(200px,22vw,255px)', flexShrink:0, padding:'20px 16px', background:'rgba(0,0,0,.14)', overflowY:'auto' }}>
-
-                {/* Arquétipo */}
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', marginBottom:18, background:`${sc}0d`, borderLeft:`3px solid ${sc}` }}>
-                  <span style={{ fontSize:24, lineHeight:1, flexShrink:0 }}>{archetype?.icon ?? '??'}</span>
-                  <div>
-                    <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.38em', color:`${sc}66`, textTransform:'uppercase', marginBottom:3 }}>Arquétipo</div>
-                    <div style={{ fontFamily:T.display, fontSize:15, color:sc, textTransform:'uppercase', letterSpacing:'.05em', lineHeight:1 }}>{archetype?.name ?? '—'}</div>
-                    {archetype?.desc && <p style={{ fontFamily:T.body, fontSize:9, color:T.inkFaint, lineHeight:1.4, margin:'4px 0 0' }}>{archetype.desc}</p>}
-                  </div>
-                </div>
-
-                {/* Adaptabilidade — qualitativa */}
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.38em', color:`${adpt.color}66`, textTransform:'uppercase', marginBottom:5 }}>Adaptabilidade</div>
-                  <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:14, color:adpt.color, textTransform:'uppercase', marginBottom:4 }}>{adpt.label}</div>
-                  <p style={{ fontFamily:T.body, fontSize:10, color:T.inkFaint, lineHeight:1.55, margin:0 }}>
-                    {prefs.adaptability >= 72 ? 'Detecta padrões que não funcionam e muda o plano mid-match.'
-                     : prefs.adaptability >= 55 ? 'Consegue ajustar o jogo, mas demora para reconhecer o problema.'
-                     : 'Tende a insistir no mesmo padrão mesmo quando está perdendo.'}
-                  </p>
-                </div>
-
-                {np.potential && (
-                  <div style={{ borderLeft:`2px solid rgba(255,255,255,.12)`, paddingLeft:12, marginBottom:14 }}>
-                    <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.36em', color:'rgba(237,232,223,.25)', textTransform:'uppercase', marginBottom:6 }}>Perspectiva do Mercado</div>
-                    <p style={{ fontFamily:T.body, fontSize:10, color:'rgba(237,232,223,.55)', lineHeight:1.6, margin:0, fontStyle:'italic' }}>
-                      {getMarketAssessment(np, year ?? 2025)}
-                    </p>
-                  </div>
-                )}
-                {np.developmentStyle && (
-                  <div style={{ borderLeft:`2px solid ${sc}44`, paddingLeft:12, marginBottom:14 }}>
-                    <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.36em', color:`${sc}66`, textTransform:'uppercase', marginBottom:4 }}>Desenvolvimento</div>
-                    <p style={{ fontFamily:T.body, fontSize:10, color:T.inkFaint, lineHeight:1.6, margin:0, fontStyle:'italic' }}>
-                      {arcNarrative(np) ?? '—'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Peso no engine */}
-                <div style={{ height:1, background:T.line, margin:'14px 0 12px' }} />
-                <div style={{ fontFamily:T.mono, fontSize:6, letterSpacing:'.3em', color:T.inkFaint, textTransform:'uppercase', marginBottom:10 }}>Peso no Engine</div>
-                {[
-                  { label:'Construção', desc:'Modifica scores de direção (cruzado vs DTL)' },
-                  { label:'Cadência',   desc:'Penaliza/bônus no ACCEL por número de bolas' },
-                  { label:'Risco',      desc:'Escala golpes com riskBase alto/baixo' },
-                  { label:'Rede',       desc:'Peso na decisão de aproximação' },
-                ].map(({ label, desc }) => (
-                  <div key={label} style={{ marginBottom:8, paddingLeft:10, borderLeft:`1px solid ${T.line}` }}>
-                    <div style={{ fontFamily:T.cond, fontWeight:700, fontSize:10, color:T.inkDim, textTransform:'uppercase' }}>{label}</div>
-                    <div style={{ fontFamily:T.body, fontSize:9, color:T.inkFaint, lineHeight:1.5 }}>{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </>
+            <GameScoutPrefsView
+              np={np}
+              sc={sc}
+              prefs={prefs}
+              archetype={archetype}
+              naturalSig={naturalSig}
+              rallyPat={rallyPat}
+              year={year}
+            />
           );
         })()}
+
+        {view === 'rotas' && <TalentRoutesView np={np} sc={sc} />}
 
         {view === 'atributos' && (() => {
           const burdenAttrs = new Set(getBurdenAffectedAttrs(np));
@@ -2804,7 +3212,7 @@ function TabJogo({ np, sc, potCat, arc, year = 2025 }) {
 // -----------------------------------------------------------------
 // TAB 3: CARREIRA
 // -----------------------------------------------------------------
-function TabCarreira({ np, sc, tournamentResults, chronicleEngine = null, rivalrySystem = null, allPlayers = [], coachPool = [], year = null }) {
+function TabCarreira({ np, sc, tournamentResults, chronicleEngine = null, historyBook = null, rivalrySystem = null, allPlayers = [], year = null }) {
   const ct = np.careerTitles ?? { gs:0, slamClash:0, masters:0, finals:0, atp500:0, atp250:0 };
 
   // Sponsor events do ChronicleEngine (conecta sponsorTimeline ao perfil)
@@ -2832,7 +3240,7 @@ function TabCarreira({ np, sc, tournamentResults, chronicleEngine = null, rivalr
   }
 
   // Se temos CarreiraTimeline disponível (universo com chronicleEngine), renderiza ela no painel direito
-  const hasTimeline = chronicleEngine && np?.careerHistory?.length > 0;
+  const hasTimeline = !!(np?._seasonHistory?.length || np?.careerHistory?.length || np?.lifeEventLog?.length || np?.youthProfile);
 
   // Total de títulos: quando tournamentResults disponível, usa uvWins (fonte única, sem double-count)
   const total = tournamentResults
@@ -2849,8 +3257,194 @@ function TabCarreira({ np, sc, tournamentResults, chronicleEngine = null, rivalr
     { key:'olympic_gold', label:'Ouro Olímpico', color:'#1976D2', icon:'??' },
   ];
 
-  // Career moments (do plano de personalidade din�mica)
+  // Career moments (do plano de personalidade din?mica)
   const moments = np.personality?.careerMoments ?? [];
+  const biography = React.useMemo(
+    () => buildPlayerBiography(np, { tournamentResults, currentYear: year }),
+    [np, tournamentResults, year]
+  );
+  const narrativeFacts = biography.narrativeFacts ?? {};
+  const goldenYears = narrativeFacts.goldenYears ?? [];
+  const hardYears = narrativeFacts.hardYears ?? [];
+  const firstTitle = biography.facts?.firstTitle ?? null;
+  const topRival = biography.facts?.topRival ?? null;
+  const historyRows = [...(np._seasonHistory ?? [])]
+    .sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0))
+    .slice(0, 8);
+  const titleMix = TIERS.map(({ key, label, color, icon }) => {
+    const catMap = { gs:'GRAND_SLAM', slamClash:'SLAM_CLASH', masters:'MASTERS_1000', finals:'ATP_FINALS', atp500:'ATP_500', atp250:'ATP_250', olympic_gold:'OLYMPICS' };
+    const uvCount = uvWins.filter(w => w.category === catMap[key]).length;
+    const ctVal = key === 'olympic_gold' ? (ct.olympic?.gold ?? 0) : (ct[key] ?? 0);
+    return { key, label, color, icon, value: tournamentResults ? uvCount : ctVal };
+  });
+  const biggestTitles = uvWins.slice(0, 6);
+  const careerLead = biography.fullNarrative
+    ? String(biography.fullNarrative).split(/\n{2,}/).map(p => p.trim()).filter(Boolean)[0]
+    : biography.summary;
+  const playerEras = React.useMemo(() => (historyBook?.eras ?? [])
+    .filter(era => [...(era.protagonistIds ?? []), ...(era.rivalIds ?? [])].includes(np?.id))
+    .sort((a, b) => (b.startYear ?? 0) - (a.startYear ?? 0)), [historyBook, np?.id]);
+
+  return (
+    <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
+      <div className="upp2-scroll" style={{ flex:1, padding:'24px 26px 34px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(250px,.78fr) minmax(0,1.22fr)', gap:16, marginBottom:18 }}>
+          <div style={{ border:`1px solid ${sc}34`, background:`linear-gradient(135deg, ${sc}14, rgba(237,232,223,.018))`, padding:'20px 22px', borderLeft:`5px solid ${sc}` }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.38em', color:`${sc}AA`, textTransform:'uppercase', marginBottom:8 }}>arquivo da carreira</div>
+            <div style={{ fontFamily:T.display, fontSize:86, color:sc, lineHeight:.82, textShadow:`0 0 38px ${sc}33` }}>{total}</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:22, color:T.ink, textTransform:'uppercase', letterSpacing:'.06em', marginTop:5 }}>titulos oficiais</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:7, marginTop:16 }}>
+              {[
+                ['Fase', biography.careerPhase?.shortTag ?? biography.careerPhase?.label ?? 'em aberto', sc],
+                ['Legado', biography.legacy?.shortTag ?? 'em formacao', '#E8C84A'],
+                ['Marcos', String((biography.milestones ?? []).length), '#5BB8E4'],
+              ].map(([label, value, color]) => (
+                <div key={label} style={{ border:`1px solid ${color}24`, background:`${color}08`, padding:'9px 10px' }}>
+                  <div style={{ fontFamily:T.mono, fontSize:6.5, color:`${color}AA`, letterSpacing:'.2em', textTransform:'uppercase', marginBottom:4 }}>{label}</div>
+                  <div style={{ fontFamily:T.display, fontSize:17, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'20px 22px' }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.38em', color:`${sc}AA`, textTransform:'uppercase', marginBottom:8 }}>memoria competitiva</div>
+            <div style={{ fontFamily:T.display, fontSize:'clamp(28px,3vw,44px)', color:T.ink, lineHeight:.92, textTransform:'uppercase', marginBottom:12 }}>
+              {biography.headline ?? np.name}
+            </div>
+            <p style={{ fontFamily:T.body, fontSize:14, color:T.inkDim, lineHeight:1.78, margin:0 }}>
+              {careerLead ?? 'A carreira ainda esta construindo seus grandes capitulos no universo.'}
+            </p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginTop:16 }}>
+              {(biography.narrativeSignals ?? []).slice(0, 7).map(signal => (
+                <span key={signal} style={{ fontFamily:T.mono, fontSize:7, color:`${sc}CC`, letterSpacing:'.16em', textTransform:'uppercase', border:`1px solid ${sc}24`, background:`${sc}08`, padding:'5px 8px' }}>
+                  {String(signal).replace(/_/g, ' ')}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(0,1fr)', gap:14, marginBottom:18 }}>
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+            <Sh color={sc}>Mapa de Titulos</Sh>
+            <div style={{ display:'grid', gap:8 }}>
+              {titleMix.map(({ key, label, color, value }) => (
+                <div key={key} style={{ display:'grid', gridTemplateColumns:'110px minmax(0,1fr) 42px', gap:10, alignItems:'center', opacity:value > 0 ? 1 : .38 }}>
+                  <span style={{ fontFamily:T.cond, fontWeight:800, fontSize:13, color:value > 0 ? T.ink : T.inkFaint, textTransform:'uppercase' }}>{label}</span>
+                  <div style={{ height:7, background:'rgba(237,232,223,.06)', overflow:'hidden' }}>
+                    <div style={{ width:`${Math.min(100, value * 16)}%`, height:'100%', background:color, boxShadow:value > 0 ? `0 0 14px ${color}55` : 'none' }} />
+                  </div>
+                  <span style={{ fontFamily:T.display, fontSize:24, color:value > 0 ? color : T.inkFaint, textAlign:'right', lineHeight:1 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'17px 18px' }}>
+            <Sh color={sc}>Anos-Chave</Sh>
+            <div style={{ display:'grid', gap:8 }}>
+              {[
+                ['Ano dourado', goldenYears[0]?.year, goldenYears[0]?.titles?.length ? `${goldenYears[0].titles.length} titulo(s)` : biography.legacy?.summary, '#E8C84A'],
+                ['Ano dificil', hardYears[0]?.year, hardYears[0]?.rankDrop ? `queda de ${hardYears[0].rankDrop} posicoes` : 'sem grande queda registrada', '#F59E0B'],
+                ['Primeiro titulo', firstTitle?.year, firstTitle?.name, '#5BB8E4'],
+                ['Rivalidade', topRival?.opponentName, topRival ? `${topRival.wins}-${topRival.losses}` : null, '#EF4444'],
+              ].filter(([, value]) => value).map(([label, value, desc, color]) => (
+                <div key={label} style={{ padding:'12px 14px', border:`1px solid ${color}28`, borderLeft:`3px solid ${color}`, background:`${color}08` }}>
+                  <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}CC`, letterSpacing:'.23em', textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+                  <div style={{ fontFamily:T.display, fontSize:22, color:T.ink, lineHeight:1, textTransform:'uppercase' }}>{value}</div>
+                  {desc && <div style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.5, marginTop:5 }}>{desc}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {playerEras.length > 0 && (
+          <div style={{ border:'1px solid rgba(232,200,74,.24)', borderLeft:'3px solid #E8C84A', background:'rgba(232,200,74,.045)', padding:'16px 18px', marginBottom:18 }}>
+            <Sh color="#B58B24">Eras do Circuito</Sh>
+            <div style={{ display:'grid', gap:7, marginTop:10 }}>
+              {playerEras.slice(0, 6).map(era => (
+                <div key={era.id} style={{ display:'grid', gridTemplateColumns:'78px minmax(0,1fr) auto', gap:10, alignItems:'center', padding:'9px 10px', border:'1px solid rgba(232,200,74,.14)', background:'rgba(0,0,0,.035)' }}>
+                  <div style={{ fontFamily:T.mono, fontSize:8, color:'#B58B24' }}>{era.startYear ?? '—'}{era.endYear ? `—${era.endYear}` : '—'}</div>
+                  <div><div style={{ fontFamily:T.cond, fontWeight:800, fontSize:15, color:T.ink, textTransform:'uppercase' }}>{era.title ?? 'Era em formação'}</div><div style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, marginTop:3 }}>{era.status === 'CLOSED' ? 'capítulo encerrado' : era.status === 'DECLINING' ? 'em declínio' : 'presença ativa na história do circuito'}</div></div>
+                  <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, textTransform:'uppercase' }}>{era.kind?.replace(/_/g, ' ')}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {biggestTitles.length > 0 && (
+          <div style={{ marginBottom:18 }}>
+            <Sh color={T.gold}>Títulos no Universo</Sh>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8 }}>
+              {biggestTitles.map((w, i) => {
+                const tc = CAT_COLOR[w.category] ?? T.inkDim;
+                return (
+                  <div key={`${w.name}-${i}`} style={{ padding:'11px 13px', border:`1px solid ${tc}24`, borderLeft:`3px solid ${tc}`, background:`${tc}08`, minWidth:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:10, marginBottom:5 }}>
+                      <span style={{ fontFamily:T.mono, fontSize:7, color:`${tc}CC`, letterSpacing:'.16em' }}>{CAT_SHORT[w.category] ?? w.category}</span>
+                      <span style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint }}>{w.year}</span>
+                    </div>
+                    <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:15, color:T.ink, textTransform:'uppercase', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{w.name}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {historyRows.length > 0 && (
+          <div>
+            <Sh color={sc}>Temporadas Recentes</Sh>
+            <div style={{ display:'grid', gap:4 }}>
+              {historyRows.map((h, i) => {
+                const yearLabel = formatProfileYear(h.year);
+                const titleColor = h.titleWon ? '#E8C84A' : h.inDecline ? '#EF4444' : sc;
+                return (
+                  <div key={`${yearLabel}-${i}`} style={{ display:'grid', gridTemplateColumns:'64px minmax(0,1fr) 56px 56px', gap:10, alignItems:'center', padding:'9px 12px', border:'1px solid rgba(237,232,223,.06)', background:h.titleWon ? 'rgba(232,200,74,.045)' : h.inDecline ? 'rgba(239,68,68,.035)' : 'rgba(255,255,255,.014)', borderLeft:`3px solid ${titleColor}` }}>
+                    <div style={{ fontFamily:T.display, fontSize:18, color:titleColor, lineHeight:1 }}>{yearLabel}</div>
+                    <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:13, color:T.ink, textTransform:'uppercase' }}>
+                      {h.titleWon ? 'Temporada com titulo grande' : h.inDecline ? 'Temporada de queda' : 'Temporada de desenvolvimento'}
+                    </div>
+                    <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint }}>OVR <span style={{ color:T.ink }}>{h.ovr ?? '--'}</span></div>
+                    <div style={{ fontFamily:T.mono, fontSize:8, color:(h.ovrDelta ?? 0) >= 0 ? '#22C55E' : '#EF4444', textAlign:'right' }}>{(h.ovrDelta ?? 0) > 0 ? '+' : ''}{h.ovrDelta ?? 0}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="upp2-scroll" style={{ width:'clamp(280px,31vw,410px)', flexShrink:0, padding:hasTimeline ? 0 : '22px 18px', background:'rgba(0,0,0,.12)', overflowY:'auto', display:'flex', flexDirection:'column' }}>
+        {hasTimeline ? (
+          <CarreiraTimeline np={np} sc={sc} rivalrySystem={rivalrySystem} allPlayers={allPlayers} year={year} sponsorEvents={sponsorEvents} />
+        ) : (
+          <>
+            <Sh color={sc}>Marcos Emocionais</Sh>
+            <div style={{ display:'grid', gap:10 }}>
+              {moments.length === 0 ? (
+                <div style={{ padding:'28px 14px', border:'1px solid rgba(237,232,223,.07)', color:T.inkFaint, fontFamily:T.body, fontSize:12, lineHeight:1.7 }}>
+                  A carreira ainda nao acumulou momentos suficientes para uma linha emocional propria.
+                </div>
+              ) : [...moments].sort((a,b) => (b.year ?? 0) - (a.year ?? 0)).slice(0, 10).map((m, i) => {
+                const meta = MOMENT_META[m.type] ?? { color:sc, icon:'', label:m.type };
+                return (
+                  <div key={`${m.year}-${i}`} style={{ padding:'13px 14px', border:`1px solid ${meta.color}24`, borderLeft:`3px solid ${meta.color}`, background:`${meta.color}08` }}>
+                    <div style={{ fontFamily:T.mono, fontSize:7, color:`${meta.color}CC`, letterSpacing:'.2em', textTransform:'uppercase', marginBottom:5 }}>{m.year} - {meta.label}</div>
+                    <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:15, color:T.ink, textTransform:'uppercase', lineHeight:1.1 }}>{m.title}</div>
+                    <p style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.55, margin:'6px 0 0' }}>{m.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
@@ -2920,7 +3514,6 @@ function TabCarreira({ np, sc, tournamentResults, chronicleEngine = null, rivalr
             sc={sc}
             rivalrySystem={rivalrySystem}
             allPlayers={allPlayers}
-            coachPool={coachPool}
             year={year}
             sponsorEvents={sponsorEvents}
           />
@@ -3102,6 +3695,76 @@ function OVRChart({ history, rankHist, sc, year }) {
   );
 }
 
+function CareerTrajectoryDossier({ np, sc, year }) {
+  const trajectory = np.careerTrajectory ?? null;
+  const forecast = trajectory?.forecast ?? buildCareerTrajectoryForecast(np, year ?? 2025);
+  const history = trajectory?.history ?? [];
+  const snapshots = history.filter(entry => entry.type === 'SEASON_TRAJECTORY_SNAPSHOT').slice(-5).reverse();
+  const decisive = history
+    .filter(entry => !['BASELINE_ESTABLISHED', 'SEASON_TRAJECTORY_SNAPSHOT'].includes(entry.type))
+    .slice(-6).reverse();
+  const tone = {
+    ASCENDING:'#22C55E', BUILDING:'#5BB8E4', BREAKTHROUGH_WINDOW:'#FFD700',
+    DECISIVE_WINDOW:'#FF9800', AT_RISK:'#EF4444', VETERAN_REINVENTION:'#A78BFA', STABILIZING:sc,
+  }[forecast.trend] ?? sc;
+  const eventLabel = {
+    REALIZATION_GAIN:'Resultado que acelerou a trajetória',
+    PERSONALITY_RESPONSE:'Resposta mental à temporada',
+    HEALTH_LOAD_RESPONSE:'Corpo e calendário',
+    COACH_PARTNERSHIP_VALIDATED:'Parceria técnica validada',
+    COACH_ADAPTATION:'Adaptação de equipe',
+    COACH_FRICTION:'Atrito com a equipe técnica',
+    WINDOW_PHASE_CHANGED:'Mudança de janela de carreira',
+  };
+
+  return (
+    <div style={{ border:`1px solid ${tone}38`, borderLeft:`5px solid ${tone}`, background:`linear-gradient(135deg, ${tone}11, rgba(237,232,223,.018))`, padding:'18px 20px', marginBottom:18 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.15fr) minmax(230px,.85fr)', gap:18 }}>
+        <div>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.34em', color:`${tone}CC`, textTransform:'uppercase', marginBottom:7 }}>dossiê de trajetória · leitura do circuito</div>
+          <div style={{ fontFamily:T.display, fontSize:'clamp(26px,3vw,42px)', lineHeight:.9, color:T.ink, textTransform:'uppercase' }}>{forecast.label}</div>
+          <p style={{ fontFamily:T.body, fontSize:13, color:T.inkDim, lineHeight:1.7, margin:'10px 0 0' }}>{forecast.summary}</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginTop:13 }}>
+            {(forecast.drivers ?? []).map((driver, index) => (
+              <span key={`${driver}-${index}`} style={{ fontFamily:T.mono, fontSize:7, color:`${tone}DD`, letterSpacing:'.1em', border:`1px solid ${tone}2D`, background:`${tone}09`, padding:'5px 7px' }}>{driver}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{ borderLeft:`1px solid ${tone}24`, paddingLeft:17 }}>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.26em', color:T.inkFaint, textTransform:'uppercase', marginBottom:8 }}>leitura atual</div>
+          <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10, marginBottom:9 }}>
+            <span style={{ fontFamily:T.cond, fontSize:17, fontWeight:800, color:tone, textTransform:'uppercase' }}>{String(forecast.trend ?? 'STABILIZING').replace(/_/g, ' ')}</span>
+            <span style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint }}>{forecast.confidence ?? 50}% de clareza</span>
+          </div>
+          <div style={{ height:5, background:'rgba(237,232,223,.08)', overflow:'hidden', marginBottom:11 }}><div style={{ width:`${forecast.confidence ?? 50}%`, height:'100%', background:tone, boxShadow:`0 0 12px ${tone}66` }} /></div>
+          <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint, lineHeight:1.55 }}>É uma leitura da direção da carreira, não uma promessa de overall, ranking ou título.</div>
+        </div>
+      </div>
+
+      {(decisive.length > 0 || snapshots.length > 0) && <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(0,1fr)', gap:15, marginTop:17, paddingTop:15, borderTop:`1px solid ${tone}20` }}>
+        <div>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.26em', color:T.inkFaint, textTransform:'uppercase', marginBottom:7 }}>o que virou a curva</div>
+          {decisive.length ? decisive.slice(0, 3).map((entry, index) => (
+            <div key={`${entry.type}-${entry.year}-${index}`} style={{ padding:'7px 0', borderBottom:index < Math.min(2, decisive.length - 1) ? '1px solid rgba(237,232,223,.06)' : 'none' }}>
+              <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:13, color:T.ink, textTransform:'uppercase' }}>{formatProfileYear(entry.year)} · {eventLabel[entry.type] ?? String(entry.type).replace(/_/g, ' ')}</div>
+              <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint, lineHeight:1.45, marginTop:2 }}>{entry.reason ?? entry.from ? `${entry.reason ?? 'fase'}${entry.to ? ` → ${entry.to}` : ''}` : 'Marco registrado na evolução.'}</div>
+            </div>
+          )) : <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint }}>A carreira ainda está reunindo sinais suficientes.</div>}
+        </div>
+        <div>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.26em', color:T.inkFaint, textTransform:'uppercase', marginBottom:7 }}>arquivo de leituras</div>
+          {snapshots.length ? snapshots.slice(0, 3).map((entry, index) => (
+            <div key={`${entry.year}-${index}`} style={{ display:'grid', gridTemplateColumns:'42px 1fr', gap:8, padding:'7px 0', borderBottom:index < Math.min(2, snapshots.length - 1) ? '1px solid rgba(237,232,223,.06)' : 'none' }}>
+              <span style={{ fontFamily:T.display, fontSize:17, color:tone, lineHeight:1 }}>{formatProfileYear(entry.year)}</span>
+              <div><div style={{ fontFamily:T.cond, fontSize:13, fontWeight:800, color:T.ink, textTransform:'uppercase' }}>{entry.forecast?.label ?? 'Leitura em formação'}</div><div style={{ fontFamily:T.body, fontSize:10.5, color:T.inkFaint, lineHeight:1.4 }}>{(entry.drivers ?? []).join(' · ') || 'Sem causa dominante isolada.'}</div></div>
+            </div>
+          )) : <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint }}>O primeiro arquivo anual aparece ao fechar a temporada.</div>}
+        </div>
+      </div>}
+    </div>
+  );
+}
+
 function TabTrajetoria({ np, sc, rankingStore, year }) {
   const history = np._seasonHistory ?? [];
   const rankHist = np._rankHistory ?? [];
@@ -3139,6 +3802,155 @@ function TabTrajetoria({ np, sc, rankingStore, year }) {
     acc[formatProfileYear(h.year)] = h;
     return acc;
   }, {})).sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+  const phase = scoutPhaseLabel(np);
+  const currentAge = formatProfileAge(np.age);
+  const peakAge = formatProfileAge(np.peakAge);
+  const ageProgress = currentAge != null && peakAge != null
+    ? Math.max(0, Math.min(100, Math.round((currentAge / Math.max(1, peakAge + 5)) * 100)))
+    : 45;
+  const recentRows = [...seasonHistoryRows].reverse().slice(0, 7);
+  const bestSeason = history.length
+    ? [...history].sort((a, b) => (b.ovr ?? 0) - (a.ovr ?? 0))[0]
+    : null;
+  const lastRank = rankHist.length ? rankHist[rankHist.length - 1] : null;
+  const firstRank = rankHist.length ? rankHist[0] : null;
+  const rankTrend = firstRank?.rank && lastRank?.rank ? firstRank.rank - lastRank.rank : 0;
+  const developmentPulse = [
+    ['Fase', phase.label, phase.color],
+    ['Pico previsto', peakAge != null ? `${peakAge} anos` : 'em leitura', '#E8C84A'],
+    ['Tempo ate pico', yearsToPeak == null ? '---' : yearsToPeak > 0 ? `${yearsToPeak} anos` : 'agora', yearsToPeak != null && yearsToPeak <= 0 ? '#E8C84A' : sc],
+    ['Tendencia ranking', rankTrend > 0 ? `+${rankTrend}` : rankTrend < 0 ? `${rankTrend}` : 'estavel', rankTrend > 0 ? '#22C55E' : rankTrend < 0 ? '#EF4444' : T.inkFaint],
+  ];
+
+  return (
+    <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
+      <div className="upp2-scroll" style={{ flex:1, padding:'24px 26px 34px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(320px,.9fr) minmax(0,1.1fr)', gap:16, marginBottom:18 }}>
+          <div style={{ border:`1px solid ${phase.color}32`, background:`linear-gradient(135deg, ${phase.color}13, rgba(237,232,223,.018))`, borderLeft:`5px solid ${phase.color}`, padding:'20px 22px' }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.38em', color:`${phase.color}BB`, textTransform:'uppercase', marginBottom:8 }}>curva da carreira</div>
+            <div style={{ fontFamily:T.display, fontSize:'clamp(34px,4vw,58px)', color:phase.color, lineHeight:.88, textTransform:'uppercase' }}>{phase.label}</div>
+            <p style={{ fontFamily:T.body, fontSize:13, color:T.inkDim, lineHeight:1.7, margin:'12px 0 16px' }}>
+              {inDecline
+                ? 'O jogador ja mostra sinais de desgaste: a curva ainda pode render, mas cada temporada cobra mais.'
+                : yearsToPeak != null && yearsToPeak <= 1
+                  ? 'A janela principal esta aberta agora. O motor enxerga pico tecnico ou quase pico.'
+                  : 'A trajetoria ainda tem espaco de crescimento, com margem para transformar atributos em resultado.'}
+            </p>
+            <div style={{ height:8, background:'rgba(237,232,223,.07)', overflow:'hidden', marginBottom:8 }}>
+              <div style={{ width:`${ageProgress}%`, height:'100%', background:`linear-gradient(90deg, ${sc}, ${phase.color})`, boxShadow:`0 0 18px ${phase.color}55` }} />
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:'.16em', textTransform:'uppercase' }}>
+              <span>{currentAge != null ? `${currentAge} anos` : 'idade ?'}</span>
+              <span>{peakAge != null ? `pico ${peakAge}` : 'pico em leitura'}</span>
+            </div>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:8 }}>
+            {developmentPulse.map(([label, value, color]) => (
+              <div key={label} style={{ border:`1px solid ${color}24`, background:`${color}08`, padding:'13px 14px', minHeight:94 }}>
+                <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}AA`, letterSpacing:'.22em', textTransform:'uppercase', marginBottom:7 }}>{label}</div>
+                <div style={{ fontFamily:T.display, fontSize:label === 'Fase' ? 22 : 28, color:T.ink, lineHeight:.95, textTransform:'uppercase' }}>{value}</div>
+              </div>
+            ))}
+            {[
+              ['Melhor fase', ovrTier(peakOvr).grade, ovrTier(peakOvr).color],
+              ['Melhor rank', peakRank ? `#${peakRank}` : '---', T.gold],
+              ['Rank atual', currentRank ? `#${currentRank}` : '---', sc],
+              ['GS na curva', history.filter(h=>gsTypes.has(h.titleWon)).length, '#FFD700'],
+            ].map(([label, value, color]) => (
+              <div key={label} style={{ border:`1px solid ${color}24`, background:`${color}08`, padding:'13px 14px', minHeight:94 }}>
+                <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}AA`, letterSpacing:'.22em', textTransform:'uppercase', marginBottom:7 }}>{label}</div>
+                <div style={{ fontFamily:T.display, fontSize:32, color, lineHeight:.9, textTransform:'uppercase' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <CareerTrajectoryDossier np={np} sc={sc} year={year} />
+
+        <div style={{ border:'1px solid rgba(237,232,223,.075)', background:'rgba(255,255,255,.018)', padding:'18px 20px', marginBottom:18 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:14, marginBottom:8 }}>
+            <Sh color={sc}>Curva de Evolução</Sh>
+            {bestSeason && (
+              <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:'.18em', textTransform:'uppercase' }}>
+                melhor ano {formatProfileYear(bestSeason.year)} · OVR {bestSeason.ovr}
+              </div>
+            )}
+          </div>
+          <OVRChart history={history} rankHist={rankHist} sc={sc} year={year} />
+        </div>
+
+        {recentRows.length > 0 && (
+          <div>
+            <Sh color={sc}>Linha de Temporadas</Sh>
+            <div style={{ display:'grid', gap:5 }}>
+              {recentRows.map((h, i) => {
+                const seasonYear = formatProfileYear(h.year);
+                const rh = rankHist.find(r => formatProfileYear(r.year) === seasonYear);
+                const lineColor = gsTypes.has(h.titleWon) ? '#FFD700' : h.inDecline ? '#EF4444' : (h.ovrDelta ?? 0) > 0 ? '#22C55E' : sc;
+                const label = gsTypes.has(h.titleWon) ? 'Grand Slam' : h.titleWon ? 'Titulo' : h.inDecline ? 'Declinio' : (h.ovrDelta ?? 0) > 0 ? 'Crescimento' : 'Estavel';
+                return (
+                  <div key={`${h.year}-${i}`} style={{ display:'grid', gridTemplateColumns:'66px minmax(0,1fr) 74px 70px 52px', gap:10, alignItems:'center', padding:'10px 13px', border:'1px solid rgba(237,232,223,.06)', borderLeft:`3px solid ${lineColor}`, background:`${lineColor}07` }}>
+                    <div style={{ fontFamily:T.display, fontSize:20, color:lineColor, lineHeight:1 }}>{seasonYear}</div>
+                    <div>
+                      <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:14, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{label}</div>
+                      {formatProfileAge(h.age) != null && <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, marginTop:3 }}>{formatProfileAge(h.age)} anos</div>}
+                    </div>
+                    <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint }}>OVR <span style={{ color:T.ink }}>{h.ovr ?? '--'}</span></div>
+                    <div style={{ fontFamily:T.mono, fontSize:8, color:(h.ovrDelta ?? 0) >= 0 ? '#22C55E' : '#EF4444' }}>{(h.ovrDelta ?? 0) > 0 ? '+' : ''}{Number(h.ovrDelta ?? 0).toFixed(1)}</div>
+                    <div style={{ fontFamily:T.display, fontSize:16, color:T.gold, textAlign:'right' }}>{rh?.rank ? `#${rh.rank}` : '---'}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="upp2-scroll" style={{ width:'clamp(250px,28vw,330px)', flexShrink:0, padding:'24px 18px', background:'rgba(0,0,0,.12)', overflowY:'auto' }}>
+        <Sh color={sc}>Última Temporada</Sh>
+        {lastSeason ? (
+          <>
+            <div style={{ border:`1px solid ${ovrDelta > 0 ? '#22C55E33' : ovrDelta < 0 ? '#EF444433' : `${sc}28`}`, background:ovrDelta > 0 ? 'rgba(34,197,94,.06)' : ovrDelta < 0 ? 'rgba(239,68,68,.055)' : `${sc}08`, padding:'16px 17px', marginBottom:15 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8 }}>
+                <div style={{ fontFamily:T.display, fontSize:30, color:sc, lineHeight:1 }}>{formatProfileYear(lastSeason.year)}</div>
+                <div style={{ fontFamily:T.display, fontSize:34, color:ovrDelta > 0 ? '#22C55E' : ovrDelta < 0 ? '#EF4444' : T.inkFaint, lineHeight:1 }}>{ovrDelta > 0 ? '+' : ''}{ovrDelta}</div>
+              </div>
+              <div style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.6 }}>
+                {ovrDelta > 0 ? 'Temporada de subida tecnica.' : ovrDelta < 0 ? 'Temporada de perda ou desgaste.' : 'Temporada sem grande deslocamento tecnico.'}
+              </div>
+            </div>
+
+            <Sh color="#22C55E">Ganhos</Sh>
+            {gains.length > 0 ? gains.slice(0, 6).map(([k,d]) => {
+              const { label, color } = attrLabel(k);
+              return (
+                <div key={k} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', background:'rgba(34,197,94,.045)', borderLeft:`2px solid ${color}`, marginBottom:5 }}>
+                  <span style={{ flex:1, fontFamily:T.cond, fontWeight:800, fontSize:12, color:T.ink, textTransform:'uppercase' }}>{label}</span>
+                  <span style={{ fontFamily:T.display, fontSize:16, color:'#22C55E' }}>+{d}</span>
+                </div>
+              );
+            }) : <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint, lineHeight:1.6, marginBottom:14 }}>Nenhum ganho de atributo registrado.</div>}
+
+            <Sh color="#EF4444">Perdas</Sh>
+            {losses.length > 0 ? losses.slice(0, 6).map(([k,d]) => {
+              const { label } = attrLabel(k);
+              return (
+                <div key={k} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', background:'rgba(239,68,68,.045)', borderLeft:'2px solid rgba(239,68,68,.55)', marginBottom:5 }}>
+                  <span style={{ flex:1, fontFamily:T.cond, fontWeight:800, fontSize:12, color:T.inkDim, textTransform:'uppercase' }}>{label}</span>
+                  <span style={{ fontFamily:T.display, fontSize:16, color:'#EF4444' }}>{d}</span>
+                </div>
+              );
+            }) : <div style={{ fontFamily:T.body, fontSize:11, color:T.inkFaint, lineHeight:1.6 }}>Nenhuma queda de atributo registrada.</div>}
+          </>
+        ) : (
+          <div style={{ padding:'30px 14px', border:'1px solid rgba(237,232,223,.07)', fontFamily:T.body, fontSize:12, color:T.inkFaint, lineHeight:1.7 }}>
+            A trajetória começa a ficar legível depois da primeira temporada simulada.
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
@@ -3420,7 +4232,7 @@ function TabResultados({ np, sc, tournamentResults }) {
 
   // Surface stats
   const surfRec = useMemo(() => {
-    const rec = { CLAY:{w:0,l:0}, GRASS:{w:0,l:0}, HARD:{w:0,l:0}, INDOOR:{w:0,l:0} };
+    const rec = { CLAY:{w:0,l:0}, GRASS:{w:0,l:0}, HARD:{w:0,l:0}, STREET:{w:0,l:0}, CARPET:{w:0,l:0}, INDOOR:{w:0,l:0} };
     for (const e of allEntries) {
       const surf = (e.surface ?? 'HARD').toUpperCase();
       if (!rec[surf]) rec[surf] = { w:0, l:0 };
@@ -3566,7 +4378,7 @@ function TabResultados({ np, sc, tournamentResults }) {
                           const rs = roundStyle(e.round);
                           const isW = e.round === 'W';
 
-                          // Cor do piso com intensidade por import�ncia
+                          // Cor do piso com intensidade por import?ncia
                           const SURF_BASE = { HARD:'#1565C0', CLAY:'#8B3A0F', GRASS:'#2E7D32', INDOOR:'#6A1B9A' };
 const CAT_ALPHA = { GRAND_SLAM:.28, SLAM_CLASH:.24, MASTERS_1000:.22, FINALS:.22, ATP_500:.16, ATP_250:.12, ATP_100:.08 };
                           const surfBase  = SURF_BASE[(e.surface??'HARD').toUpperCase()] ?? '#1565C0';
@@ -3689,12 +4501,14 @@ const CAT_ALPHA = { GRAND_SLAM:.28, SLAM_CLASH:.24, MASTERS_1000:.22, FINALS:.22
               );
             })()}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:20 }}>
-              {[{key:'CLAY'},{key:'GRASS'},{key:'HARD'},{key:'INDOOR'}].map(({ key }) => {
+              {[{key:'CLAY'},{key:'GRASS'},{key:'HARD'},{key:'STREET'},{key:'CARPET'},{key:'INDOOR'}].map(({ key }) => {
                 const rec = surfRec[key];
                 const total = rec.w+rec.l;
                 const pct = total > 0 ? Math.round(rec.w/total*100) : null;
                 const color = SURF_COLOR[key];
                 const noData = total===0;
+                const surfaceDna = np.surfaceProfile?.dna?.[key];
+                const surfaceMastery = np.surfaceProfile?.mastery?.[key];
                 return (
                   <div key={key} style={{ background:noData?'rgba(237,232,223,.015)':`${color}07`, border:`1px solid ${noData?'rgba(237,232,223,.06)':color+'28'}`, padding:'18px 20px', position:'relative', overflow:'hidden', clipPath:'polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)' }}>
                     <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${color}${noData?'33':'77'},transparent)` }}/>
@@ -3712,6 +4526,19 @@ const CAT_ALPHA = { GRAND_SLAM:.28, SLAM_CLASH:.24, MASTERS_1000:.22, FINALS:.22
                         ) : null;
                       })()}
                     </div>
+                    {surfaceDna && (
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:12 }}>
+                        <div style={{ padding:'7px 9px', background:`${color}0b`, border:`1px solid ${color}22` }}>
+                          <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:1.5 }}>AFINIDADE NATURAL</div>
+                          <div style={{ fontFamily:T.display, fontSize:24, lineHeight:1, color, marginTop:3 }}>{Math.round(surfaceDna.affinity)}</div>
+                        </div>
+                        <div style={{ padding:'7px 9px', background:'rgba(255,255,255,.018)', border:'1px solid rgba(255,255,255,.06)' }}>
+                          <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, letterSpacing:1.5 }}>DOMINIO APRENDIDO</div>
+                          <div style={{ fontFamily:T.display, fontSize:24, lineHeight:1, color:'#EEE9E0', marginTop:3 }}>{Math.round(surfaceMastery?.adaptation ?? 0)}</div>
+                        </div>
+                        {surfaceDna.archetype?.label && <div style={{ gridColumn:'1 / -1', fontFamily:T.mono, fontSize:7, letterSpacing:1.2, color:`${color}cc`, textTransform:'uppercase' }}>{surfaceDna.archetype.label}</div>}
+                      </div>
+                    )}
                     {pct !== null ? (
                       <div style={{ fontFamily:T.display, fontSize:48, color, lineHeight:.85, marginBottom:10, textShadow:`0 0 24px ${color}44` }}>{pct}<span style={{ fontSize:20, opacity:.6 }}>%</span></div>
                     ) : (
@@ -3735,7 +4562,7 @@ const CAT_ALPHA = { GRAND_SLAM:.28, SLAM_CLASH:.24, MASTERS_1000:.22, FINALS:.22
             {totalM > 0 && (
               <div>
                 <Sh color={sc}>Comparativo</Sh>
-                {[{key:'CLAY'},{key:'GRASS'},{key:'HARD'},{key:'INDOOR'}].map(({ key }) => {
+                {[{key:'CLAY'},{key:'GRASS'},{key:'HARD'},{key:'STREET'},{key:'CARPET'},{key:'INDOOR'}].map(({ key }) => {
                   const rec=surfRec[key], total=rec.w+rec.l, pct=total>0?Math.round(rec.w/total*100):null;
                   const color=SURF_COLOR[key];
                   return (
@@ -3860,7 +4687,6 @@ const LEGACY_TAB_META = {
   hist_anual:  { group:'carreira',  short:'Hist. anual', icon:'???', desc:'Recorte por temporadas para entender altos e baixos.' },
   rivalidades: { group:'carreira',  short:'Rivalidades', icon:'??', desc:'Confrontos que realmente moldaram a narrativa da carreira.' },
   fisico:      { group:'estrutura', short:'Físico & DNA', icon:'??', desc:'Corpo, risco, condição atual, traços e assinatura biológica.' },
-  tecnico:     { group:'estrutura', short:'Técnico',     icon:'??', desc:'Equipe, parceria, confiança tática e direção de carreira.' },
   financeiro:  { group:'estrutura', short:'Financeiro',  icon:'??', desc:'Dinheiro, pressão, custos e sustentabilidade de carreira.' },
   forma:       { group:'estrutura', short:'Forma & IFR', icon:'??', desc:'Momento competitivo, leitura de fase e sinal de mercado.' },
   patrocinio:  { group:'estrutura', short:'Patrocínio',  icon:'??', desc:'Contratos, sinal comercial, histórico de marcas e ofertas.' },
@@ -4500,12 +5326,12 @@ function TabFisicoDNA({ np, sc, tournamentResults }) {
                         ? '#7CFFB2'
                         : '#FF8A80';
                   const familyIcon = group.id === 'CORE'
-                    ? '◆'
+                    ? '?'
                     : group.id === 'SIGNATURE'
-                      ? (slot.shotFamily?.emoji ?? '◎')
+                      ? (slot.shotFamily?.emoji ?? '?')
                       : group.id === 'CAREER'
-                        ? '▲'
-                        : '✕';
+                        ? '?'
+                        : '?';
                   return (
                     <div key={i} style={{ background:`${familyColor}10`, border:`1px solid ${familyColor}2f`, padding:'11px 13px', marginBottom:6, position:'relative', overflow:'hidden' }}>
                       <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${familyColor}66,transparent)` }}/>
@@ -4536,7 +5362,7 @@ function TabFisicoDNA({ np, sc, tournamentResults }) {
       )}
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-        {/* CONDIÇ�O */}
+        {/* CONDIÇ?O */}
         <div>
           <Sh color={sc}>Condição Física</Sh>
           <div style={{ border:`1px solid ${condColor}33`, background:`${condColor}07`, borderLeft:`3px solid ${condColor}`, padding:'14px 16px' }}>
@@ -4557,7 +5383,7 @@ function TabFisicoDNA({ np, sc, tournamentResults }) {
           {healthCrisis?.active ? (
             <div style={{ border:`1px solid ${healthStatusColor}33`, background:`${healthStatusColor}08`, borderLeft:`3px solid ${healthStatusColor}`, padding:'13px 15px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-                <span style={{ fontSize:20 }}>{healthCrisis.status === 'CAREER_ENDING' ? '🕯️' : healthCrisis.status === 'RETURNING' ? '🌱' : '🏥'}</span>
+                <span style={{ fontSize:20 }}>{healthCrisis.status === 'CAREER_ENDING' ? '???' : healthCrisis.status === 'RETURNING' ? '??' : '??'}</span>
                 <div style={{ flex:1 }}>
                   <div style={{ fontFamily:T.display, fontSize:15, color:healthStatusColor, letterSpacing:1, textTransform:'uppercase' }}>{healthLabel}</div>
                   <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:2, color:T.inkFaint, textTransform:'uppercase', marginTop:1 }}>{healthStatusLabel}</div>
@@ -4725,440 +5551,6 @@ function TabFisicoDNA({ np, sc, tournamentResults }) {
   );
 }
 
-// -----------------------------------------------------------------
-// TAB 8: TÉCNICO & CIRCUITO
-// -----------------------------------------------------------------
-function TabTecnico({ np, sc, coachPool, dispatch, year, rivalrySystem }) {
-  const [view, setView] = useState('tecnico'); // tecnico | circuito
-  const [showMkt, setShowMkt] = useState(false);
-
-  const currentCoachMeta = np.coach ? (coachPool??[]).find(c => c.id===np.coach.coachId) ?? null : null;
-  const currentCoach = currentCoachMeta ? { ...currentCoachMeta, ...np.coach, id:currentCoachMeta.id } : np.coach ? { ...np.coach, id:np.coach.coachId } : null;
-  const history = [...(np.coachHistory??[])].reverse();
-  const bond = np.coach?.bondScore ?? null;
-  const bondState = np.coach?.relationshipState ?? 'STABLE';
-  const bondDef = PARTNERSHIP_STATES[bondState] ?? PARTNERSHIP_STATES.STABLE;
-  const bondGrad = { STABLE:'linear-gradient(90deg,#22C55E,#4CAF50)', TENSION:'linear-gradient(90deg,#FF9800,#FFB74D)', CRISIS:'linear-gradient(90deg,#F44336,#EF5350)', RUPTURE:'linear-gradient(90deg,#9C27B0,#AB47BC)' };
-
-  function handleFire() {
-    if (!dispatch || !currentCoach) return;
-    dispatch({ type:'FIRE_COACH', playerId:np.id, coachId:currentCoach.id??currentCoach.coachId, season:year, reason:'VOLUNTARY' });
-  }
-
-  // CIRCUITO
-  migrateTournamentPreferences(np);
-  const prefs = np.tournamentPreferences ?? [];
-  const top3 = getTopFavoriteTournaments(np);
-  const bottom3 = getBottomTournaments(np);
-  const bottomIds = new Set(bottom3.map(b=>b.tournament.id));
-  const fullList = prefs.map((id, rank) => {
-    const tournament = PREFERABLE_TOURNAMENTS.find(t=>t.id===id);
-    const bonus = PREFERENCE_BONUS[rank] ?? null;
-    return tournament ? { rank, tournament, bonus, isBottom:bottomIds.has(id) } : null;
-  }).filter(Boolean);
-
-  return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0 }}>
-      <SubTabBar tabs={[['tecnico','?? Técnico'], ['circuito','??? Circuito']]} active={view} onTab={setView} sc={sc} />
-
-      <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }} key={view}>
-        {view === 'tecnico' && (
-          <div className="upp2-scroll" style={{ flex:1, padding:'20px 22px', overflowY:'auto' }}>
-            {/* Stats */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:2, marginBottom:18 }}>
-              <StatCard label="Técnicos"           value={history.length+(currentCoach?1:0)} color={sc} />
-              <StatCard label="Temp. com técnico"  value={history.reduce((a,h)=>a+(h.seasons??0),0)} color={T.inkDim} />
-              <StatCard label="Títulos c/ técnico" value={history.reduce((a,h)=>a+(h.titlesUnder??0),0)} color={T.gold} />
-            </div>
-
-            {/* Técnico atual */}
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-              <Sh color={sc}>Técnico Atual</Sh>
-              <div style={{ display:'flex', gap:5 }}>
-                {currentCoach && dispatch && (
-                  <button onClick={handleFire} style={{ fontFamily:T.mono, fontSize:7, padding:'4px 9px', cursor:'pointer', border:'1px solid rgba(244,67,54,.35)', background:'rgba(244,67,54,.07)', color:'#F44336', textTransform:'uppercase', letterSpacing:1 }}>Demitir</button>
-                )}
-                {!currentCoach && dispatch && (
-                  <button onClick={() => setShowMkt(true)} style={{ fontFamily:T.mono, fontSize:7, padding:'4px 9px', cursor:'pointer', border:`1px solid ${sc}55`, background:`${sc}14`, color:sc, textTransform:'uppercase', letterSpacing:1 }}>?? Mercado</button>
-                )}
-              </div>
-            </div>
-
-            {currentCoach ? (
-              <>
-                {/* Coach card */}
-                {(() => {
-                  const phil = PHIL_META[currentCoach.philosophy] ?? { label:currentCoach.philosophy, icon:'??', color:T.ink };
-                  const ovr = currentCoach.coachAttrs ? coachOverallRating(currentCoach.coachAttrs) : null;
-                  const grade = ovr !== null ? coachGrade(ovr) : null;
-                  const surf = currentCoach.specialtySurface ? { label:SURF_LABEL[currentCoach.specialtySurface], color:SURF_COLOR[currentCoach.specialtySurface] } : null;
-                  return (
-                    <div style={{ border:`1px solid ${phil.color}44`, background:`${phil.color}07`, padding:'15px 17px', marginBottom:12 }}>
-                      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
-                        <div>
-                          <div style={{ fontFamily:T.display, fontSize:20, color:T.ink, textTransform:'uppercase', letterSpacing:.5 }}>{currentCoach.fullName??currentCoach.name}</div>
-                          {currentCoach.nationality && <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint, letterSpacing:2, marginTop:2 }}>{currentCoach.nationality}</div>}
-                          <div style={{ display:'flex', gap:5, marginTop:7, flexWrap:'wrap' }}>
-                            <Pill label={`${phil.icon} ${phil.label}`} color={phil.color} />
-                            {surf && <Pill label={surf.label} color={surf.color} />}
-                          </div>
-                          {/* Arquétipo ativo */}
-                          {(() => {
-                            const archDef = getArchetypeDef(currentCoach.archetypeId ?? np.coach?.archetypeId);
-                            if (!archDef) return null;
-                            const bonusEntries = Object.entries(archDef.bonuses);
-                            const total = bonusEntries.reduce((s,[,v]) => s+v, 0);
-                            return (
-                              <div style={{ marginTop:10, padding:'9px 11px', border:`1px solid ${phil.color}30`, background:`${phil.color}09` }}>
-                                <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7 }}>
-                                  <span style={{ fontSize:14 }}>{archDef.icon}</span>
-                                  <div style={{ flex:1 }}>
-                                    <div style={{ fontFamily:T.mono, fontSize:7, color:phil.color, letterSpacing:1, textTransform:'uppercase' }}>{archDef.name}</div>
-                                    <div style={{ fontFamily:T.mono, fontSize:6, color:T.inkFaint, marginTop:1 }}>{archDef.tagline}</div>
-                                  </div>
-                                  <div style={{ fontFamily:T.display, fontSize:18, color:phil.color }}>+{total}</div>
-                                </div>
-                                <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 10px' }}>
-                                  {bonusEntries.map(([attr, bonus]) => (
-                                    <span key={attr} style={{ fontFamily:T.mono, fontSize:7, color:T.inkDim }}>
-                                      <span style={{ color:phil.color }}>+{bonus}</span> {attr}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        {grade && (
-                          <div style={{ textAlign:'right' }}>
-                            <div style={{ fontFamily:T.display, fontSize:36, color:phil.color, lineHeight:1 }}>{grade}</div>
-                            <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint, marginTop:2 }}>Técnico · {grade}</div>
-                          </div>
-                        )}
-                      </div>
-                      {currentCoach.coachAttrs && (
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px 18px' }}>
-                          {COACH_ATTR_CATEGORIES.map(cat => (
-                            <div key={cat.id}>
-                              <div style={{ fontFamily:T.mono, fontSize:7, color:cat.color, textTransform:'uppercase', letterSpacing:2, marginBottom:5 }}>{cat.label}</div>
-                              {cat.attrs.map(a => (
-                                <div key={a.key} style={{ marginBottom:4 }}>
-                                  <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, marginBottom:2 }}>{a.label}</div>
-                                  <Bar value={currentCoach.coachAttrs[a.key]??0} color={cat.color} height={3} />
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* BOND */}
-                {bond !== null && (
-                  <div style={{ border:`1px solid ${bondDef.color}28`, background:`${bondDef.color}07`, padding:'14px 16px', marginBottom:12 }}>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <span style={{ fontSize:18 }}>{bondDef.icon}</span>
-                        <div>
-                          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:3, color:bondDef.color, textTransform:'uppercase' }}>PARCERIA {bondDef.label.toUpperCase()}</div>
-                          {np.coach?.startSeason && <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint, marginTop:1 }}>Juntos desde {np.coach.startSeason}</div>}
-                        </div>
-                      </div>
-                      <div style={{ fontFamily:T.display, fontSize:32, color:bondDef.color, lineHeight:1 }}>{Math.round(bond)}</div>
-                    </div>
-                    <div style={{ height:5, background:'rgba(237,232,223,.06)', position:'relative', marginBottom:8 }}>
-                      <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${bond}%`, background:bondGrad[bondState], transition:'width .4s', boxShadow:`0 0 8px ${bondDef.color}44` }}/>
-                      {[30,50,75].map(t => <div key={t} style={{ position:'absolute', left:`${t}%`, top:-2, bottom:-2, width:1, background:'rgba(237,232,223,.12)' }}/>)}
-                    </div>
-                    {np.coach?.lastGoalNarrative && (
-                      <div style={{ borderLeft:`2px solid ${bondDef.color}44`, paddingLeft:10, marginTop:8 }}>
-                        <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:2, color:T.inkFaint, textTransform:'uppercase', marginBottom:3 }}>Último balanço</div>
-                        <p style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.5, margin:0 }}>{np.coach.lastGoalNarrative}</p>
-                      </div>
-                    )}
-
-                    {/* Milestones */}
-                    {(np.coach?.milestones ?? []).length > 0 && (
-                      <div style={{ marginTop:10 }}>
-                        <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:2, color:T.inkFaint, textTransform:'uppercase', marginBottom:5 }}>Marcos</div>
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
-                          {np.coach.milestones.map((m, i) => {
-                            const mDef = MILESTONE_TYPES[m.type] ?? {};
-                            return (
-                              <div key={i} style={{ display:'flex', alignItems:'center', gap:4, fontFamily:T.mono, fontSize:8, padding:'3px 8px', background:'rgba(237,232,223,.05)', border:'1px solid rgba(237,232,223,.09)', color:T.inkDim }}>
-                                <span>{mDef.icon??'?'}</span><span>{m.label??m.type}</span><span style={{ color:T.inkFaint }}>{m.season}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Meta da temporada */}
-                {np.coach?.seasonGoal && (() => {
-                  const goal = np.coach.seasonGoal;
-                  const AMBITION_COLOR = { CONSERVATIVE:'rgba(237,232,223,.3)', REALISTIC:'#2860A8', AMBITIOUS:'#F06428' };
-                  const ac = AMBITION_COLOR[goal.ambition] ?? sc;
-                  return (
-                    <div style={{ border:`1px solid ${sc}28`, background:`${sc}06`, padding:'13px 15px', marginBottom:12 }}>
-                      <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:3, color:T.inkFaint, textTransform:'uppercase', marginBottom:8 }}>Meta — {goal.season??year}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <Pill label={{ CONSERVATIVE:'Conservadora', REALISTIC:'Realista', AMBITIOUS:'Ambiciosa' }[goal.ambition]??goal.ambition} color={ac} />
-                        <div style={{ fontFamily:T.display, fontSize:16, color:sc, letterSpacing:.5 }}>{goal.label}</div>
-                      </div>
-                      {goal.rationale && <p style={{ fontFamily:T.mono, fontSize:10, color:T.inkFaint, borderLeft:`2px solid ${sc}44`, paddingLeft:9, marginTop:9, lineHeight:1.6, fontStyle:'italic' }}>"{goal.rationale}"</p>}
-                      {(goal.surfaceGoals ?? []).length > 0 && (
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10 }}>
-                          {(goal.surfaceGoals ?? []).map((sg, i) => (
-                            <div key={sg.key ?? `${sg.surface}_${i}`} style={{ border:`1px solid ${T.line}`, background:'rgba(237,232,223,.03)', padding:'8px 10px' }}>
-                              <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:2, color:T.inkFaint, textTransform:'uppercase', marginBottom:4 }}>{sg.surface}</div>
-                              <div style={{ fontFamily:T.body, fontSize:11, color:T.ink, lineHeight:1.45 }}>{sg.label}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Histórico de Temporadas — metas + bond ano a ano */}
-                {(() => {
-                  const goalHist  = np.coach?.goalHistory  ?? [];
-                  const bondHist  = np.coach?.bondHistory  ?? [];
-                  if (goalHist.length === 0 && bondHist.length === 0) return null;
-
-                  // Mescla por temporada — goalHistory é a fonte primária
-                  const bySeasonMap = {};
-                  for (const g of goalHist) {
-                    bySeasonMap[g.season] = { ...bySeasonMap[g.season], ...g };
-                  }
-                  for (const b of bondHist) {
-                    bySeasonMap[b.season] = { bond: b.bond, bondDelta: b.delta, ...bySeasonMap[b.season] };
-                  }
-                  const rows = Object.values(bySeasonMap).sort((a, b) => b.season - a.season);
-
-                  const AMBITION_COLOR = { CONSERVATIVE:'rgba(237,232,223,.35)', REALISTIC:'#2860A8', AMBITIOUS:'#F06428' };
-                  const AMBITION_LABEL = { CONSERVATIVE:'Cons.', REALISTIC:'Real.', AMBITIOUS:'Amb.' };
-
-                  return (
-                    <div style={{ marginBottom:12 }}>
-                      <Sh color={sc}>Histórico de Temporadas</Sh>
-                      {rows.map((h, i) => {
-                        const om  = OUTCOME_META[h.outcome] ?? { color:T.inkFaint, icon:'—', label:'—' };
-                        const ac  = AMBITION_COLOR[h.ambition] ?? T.inkFaint;
-                        const al  = AMBITION_LABEL[h.ambition] ?? '';
-                        const bond     = h.bond ?? null;
-                        const bdelta   = h.bondDelta ?? h.delta ?? null;
-                        const hasSurf  = (h.surfaceGoals ?? []).length > 0;
-                        const hasSufEv = (h.surfaceEvals ?? []).length > 0;
-                        return (
-                          <div key={h.season ?? i} style={{ borderBottom:`1px solid ${T.line}`, padding:'10px 12px', background:i%2===0?'rgba(237,232,223,.02)':'transparent' }}>
-                            {/* Linha principal */}
-                            <div style={{ display:'flex', alignItems:'center', gap:9, flexWrap:'wrap' }}>
-                              <span style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint, minWidth:34, flexShrink:0 }}>{h.season}</span>
-                              {/* Badge outcome */}
-                              <div style={{ fontFamily:T.mono, fontSize:7, padding:'2px 7px', border:`1px solid ${om.color}44`, background:`${om.color}0f`, color:om.color, textTransform:'uppercase', letterSpacing:1, flexShrink:0 }}>
-                                {om.icon} {om.label}
-                              </div>
-                              {/* Badge ambition */}
-                              {al && (
-                                <div style={{ fontFamily:T.mono, fontSize:7, padding:'2px 6px', border:`1px solid ${ac}55`, background:`${ac}10`, color:ac, textTransform:'uppercase', letterSpacing:.5, flexShrink:0 }}>
-                                  {al}
-                                </div>
-                              )}
-                              {/* Label da meta */}
-                              <div style={{ flex:1, fontFamily:T.body, fontSize:11, color: h.outcome==='EXCEEDED'||h.outcome==='MET' ? T.ink : T.inkDim, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                {h.goalLabel ?? h.label ?? '—'}
-                              </div>
-                              {/* Bond */}
-                              {bond !== null && (
-                                <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
-                                  <div style={{ width:36, height:3, background:'rgba(237,232,223,.07)', position:'relative', borderRadius:2 }}>
-                                    <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${bond}%`, background:bond>=50?'#22C55E':bond>=30?'#FF9800':'#F44336', borderRadius:2 }}/>
-                                  </div>
-                                  <span style={{ fontFamily:T.mono, fontSize:8, color:T.inkDim, minWidth:20, textAlign:'right' }}>{Math.round(bond)}</span>
-                                  {bdelta !== null && (
-                                    <span style={{ fontFamily:T.mono, fontSize:7, color:bdelta>0?'#22C55E':bdelta<0?'#F44336':T.inkFaint, minWidth:26, textAlign:'right' }}>
-                                      {bdelta>0?'+':''}{Math.round(bdelta)}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            {/* Narrativa */}
-                            {h.narrative && (
-                              <p style={{ fontFamily:T.mono, fontSize:9, color:T.inkFaint, margin:'5px 0 0 43px', lineHeight:1.5, fontStyle:'italic' }}>
-                                "{h.narrative}"
-                              </p>
-                            )}
-                            {/* Metas de superfície */}
-                            {(hasSurf || hasSufEv) && (() => {
-                              const surfGoals = h.surfaceGoals ?? [];
-                              const surfEvals = h.surfaceEvals ?? [];
-                              const surfMap   = {};
-                              for (const sg of surfGoals) surfMap[sg.surface ?? sg.key] = { ...surfMap[sg.surface ?? sg.key], label: sg.label, surface: sg.surface ?? sg.key };
-                              for (const se of surfEvals)  surfMap[se.surface]          = { ...surfMap[se.surface], outcome: se.outcome, achieved: se.achieved };
-                              const surfRows = Object.values(surfMap);
-                              if (surfRows.length === 0) return null;
-                              return (
-                                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:7, marginLeft:43 }}>
-                                  {surfRows.map((sg, si) => {
-                                    const som = OUTCOME_META[sg.outcome] ?? null;
-                                    const SURF_COLOR_MAP = { HARD:'#4FC3F7', CLAY:'#CD853F', GRASS:'#66BB6A', INDOOR:'#9E9E9E' };
-                                    const sc2 = SURF_COLOR_MAP[sg.surface] ?? T.inkFaint;
-                                    return (
-                                      <div key={si} style={{ display:'flex', alignItems:'center', gap:5, border:`1px solid ${sc2}30`, background:`${sc2}08`, padding:'3px 8px', borderRadius:2 }}>
-                                        <span style={{ fontFamily:T.mono, fontSize:7, color:sc2, textTransform:'uppercase', letterSpacing:1 }}>{sg.surface}</span>
-                                        <span style={{ fontFamily:T.body, fontSize:9, color:T.inkDim }}>{sg.label}</span>
-                                        {som && <span style={{ fontFamily:T.mono, fontSize:8, color:som.color }}>{som.icon}</span>}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </>
-            ) : (
-              <div style={{ textAlign:'center', padding:'24px 18px', border:'1px dashed rgba(237,232,223,.09)', marginBottom:18 }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>??</div>
-                <div style={{ fontFamily:T.display, fontSize:11, letterSpacing:4, color:'rgba(237,232,223,.18)', textTransform:'uppercase' }}>Sem Técnico</div>
-                {dispatch && <button onClick={() => setShowMkt(true)} style={{ marginTop:14, fontFamily:T.mono, fontSize:8, padding:'7px 18px', cursor:'pointer', border:`1px solid ${sc}55`, background:`${sc}14`, color:sc, textTransform:'uppercase', letterSpacing:2 }}>Ver mercado</button>}
-              </div>
-            )}
-
-            {/* Histórico */}
-            {history.length > 0 && (
-              <>
-                <Sh color={sc}>Histórico de Técnicos</Sh>
-                {history.map((entry, i) => {
-                  const phil = PHIL_META[entry.philosophy] ?? { icon:'??', color:T.ink };
-                  const entryGoalHist = (entry.goalHistory ?? []).slice().sort((a,b) => b.season - a.season);
-                  const AMBITION_COLOR = { CONSERVATIVE:'rgba(237,232,223,.35)', REALISTIC:'#2860A8', AMBITIOUS:'#F06428' };
-                  const AMBITION_LABEL = { CONSERVATIVE:'Cons.', REALISTIC:'Real.', AMBITIOUS:'Amb.' };
-                  const DISMISS_LABEL  = { RESULTS:'Resultados', CONFLICT:'Conflito', MUTUAL:'Mútuo', VOLUNTARY:'Voluntário' };
-                  return (
-                    <div key={i} style={{ borderBottom:`1px solid ${T.line}`, background:i%2===0?'rgba(237,232,223,.02)':'transparent' }}>
-                      {/* Cabeçalho do técnico */}
-                      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 13px' }}>
-                        <div style={{ fontSize:18, flexShrink:0 }}>{phil.icon}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontFamily:T.display, fontSize:13, color:T.inkDim, textTransform:'uppercase', letterSpacing:.5 }}>{entry.fullName??entry.name}</div>
-                          <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:2, flexWrap:'wrap' }}>
-                            <div style={{ fontFamily:T.mono, fontSize:8, color:T.inkFaint }}>{entry.startSeason} – {entry.endSeason}</div>
-                            {entry.dismissalReason && (
-                              <div style={{ fontFamily:T.mono, fontSize:7, padding:'1px 6px', border:'1px solid rgba(237,232,223,.15)', color:T.inkFaint, textTransform:'uppercase', letterSpacing:.5 }}>
-                                {DISMISS_LABEL[entry.dismissalReason] ?? entry.dismissalReason}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ textAlign:'center', minWidth:44 }}>
-                          <div style={{ fontFamily:T.display, fontSize:16, color:entry.titlesUnder>0?T.gold:T.inkFaint }}>{entry.titlesUnder??'—'}</div>
-                          <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint }}>títulos</div>
-                        </div>
-                        <div style={{ textAlign:'center', minWidth:44 }}>
-                          <div style={{ fontFamily:T.display, fontSize:14, color:entry.peakRankUnder<=10?'#22C55E':T.inkFaint }}>{entry.peakRankUnder<999?`#${entry.peakRankUnder}`:'—'}</div>
-                          <div style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint }}>pico</div>
-                        </div>
-                      </div>
-                      {/* Histórico de metas com este técnico */}
-                      {entryGoalHist.length > 0 && (
-                        <div style={{ borderTop:`1px solid ${T.line}`, paddingBottom:4 }}>
-                          {entryGoalHist.map((g, gi) => {
-                            const om = OUTCOME_META[g.outcome] ?? { color:T.inkFaint, icon:'—', label:'—' };
-                            const ac = AMBITION_COLOR[g.ambition] ?? T.inkFaint;
-                            const al = AMBITION_LABEL[g.ambition] ?? '';
-                            return (
-                              <div key={gi} style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 13px 5px 49px', borderBottom: gi < entryGoalHist.length-1 ? `1px solid ${T.line}` : 'none' }}>
-                                <span style={{ fontFamily:T.mono, fontSize:7, color:T.inkFaint, minWidth:30, flexShrink:0 }}>{g.season}</span>
-                                <div style={{ fontFamily:T.mono, fontSize:6, padding:'1px 5px', border:`1px solid ${om.color}44`, background:`${om.color}0f`, color:om.color, textTransform:'uppercase', letterSpacing:1, flexShrink:0 }}>
-                                  {om.icon} {om.label}
-                                </div>
-                                {al && (
-                                  <div style={{ fontFamily:T.mono, fontSize:6, padding:'1px 5px', border:`1px solid ${ac}44`, background:`${ac}0f`, color:ac, textTransform:'uppercase', letterSpacing:.5, flexShrink:0 }}>
-                                    {al}
-                                  </div>
-                                )}
-                                <div style={{ flex:1, fontFamily:T.body, fontSize:10, color:T.inkDim, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
-                                  {g.goalLabel ?? g.label ?? '—'}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-        )}
-
-        {view === 'circuito' && (
-          <div className="upp2-scroll" style={{ flex:1, overflowY:'auto' }}>
-            {/* Bonus cards */}
-            <div style={{ padding:'16px 18px 10px', borderBottom:`1px solid ${T.line}` }}>
-              <div style={{ fontFamily:T.display, fontSize:9, letterSpacing:4, color:T.inkFaint, textTransform:'uppercase', marginBottom:10 }}>? Bônus de Performance — Torneios Favoritos</div>
-              <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
-                {top3.map(({ rank, tournament, bonus }) => (
-                  bonus && tournament ? (
-                    <div key={rank} style={{ flex:1, minWidth:150, background:`linear-gradient(135deg,${bonus.color}14,${bonus.color}07)`, border:`1px solid ${bonus.color}44`, padding:'11px 14px', display:'flex', alignItems:'center', gap:12 }}>
-                      <div style={{ fontFamily:T.display, fontWeight:700, fontSize:24, color:bonus.color, lineHeight:1, flexShrink:0 }}>{rank+1}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:T.display, fontSize:10, color:bonus.color, letterSpacing:2, textTransform:'uppercase', marginBottom:1 }}>{bonus.label}</div>
-                        <div style={{ fontFamily:T.display, fontSize:12, color:T.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tournament.name}</div>
-                        <div style={{ display:'flex', gap:4, marginTop:4 }}>
-                          {bonus.mental>0 && <span style={{ fontFamily:T.mono, fontSize:7, color:'#87CEEB', border:'1px solid rgba(135,206,235,.3)', padding:'1px 5px' }}>Mental +{bonus.mental*100}%</span>}
-                          {bonus.physical>0 && <span style={{ fontFamily:T.mono, fontSize:7, color:'#90EE90', border:'1px solid rgba(144,238,144,.3)', padding:'1px 5px' }}>Físico +{bonus.physical*100}%</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null
-                ))}
-              </div>
-            </div>
-
-            {/* Full list */}
-            <div>
-              {fullList.map(({ rank, tournament, bonus, isBottom }) => {
-                const sc2 = SURF_COLOR[tournament.surface] ?? '#aaa';
-                const isTop3 = bonus != null;
-                return (
-                  <div key={tournament.id} style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 13px', background:isTop3?`linear-gradient(90deg,${bonus.color}10,transparent)`:isBottom?'rgba(255,60,60,.03)':'transparent', borderLeft:isTop3?`3px solid ${bonus.color}`:isBottom?'3px solid rgba(255,60,60,.35)':'3px solid transparent', borderBottom:`1px solid ${T.line}` }}>
-                    <div style={{ fontFamily:T.display, fontWeight:700, fontSize:12, color:isTop3?bonus.color:isBottom?'rgba(255,107,107,.4)':'rgba(237,232,223,.18)', width:22, textAlign:'center', flexShrink:0 }}>{rank+1}</div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontFamily:T.display, fontSize:12, color:isTop3?T.ink:isBottom?'rgba(237,232,223,.3)':'rgba(237,232,223,.65)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tournament.name}</div>
-                      <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(237,232,223,.22)', marginTop:1 }}>{tournament.month}</div>
-                    </div>
-                    <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-                      <span style={{ fontFamily:T.mono, fontSize:7, background:`${sc2}1a`, border:`1px solid ${sc2}44`, color:sc2, padding:'1px 5px' }}>{SURF_LABEL[tournament.surface]??tournament.surface}</span>
-                      {isBottom && <span style={{ fontFamily:T.mono, fontSize:7, background:'rgba(255,60,60,.1)', border:'1px solid rgba(255,60,60,.28)', color:'#FF6B6B', padding:'1px 5px' }}>evita</span>}
-                      {isTop3 && <span style={{ fontFamily:T.mono, fontSize:7, background:`${bonus.color}1a`, border:`1px solid ${bonus.color}44`, color:bonus.color, padding:'1px 5px' }}>{bonus.label}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------------------------------------------
-// -- TabFinanceiro -------------------------------------------------
 function TabFinanceiro({ np, sc }) {
   const [expandLog, setExpandLog] = React.useState(false);
 
@@ -5177,11 +5569,10 @@ function TabFinanceiro({ np, sc }) {
   const log = f.prizeMoneyLog ?? [];
   const logToShow = expandLog ? log.slice().reverse() : log.slice(-8).reverse();
 
-  const coachSalary = getCoachSalary(p.coach);
   const equipmentCost = rank <= 10 ? 8_000 : rank <= 50 ? 6_000 : rank <= 100 ? 4_500 : 3_000;
   const physioEst = rank <= 20 ? 48_000 : rank <= 100 ? 30_000 : 14_400;
-  const prepFisicoEst = coachSalary >= 120_000 ? (rank <= 20 ? 15_000 : rank <= 100 ? 8_000 : 4_000) : 0;
-  const totalCostsEst = coachSalary + equipmentCost + physioEst + prepFisicoEst;
+  const prepFisicoEst = rank <= 20 ? 15_000 : rank <= 100 ? 8_000 : rank <= 200 ? 4_000 : 0;
+  const totalCostsEst = equipmentCost + physioEst + prepFisicoEst;
   const hasData = (f.careerEarnings ?? 0) > 0;
 
   const Sh = ({ children, color }) => (
@@ -5287,10 +5678,9 @@ function TabFinanceiro({ np, sc }) {
       <div style={{ padding:'12px 14px', background:'rgba(255,255,255,0.03)',
         border:'1px solid rgba(255,255,255,0.07)', marginBottom:4 }}>
         {[
-          { label:'Técnico',           value:coachSalary,    note: p.coach ? (p.coach.name ?? 'Coach') : 'Sem técnico' },
           { label:'Fisioterapia',      value:physioEst,      note:'Estimado (~12 torneios)' },
           { label:'Equipamentos',      value:equipmentCost,  note:'Raquetes, cordas, calçado' },
-          ...(prepFisicoEst > 0 ? [{ label:'Preparador Físico', value:prepFisicoEst, note:'Coach de elite' }] : []),
+          ...(prepFisicoEst > 0 ? [{ label:'Preparador Físico', value:prepFisicoEst, note:'Equipe de preparação' }] : []),
         ].map(({ label, value, note }) => (
           <div key={label} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
             <span style={{ fontFamily:'Space Mono,monospace', fontSize:8, color:'rgba(255,255,255,0.35)',
@@ -5395,6 +5785,132 @@ function TabFinanceiro({ np, sc }) {
         </table>
       </div>
 
+    </div>
+  );
+}
+
+function TabEquipe({ np, sc, coachMarket, year }) {
+  const coach = getPlayerCoach(np, coachMarket);
+  const partnership = getPartnershipForPlayer(np, coachMarket);
+  const coaching = np?.coaching ?? null;
+  const method = coach ? (COACH_METHODS[coach.method] ?? COACH_METHODS.FORMADOR) : null;
+  const Meter = ({ label, value, color, note }) => (
+    <div style={{ padding:'11px 12px', border:`1px solid ${color}26`, background:`linear-gradient(135deg, ${color}10, rgba(255,255,255,.012))` }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:7, marginBottom:7 }}>
+        <span style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.18em', color:T.inkFaint, textTransform:'uppercase' }}>{label}</span>
+        <span style={{ fontFamily:T.display, fontSize:24, color, lineHeight:1 }}>{Math.round(value ?? 0)}</span>
+      </div>
+      <div style={{ height:3, background:'rgba(237,232,223,.07)', overflow:'hidden' }}><div style={{ height:'100%', width:`${Math.max(0, Math.min(100, value ?? 0))}%`, background:color, boxShadow:`0 0 12px ${color}` }} /></div>
+      {note && <div style={{ fontFamily:T.body, fontSize:10, color:T.inkDim, lineHeight:1.35, marginTop:7 }}>{note}</div>}
+    </div>
+  );
+
+  if (!coach || !coaching) {
+    return (
+      <div className="upp2-scroll" style={{ padding:'22px 24px 34px', color:T.ink }}>
+        <Sh color={sc}>Comissão técnica</Sh>
+        <div style={{ border:'1px solid rgba(237,232,223,.08)', background:'rgba(255,255,255,.018)', padding:22 }}>
+          <div style={{ fontFamily:T.display, fontSize:34, color:T.ink, textTransform:'uppercase', lineHeight:.95 }}>Sem técnico ativo</div>
+          <p style={{ fontFamily:T.body, fontSize:14, color:T.inkDim, lineHeight:1.7, margin:'10px 0 0' }}>O mercado ainda nao encontrou um projeto claro para este jogador. Isso pode mudar na virada de temporada.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const statusText = coaching.publicStatus === 'ERA' ? 'Era consolidada' : coaching.publicStatus === 'PRESSURED' ? 'Sob pressão' : coaching.publicStatus === 'PROMISING' ? 'Projeto promissor' : coaching.publicStatus === 'RUPTURE' ? 'Ruptura em curso' : 'Projeto discreto';
+  const yearsTogether = Math.max(1, (year ?? coaching.startYear ?? 0) - (coaching.startYear ?? year ?? 0) + 1);
+  const titlesTogether = partnership?.titlesTogether ?? 0;
+  const slamsTogether = partnership?.slamsTogether ?? 0;
+  const bestRank = partnership?.bestRank ?? np.rankPosition ?? null;
+  const focusCopy = {
+    BUILD: 'Constrói a temporada pela repetição, organização e evolução paciente.',
+    RESET: 'Reorganiza a carreira quando a forma, a confiança ou o corpo pedem uma virada.',
+    PRESSURE: 'Pede iniciativa: saque, primeira bola e coragem para tirar tempo do rival.',
+    CONTROL: 'Busca margem, padrão e decisões de alta segurança sob pressão.',
+    CLUTCH: 'Trabalha os pontos que definem jogos: tiebreaks, break points e recuperação emocional.',
+    SURFACE: 'Molda a preparação para a superfície e para padrões específicos de jogo.',
+  };
+  const relationship = coaching.friction >= 72
+    ? { label:'Zona sensível', color:'#FF8A63', text:'A parceria continua, mas resultados e decisões já estão pesando na conversa interna.' }
+    : (coaching.trust ?? 0) >= 76 && (coaching.confidence ?? 0) >= 68
+      ? { label:'Confiança plena', color:'#6EE7A1', text:'O jogador compra o método e a dupla tende a agir como uma unidade nos momentos de pressão.' }
+      : (coaching.expectation ?? 0) >= 74
+        ? { label:'Projeto sob cobrança', color:'#FFD36B', text:'Há ambição alta na relação. O próximo recorte de resultados pode aproximar ou desgastar a dupla.' }
+        : { label:'Construção em curso', color:'#71C7FF', text:'O método está sendo assimilado. A relação ainda busca uma assinatura competitiva própria.' };
+  const coachInitials = String(coach.name ?? 'TC').split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
+  const history = (partnership?.history ?? coaching.history ?? []).slice().reverse().slice(0, 10);
+  return (
+    <div className="upp2-scroll" style={{ padding:'22px 24px 34px', color:T.ink }}>
+      <div style={{ border:`1px solid ${method.color}38`, background:`linear-gradient(125deg, ${method.color}18, rgba(8,12,16,.92) 52%, rgba(255,255,255,.018))`, padding:'20px 22px 0', overflow:'hidden', position:'relative' }}>
+        <div style={{ position:'absolute', right:-52, top:-78, width:260, height:260, borderRadius:'50%', background:`radial-gradient(circle, ${method.color}26, transparent 68%)`, pointerEvents:'none' }} />
+        <div style={{ position:'relative', display:'flex', gap:17, alignItems:'center', paddingBottom:19 }}>
+          <div style={{ width:74, height:74, flexShrink:0, display:'grid', placeItems:'center', border:`2px solid ${method.color}`, background:`linear-gradient(135deg, ${method.color}44, rgba(0,0,0,.3))`, boxShadow:`0 0 28px ${method.color}33`, fontFamily:T.display, fontSize:30, color:T.ink, letterSpacing:2 }}>{coachInitials}</div>
+          <div style={{ minWidth:0, flex:1 }}>
+            <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.3em', color:method.color, textTransform:'uppercase', marginBottom:7 }}>Dossiê do técnico · banco vivo</div>
+            <div style={{ fontFamily:T.display, fontSize:'clamp(34px,4vw,52px)', color:T.ink, textTransform:'uppercase', lineHeight:.86 }}>{coach.name}</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:11 }}>
+              {[method.label, coach.originLabel, coach.temperament, coach.nationality, coaching.contractEndYear ? `Contrato até ${coaching.contractEndYear}` : null].filter(Boolean).map(tag => <span key={tag} style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.14em', textTransform:'uppercase', color:`${method.color}EE`, border:`1px solid ${method.color}33`, padding:'4px 7px', background:'rgba(0,0,0,.14)' }}>{tag}</span>)}
+            </div>
+          </div>
+          <div style={{ alignSelf:'stretch', minWidth:112, paddingLeft:15, borderLeft:'1px solid rgba(237,232,223,.10)', display:'flex', flexDirection:'column', justifyContent:'center' }}>
+            <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.18em', color:T.inkFaint, textTransform:'uppercase' }}>Situação</div>
+            <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:16, color:relationship.color, lineHeight:1.05, textTransform:'uppercase', marginTop:5 }}>{relationship.label}</div>
+          </div>
+        </div>
+        <div style={{ position:'relative', padding:'15px 0 18px', borderTop:'1px solid rgba(237,232,223,.09)' }}>
+          <div style={{ fontFamily:T.body, fontSize:15, color:'rgba(237,232,223,.88)', lineHeight:1.65, fontStyle:'italic' }}>“{method.desc}”</div>
+          <div style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.6, marginTop:7 }}>{focusCopy[coaching.tacticalFocus] ?? 'O método do técnico vem moldando a forma como o jogador prepara e lê os pontos.'}</div>
+        </div>
+        <div style={{ position:'relative', display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', borderTop:'1px solid rgba(237,232,223,.09)', margin:'0 -22px' }}>
+          {[
+            ['Juntos', `${yearsTogether} ano${yearsTogether===1?'':'s'}`, method.color], ['Títulos', titlesTogether, '#FFD36B'],
+            ['Grand Slams', slamsTogether, '#E8C84A'], ['Melhor rank', bestRank ? `#${bestRank}` : '—', '#71C7FF'],
+          ].map(([label, value, color], index) => <div key={label} style={{ padding:'12px 14px', borderRight:index<3?'1px solid rgba(237,232,223,.09)':'none' }}><div style={{ fontFamily:T.display, fontSize:25, color, lineHeight:1 }}>{value}</div><div style={{ fontFamily:T.mono, fontSize:6.5, color:T.inkFaint, letterSpacing:'.16em', textTransform:'uppercase', marginTop:4 }}>{label}</div></div>)}
+        </div>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.04fr) minmax(300px,.96fr)', gap:14, marginTop:14 }}>
+        <section style={{ border:'1px solid rgba(237,232,223,.08)', background:'rgba(255,255,255,.016)', padding:16 }}>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.22em', color:sc, textTransform:'uppercase', marginBottom:8 }}>A relação no presente</div>
+          <div style={{ fontFamily:T.cond, fontWeight:800, fontSize:22, color:T.ink, textTransform:'uppercase', lineHeight:1 }}>{statusText}</div>
+          <div style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.6, margin:'6px 0 13px' }}>{relationship.text}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:7 }}>
+            <Meter label="Confiança" value={coaching.confidence} color="#6EE7A1" note="Compra o método" />
+            <Meter label="Vínculo" value={coaching.trust} color="#71C7FF" note="Escuta o banco" />
+            <Meter label="Atrito" value={coaching.friction} color="#FF766B" note="Pressão interna" />
+          </div>
+        </section>
+        <section style={{ border:'1px solid rgba(237,232,223,.08)', background:'rgba(255,255,255,.016)', padding:16 }}>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.22em', color:method.color, textTransform:'uppercase', marginBottom:10 }}>Impacto ativo</div>
+          <div style={{ display:'grid', gap:7 }}>
+            {[
+              ['Plano de jogo', coaching.tacticalFocus ?? '—', method.color, 'Influencia as decisões e padrões escolhidos durante o ponto.'],
+              ['Desenvolvimento', (coaching.developmentFocus ?? []).join(' · ') || '—', sc, 'Dá mais direção ao que o atleta absorve no treino.'],
+              ['Aderência', `${Math.round(coaching.alignment ?? 0)}%`, '#FFD36B', 'Quanto o método combina com o momento e o perfil do jogador.'],
+            ].map(([label, value, color, detail]) => <div key={label} style={{ padding:'9px 10px', borderLeft:`2px solid ${color}`, background:`${color}08` }}><div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'baseline' }}><span style={{ fontFamily:T.mono, fontSize:6.5, color:T.inkFaint, letterSpacing:'.16em', textTransform:'uppercase' }}>{label}</span><span style={{ fontFamily:T.cond, fontWeight:800, fontSize:14, color, textTransform:'uppercase', textAlign:'right' }}>{value}</span></div><div style={{ fontFamily:T.body, fontSize:10, color:T.inkDim, lineHeight:1.4, marginTop:4 }}>{detail}</div></div>)}
+          </div>
+        </section>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.15fr) minmax(260px,.85fr)', gap:14, marginTop:14 }}>
+        <section style={{ border:'1px solid rgba(237,232,223,.08)', background:'rgba(255,255,255,.012)', padding:16 }}>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.22em', color:sc, textTransform:'uppercase', marginBottom:13 }}>Capítulos da parceria</div>
+          {history.length ? <div style={{ position:'relative', paddingLeft:17 }}>
+            <div style={{ position:'absolute', left:3, top:4, bottom:10, width:1, background:`linear-gradient(${method.color}, rgba(237,232,223,.08))` }} />
+            {history.map((event, idx) => <div key={`${event.year}-${idx}`} style={{ position:'relative', paddingBottom:idx===history.length-1?0:12 }}><div style={{ position:'absolute', left:-17, top:3, width:8, height:8, borderRadius:'50%', border:`2px solid ${method.color}`, background:'#0B1012' }} /><div style={{ fontFamily:T.mono, fontSize:7, color:method.color, letterSpacing:'.16em' }}>{event.year} · {event.type}</div><div style={{ fontFamily:T.body, fontSize:12, color:T.inkDim, lineHeight:1.55, marginTop:4 }}>{event.text}</div></div>)}
+          </div> : <div style={{ fontFamily:T.body, fontSize:12, color:T.inkFaint, lineHeight:1.6 }}>A parceria ainda não registrou capítulos públicos.</div>}
+        </section>
+        <section style={{ border:`1px solid ${method.color}22`, background:`${method.color}07`, padding:16 }}>
+          <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.22em', color:method.color, textTransform:'uppercase', marginBottom:12 }}>O técnico no circuito</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7 }}>
+            {[
+              ['Reputação', coach.reputation ?? 0, method.color], ['Ambição', coach.ambition ?? 0, '#FFD36B'],
+              ['Temporadas', coach.careerRecord?.seasons ?? 0, '#71C7FF'], ['Títulos', coach.careerRecord?.titles ?? 0, '#F2EDE4'],
+            ].map(([label, value, color]) => <div key={label} style={{ padding:'10px 9px', border:'1px solid rgba(237,232,223,.08)', background:'rgba(0,0,0,.12)' }}><div style={{ fontFamily:T.display, fontSize:24, color, lineHeight:1 }}>{value}</div><div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.15em', color:T.inkFaint, textTransform:'uppercase', marginTop:4 }}>{label}</div></div>)}
+          </div>
+          <div style={{ fontFamily:T.body, fontSize:11, color:T.inkDim, lineHeight:1.55, marginTop:12 }}>Um {method.label.toLowerCase()} {String(coach.temperament ?? '').toLowerCase()} que trabalha para {coach.preferredPlayerProfile === 'ANY' ? 'adaptar o método ao atleta' : 'encontrar o projeto certo para o próprio método'}.</div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -5549,7 +6065,7 @@ function TabFormaRecente({ np, sc, allPlayers = [], newsEngine = null, rivalrySy
             const oppRank = r.oppRank ?? 99;
             const oppLabel = oppRank <= 10 ? `Top ${oppRank}` : oppRank <= 30 ? `#${oppRank}` : `R${oppRank}`;
             const surf = r.surface ?? 'HARD';
-            const surfColor = { CLAY:'#FF7043', GRASS:'#66BB6A', HARD:'#42A5F5', INDOOR:'#AB47BC' }[surf] ?? '#888';
+            const surfColor = { CLAY:'#FF7043', GRASS:'#66BB6A', HARD:'#42A5F5', STREET:'#EF9F27', CARPET:'#C4426A', INDOOR:'#AB47BC' }[surf] ?? '#888';
             return (
               <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center',
                 padding:'8px 10px', gap:3, minWidth:56,
@@ -5750,7 +6266,7 @@ function TabPatrocinio({ np, sc, sponsorPool, year, highestPaidPlayerId, pending
     FINANCE:'Financeiro', TECH:'Tecnologia', ENERGY:'Energia',
     AIRLINE:'Aérea', AUTOMOTIVE:'Automotivo', RETAIL:'Varejo', MEDIA:'Mídia',
     CONSUMER:'Consumo' };
-  const TERM_PT = { EXPIRED:'? Encerrado', SCANDAL:'? Esc�ndalo',
+  const TERM_PT = { EXPIRED:'? Encerrado', SCANDAL:'? Esc?ndalo',
     PERFORMANCE_DROP:'?? Performance', INJURY_LONG:'?? Lesão',
     RIVAL_ASCENDED:'? Rival', BUDGET_CUT:'? Budget', RETIREMENT:'?? Aposentadoria', MUTUAL:'?? Mútua' };
 
@@ -5801,7 +6317,9 @@ function TabPatrocinio({ np, sc, sponsorPool, year, highestPaidPlayerId, pending
   const signal  = np.phaseTwo?.sponsorSignal ?? 0;
   const ifr     = np.phaseTwo?.ifr ?? 0;
   const vis     = np.phaseTwo?.visibility ?? 0;
-  const sigTier = getPhaseTwoTier(signal);
+  // Jogadores sem histórico comercial ainda podem ter sinal 0; nesse caso a
+  // camada de sponsorship devolve null e a ficha usa o tom do próprio atleta.
+  const sigTier = getPhaseTwoTier(signal) ?? { color: sc, label: 'Em formação' };
   const commercial = profile.commercialProfile ?? {};
 
   return (
@@ -6372,6 +6890,13 @@ function TabVida({ np, sc }) {
   const pubMeta   = PUB_IMG_META[pubImg?.id] ?? { color: sc, icon: '??' };
   const offCourt  = ld.offCourt ?? getOffCourtState(np);
   const offCourtEffects = Object.entries(offCourt.effects ?? {}).filter(([, value]) => Number(value) !== 0);
+  const lifeSim = np.lifeSimulation ?? null;
+  const lifeStyleLabels = {
+    FOCUSED_PRO: 'Profissional obcecado', FAMILY_ANCHOR: 'Família como âncora', COMMERCIAL_STAR: 'Estrela comercial',
+    PRIVATE_BALANCER: 'Equilíbrio reservado', SOCIAL_FREE_SPIRIT: 'Espírito livre', LEGACY_BUILDER: 'Construtor de legado',
+  };
+  const lifeEffectLabels = { matchFocus: 'foco', recovery: 'recuperação', pressure: 'pressão', injuryRisk: 'risco físico', commercial: 'imagem', support: 'apoio', finance: 'finanças' };
+  const lifeEffectChips = Object.entries(lifeSim?.currentEffects ?? {}).filter(([, value]) => Number(value) !== 0);
 
   // Categorias presentes no log
   const logCats = [...new Set(log.map(e => e.category))];
@@ -6385,7 +6910,7 @@ function TabVida({ np, sc }) {
       {/* -- LEFT — dados estáticos -- */}
       <div className="upp2-scroll" style={{ flex: 1, padding: '24px 26px 28px', borderRight: '1px solid rgba(237,232,223,.06)' }}>
 
-        {/* RELAÇ�O E FAM�LIA */}
+        {/* RELAÇ?O E FAM?LIA */}
         <VidaSection title="Fase Atual" color={sc}>
           <VidaCard accent={sc}>
             <div style={{ display: 'grid', gridTemplateColumns: '1.35fr .95fr', gap: 14 }}>
@@ -6447,6 +6972,43 @@ function TabVida({ np, sc }) {
           </VidaCard>
         </VidaSection>
 
+        {lifeSim && (
+          <VidaSection title="Motor de Vida" color="#E8C84A">
+            <VidaCard accent="#E8C84A">
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:12, marginBottom:10 }}>
+                <div>
+                  <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(232,200,74,.6)', letterSpacing:'.28em', textTransform:'uppercase' }}>Estilo de vida</div>
+                  <div style={{ fontFamily:T.cond, fontSize:20, fontWeight:700, color:'#E8C84A', textTransform:'uppercase' }}>{lifeStyleLabels[lifeSim.profile?.lifestyleId] ?? 'Em definição'}</div>
+                </div>
+                {lifeSim.monthlyDecisions?.at(-1) && <div style={{ fontFamily:T.body, fontSize:11, color:'rgba(237,232,223,.55)', textAlign:'right' }}>{lifeSim.monthlyDecisions.at(-1).label}</div>}
+              </div>
+              {lifeEffectChips.length > 0 && (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:10 }}>
+                  {lifeEffectChips.map(([effect, value]) => {
+                    const positive = Number(value) > 0;
+                    const color = effect === 'pressure' || effect === 'injuryRisk'
+                      ? (positive ? '#F87171' : '#34D399')
+                      : (positive ? '#34D399' : '#F87171');
+                    return <span key={effect} style={{ fontFamily:T.mono, fontSize:7, padding:'3px 6px', color, border:`1px solid ${color}33`, background:`${color}10`, letterSpacing:'.11em', textTransform:'uppercase' }}>
+                      {lifeEffectLabels[effect] ?? effect} {positive ? '+' : ''}{value}
+                    </span>;
+                  })}
+                </div>
+              )}
+              {(lifeSim.activeSituations ?? []).length > 0 ? (
+                <div style={{ display:'grid', gap:6 }}>
+                  {lifeSim.activeSituations.map(situation => (
+                    <div key={situation.id} style={{ display:'flex', justifyContent:'space-between', gap:12, padding:'7px 9px', background:'rgba(232,200,74,.06)', border:'1px solid rgba(232,200,74,.16)' }}>
+                      <span style={{ fontFamily:T.cond, fontSize:14, color:'rgba(237,232,223,.88)', textTransform:'uppercase' }}>{situation.label}</span>
+                      <span style={{ fontFamily:T.mono, fontSize:7, color:'rgba(232,200,74,.75)', letterSpacing:'.12em' }}>{situation.monthsRemaining}M · {situation.intensity}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div style={{ fontFamily:T.body, fontSize:12, color:'rgba(237,232,223,.46)' }}>Sem crise ou arco ativo — a rotina atual dita o mês.</div>}
+            </VidaCard>
+          </VidaSection>
+        )}
+
         <VidaSection title="Vida Pessoal" color={relMeta.color}>
           <VidaCard accent={relMeta.color}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -6479,12 +7041,17 @@ function TabVida({ np, sc }) {
         {/* RESIDÊNCIA */}
         <VidaSection title="Residência" color="#60A5FA">
           <VidaCard accent="#60A5FA">
+            {(() => {
+              const properties = ld.home?.properties ?? [];
+              const main = properties.find(property => property.main) ?? properties[0];
+              return <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontFamily: T.mono, fontSize: 7, color: 'rgba(96,165,250,.6)', letterSpacing: '.3em', textTransform: 'uppercase', marginBottom: 3 }}>Base atual</div>
                 <div style={{ fontFamily: T.cond, fontWeight: 700, fontSize: 16, color: '#EDE8DF' }}>
-                  {ld.home?.city ? `${ld.home.city}, ${ld.home.country}` : ld.home?.country ?? '—'}
+                  {main?.city ? `${main.city}, ${main.country ?? ld.home?.country ?? ''}` : ld.home?.city ? `${ld.home.city}, ${ld.home.country}` : ld.home?.country ?? '—'}
                 </div>
+                {main?.label && <div style={{ fontFamily:T.body, fontSize:11, color:'rgba(237,232,223,.48)', marginTop:3 }}>{main.label} · {main.reason ?? 'base de vida'}</div>}
               </div>
               {ld.home?.taxHaven && (
                 <span style={{ fontFamily: T.mono, fontSize: 7, padding: '3px 7px', background: 'rgba(251,191,36,.1)', border: '1px solid rgba(251,191,36,.25)', color: '#FBBF24', letterSpacing: '.2em', textTransform: 'uppercase' }}>
@@ -6492,6 +7059,16 @@ function TabVida({ np, sc }) {
                 </span>
               )}
             </div>
+            {properties.length > 1 && <div style={{ marginTop:10, paddingTop:8, borderTop:'1px solid rgba(237,232,223,.06)' }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(96,165,250,.58)', letterSpacing:'.22em', textTransform:'uppercase', marginBottom:6 }}>Portfólio residencial · {properties.length} imóveis</div>
+              <div style={{ display:'grid', gap:4 }}>
+                {properties.slice(0,4).map(property => <div key={property.id ?? property.label} style={{ display:'flex', justifyContent:'space-between', gap:10, fontFamily:T.body, fontSize:11, color:'rgba(237,232,223,.68)' }}>
+                  <span>{property.main ? '● ' : '○ '}{property.label}</span><span style={{ color:'rgba(96,165,250,.72)', whiteSpace:'nowrap' }}>{property.city ?? property.location ?? 'refúgio'}</span>
+                </div>)}
+              </div>
+            </div>}
+              </>;
+            })()}
           </VidaCard>
         </VidaSection>
 
@@ -6898,16 +7475,18 @@ function TabEntrevistas({ np, sc, rivalrySystem, allPlayers, tournamentResults }
 
 // -----------------------------------------------------------------
 // TAB: GRAND SLAM
-// Histórico completo do jogador apenas nos 4 Grand Slams do universo.
+// Histórico completo do jogador nos 6 Grand Slams do universo.
 // -----------------------------------------------------------------
 const GS_DEFS = [
-  { id:'JAN_GS_MERIDIAN', name:'Open de Meridian', short:'MERIDIAN', surface:'HARD',  surfLabel:'Hard',  color:'#4A90D9', icon:'?', location:'Meridian'  },
-  { id:'MAI_GS_ROLAND',   name:"Roland d'Occitane", short:'OCCITANE', surface:'CLAY',  surfLabel:'Clay',  color:'#C4572A', icon:'??', location:'Occitane'   },
-  { id:'JUN_GS_ALBION',   name:'Championships of Albion', short:'ALBION',   surface:'GRASS', surfLabel:'Grass', color:'#2E7D32', icon:'??', location:'Albion'     },
-  { id:'AGO_GS_EMPIRE',   name:'Empire Open',       short:'EMPIRE',   surface:'INDOOR',surfLabel:'Indoor',color:'#6A1B9A', icon:'???', location:'Empire City' },
+  { id:'B1_GS_MERIDIAN', name:'Meridian Open',    short:'MERIDIAN', surface:'HARD',   surfLabel:'Dura',   color:'#4A90D9', icon:'◆', location:'Meridian'      },
+  { id:'B2_GS_TERRA',    name:'Terra Magna',       short:'TERRA',    surface:'CLAY',   surfLabel:'Terra',  color:'#C4572A', icon:'◆', location:'Occitane'      },
+  { id:'B3_GS_HIGHLAND', name:'The Highland',      short:'HIGHLAND', surface:'GRASS',  surfLabel:'Prado',  color:'#2E7D32', icon:'◆', location:'Albion'        },
+  { id:'B4_GS_URBAN',    name:'Urban Classic',     short:'URBAN',    surface:'STREET', surfLabel:'Asfalto',color:'#B45309', icon:'◆', location:'Urban City'    },
+  { id:'B5_GS_VELVET',   name:'Velvet Grand',      short:'VELVET',   surface:'CARPET', surfLabel:'Veludo', color:'#8B1A3A', icon:'◆', location:'Velvet Palace' },
+  { id:'B6_GS_CRYSTAL',  name:'Crystal Empire',    short:'CRYSTAL',  surface:'INDOOR', surfLabel:'Cristal',color:'#6A1B9A', icon:'◆', location:'Empire City'  },
 ];
 
-const ROUND_EMOJI = { W:'??', F:'??', SF:'???', QF:'??', R16:'?', R32:'?', R64:'?', R128:'?' };
+const ROUND_EMOJI = { W:'★', F:'F', SF:'SF', QF:'QF', R16:'R16', R32:'R32', R64:'R64', R128:'R128' };
 const ROUND_ORDER = ['W','F','SF','QF','R16','R32','R64','R128'];
 
 function buildGrandSlamData(playerId, tournamentResults) {
@@ -7050,7 +7629,7 @@ function TabGrandSlam({ np, sc, tournamentResults }) {
   const totalFinals  = GS_DEFS.reduce((s, g) => s + (byTournament[g.id]?.finals ?? 0), 0);
   const totalSemis   = GS_DEFS.reduce((s, g) => s + (byTournament[g.id]?.semis ?? 0), 0);
   const totalQF      = GS_DEFS.reduce((s, g) => s + (byTournament[g.id]?.qf ?? 0), 0);
-  const careerGS     = GS_DEFS.every(g => (byTournament[g.id]?.wins ?? 0) > 0);
+  const careerGS     = GS_DEFS.every(g => (byTournament[g.id]?.wins ?? 0) > 0);  // todos os 6
 
   if (!tournamentResults || sortedYears.length === 0) {
     return (
@@ -7249,21 +7828,43 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
     surface: '#22C55E',
     neutral: 'rgba(237,232,223,.88)',
   };
+  const fullNarrativeParagraphs = String(bio.fullNarrative ?? '')
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean);
+  const narrativeFacts = bio.narrativeFacts ?? {};
+  const goldenYears = narrativeFacts.goldenYears ?? [];
+  const hardYears = narrativeFacts.hardYears ?? [];
+  const injuryEvents = narrativeFacts.injuryEvents ?? [];
+  const sponsorEvents = narrativeFacts.sponsorEvents ?? [];
+  const lifeEvents = narrativeFacts.lifeEvents ?? [];
+  const careerMoments = narrativeFacts.careerMoments ?? [];
+  const memory = narrativeFacts.memory ?? {};
+  const evidenceRows = [
+    ['Ano dourado', goldenYears[0]?.year ? `${goldenYears[0].year}${goldenYears[0].titles?.length ? ` · ${goldenYears[0].titles.length} tit.` : ''}` : null, '#E8C84A'],
+    ['Ano duro', hardYears[0]?.year ? `${hardYears[0].year}${hardYears[0].rankDrop ? ` · -${hardYears[0].rankDrop} rank` : ''}` : null, '#F59E0B'],
+    ['Rival central', bio.facts?.topRival?.opponentName ? `${bio.facts.topRival.opponentName} · ${bio.facts.topRival.wins}-${bio.facts.topRival.losses}` : null, '#EF4444'],
+    ['Lesão-chave', injuryEvents.at(-1)?.type ? `${injuryEvents.at(-1).type}${injuryEvents.at(-1).season ? ` · ${injuryEvents.at(-1).season}` : ''}` : null, '#FF7043'],
+    ['Patrocínio', sponsorEvents.at(-1)?.brand ?? sponsorEvents.at(-1)?.label ?? null, '#5BB8E4'],
+    ['Vida pessoal', lifeEvents.at(-1)?.label ?? lifeEvents.at(-1)?.detail ?? null, '#C084FC'],
+    ['Memória favorita', memory.favoriteTournament?.tournament?.name ?? null, '#22C55E'],
+    ['Fantasma', memory.hauntingTournament?.tournament?.name ?? null, '#F59E0B'],
+  ].filter(([, value]) => value);
 
   return (
     <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
-      <div className="upp2-scroll" style={{ flex:1.15, padding:'22px 26px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
-        <div style={{ marginBottom:22, paddingBottom:18, borderBottom:`1px solid ${T.line}` }}>
-          <div style={{ fontFamily:T.mono, fontSize:8, color:`${sc}AA`, letterSpacing:'.34em', textTransform:'uppercase', marginBottom:8 }}>Biografia procedural</div>
-          <div style={{ fontFamily:T.display, fontSize:34, color:T.ink, lineHeight:1.02, marginBottom:12 }}>{bio.headline}</div>
-          <div style={{ fontFamily:T.body, fontSize:15, color:T.inkDim, lineHeight:1.8 }}>{bio.summary}</div>
+      <div className="upp2-scroll" style={{ flex:1.2, padding:'24px 30px 34px', borderRight:`1px solid ${T.line}`, overflowY:'auto' }}>
+        <div style={{ marginBottom:22, paddingBottom:20, borderBottom:`1px solid ${T.line}` }}>
+          <div style={{ fontFamily:T.mono, fontSize:8, color:`${sc}AA`, letterSpacing:'.38em', textTransform:'uppercase', marginBottom:9 }}>biografia oficial</div>
+          <div style={{ fontFamily:T.display, fontSize:'clamp(34px,3.8vw,56px)', color:T.ink, lineHeight:.9, marginBottom:14, textTransform:'uppercase' }}>{bio.headline}</div>
+          <div style={{ fontFamily:T.body, fontSize:15, color:T.inkDim, lineHeight:1.82, maxWidth:980 }}>{bio.summary}</div>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1.1fr .9fr .8fr', gap:10, marginBottom:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:22 }}>
           {[
-            ['Fase da carreira', bio.careerPhase?.label ?? 'Em definicao', bio.careerPhase?.summary ?? 'A narrativa ainda esta se organizando.'],
-            ['Tom dominante', bio.tone?.label ?? 'Sem tom claro', bio.tone?.blurb ?? 'A biografia ainda nao ganhou uma assinatura dominante.'],
-            ['Leitura rapida', bio.facts?.peakRank ? `Pico #${bio.facts.peakRank}` : 'Sem pico definido', bio.facts?.debutYear ? `Estreia ${bio.facts.debutYear}` : 'Capitulo inicial'],
+            ['Fase', bio.careerPhase?.label ?? 'Em definicao', bio.careerPhase?.summary ?? 'A narrativa ainda esta se organizando.'],
+            ['Tom', bio.tone?.label ?? 'Sem tom claro', bio.tone?.blurb ?? 'A biografia ainda nao ganhou uma assinatura dominante.'],
+            ['Legado', bio.legacy?.label ?? 'Legado em formacao', bio.legacy?.summary ?? 'A leitura historica ainda esta em construcao.'],
           ].map(([label, value, copy], i) => (
             <div key={label} style={{
               padding:'14px 15px',
@@ -7279,11 +7880,12 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
           ))}
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10, marginBottom:22 }}> 
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:10, marginBottom:22 }}>
           {[
-            ['Resumo', bio.summary ? `${bio.summary.length} chars` : '—', 'densidade narrativa desta biografia'],
-            ['Capítulos', `${bio.chapters?.length ?? 0}`, 'blocos narrativos ativos na carreira'],
-            ['Marcos', `${bio.milestones?.length ?? 0}`, 'eventos históricos destacados'],
+            ['Parágrafos', `${fullNarrativeParagraphs.length || bio.paragraphs?.length || 0}`, 'tamanho adaptativo da narrativa'],
+            ['Sinais', `${bio.narrativeSignals?.length ?? 0}`, 'marcas internas usadas no texto'],
+            ['Anos lidos', `${narrativeFacts.seasonsTracked ?? 0}`, 'temporadas usadas como base'],
+            ['Evidências', `${evidenceRows.length}`, 'fatos conectados ao texto'],
           ].map(([label, value, copy], i) => (
             <div key={label} style={{
               padding:'12px 14px',
@@ -7298,24 +7900,41 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
           ))}
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {bio.paragraphs.map((p, i) => (
-            <div key={i} style={{
-              padding:'16px 18px',
-              background:i===0?`${sc}0D`:'rgba(237,232,223,.02)',
-              border:i===0?`1px solid ${sc}33`:'1px solid rgba(237,232,223,.06)',
-              borderLeft:`3px solid ${i===0?sc:'rgba(237,232,223,.12)'}`,
-              clipPath:'polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)',
-            }}>
-              <div style={{ fontFamily:T.body, fontSize:15, color:T.ink, lineHeight:1.8 }}>{p}</div>
+        <div style={{
+          padding:'28px 30px',
+          background:`linear-gradient(135deg, ${sc}10, rgba(237,232,223,.026))`,
+          border:`1px solid ${sc}30`,
+          borderLeft:`5px solid ${sc}`,
+          marginBottom:22,
+        }}>
+          <div style={{ display:'grid', gap:16 }}>
+            {(fullNarrativeParagraphs.length ? fullNarrativeParagraphs : bio.paragraphs).map((p, i) => (
+              <p key={i} style={{
+                fontFamily:T.body,
+                fontSize:i === 0 ? 17 : 15.5,
+                color:i === 0 ? T.ink : T.inkDim,
+                lineHeight:1.96,
+                margin:0,
+              }}>
+                {p}
+              </p>
+            ))}
+          </div>
+          {(bio.narrativeSignals ?? []).length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:18, paddingTop:14, borderTop:'1px solid rgba(237,232,223,.08)' }}>
+              {bio.narrativeSignals.map(signal => (
+                <span key={signal} style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.16em', color:`${sc}CC`, textTransform:'uppercase', border:`1px solid ${sc}24`, background:`${sc}0A`, padding:'4px 7px' }}>
+                  {signal.replace(/_/g, ' ')}
+                </span>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         <div style={{ marginTop:24 }}>
-          <Sh color={sc}>Capitulos da Carreira</Sh>
-          <div style={{ display:'grid', gap:10 }}>
-            {(bio.chapters ?? []).map(chapter => {
+          <Sh color={sc}>Capitulos que sustentam o texto</Sh>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:10 }}>
+            {(bio.chapters ?? []).slice(0, 6).map(chapter => {
               const chapterColor = toneColor[chapter.tone] ?? toneColor.neutral;
               return (
                 <div key={chapter.key} style={{
@@ -7335,26 +7954,23 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
             })}
           </div>
         </div>
-
-        <div style={{ marginTop:24 }}>
-          <Sh color={sc}>Biografia Completa</Sh>
-          <div style={{ display:'grid', gap:12 }}>
-            {(bio.longBiography ?? []).map((block, i) => (
-              <div key={`long-${i}`} style={{
-                padding:'18px 20px',
-                background:i===0?'linear-gradient(135deg, rgba(237,232,223,.05), rgba(237,232,223,.018))':'rgba(237,232,223,.02)',
-                border:i===0?`1px solid ${sc}2E`:'1px solid rgba(237,232,223,.06)',
-                borderLeft:`3px solid ${i===0?sc:'rgba(237,232,223,.12)'}`,
-              }}>
-                <div style={{ fontFamily:T.body, fontSize:15, color:T.ink, lineHeight:1.9 }}>{block}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      <div className="upp2-scroll" style={{ flex:.85, padding:'22px 26px', overflowY:'auto' }}>
-        <Sh color={sc}>Legado Historico</Sh>
+      <div className="upp2-scroll" style={{ flex:.8, padding:'24px 24px 34px', overflowY:'auto' }}>
+        <Sh color={sc}>Evidências do Dossiê</Sh>
+        <div style={{ display:'grid', gap:8, marginBottom:24 }}>
+          {evidenceRows.map(([label, value, color]) => (
+            <div key={label} style={{ padding:'12px 14px', border:`1px solid ${color}26`, borderLeft:`3px solid ${color}`, background:`${color}08` }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, color:`${color}CC`, letterSpacing:'.22em', textTransform:'uppercase', marginBottom:5 }}>{label}</div>
+              <div style={{ fontFamily:T.display, fontSize:17, color:T.ink, lineHeight:1.1 }}>{value}</div>
+            </div>
+          ))}
+          {evidenceRows.length === 0 && (
+            <div style={{ fontFamily:T.body, fontSize:12, color:T.inkFaint, lineHeight:1.7 }}>A carreira ainda nao acumulou eventos suficientes para montar evidencias laterais fortes.</div>
+          )}
+        </div>
+
+        <Sh color={sc}>Legado Histórico</Sh>
         <div style={{
           padding:'16px 18px',
           marginBottom:24,
@@ -7369,7 +7985,7 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
           <div style={{ fontFamily:T.body, fontSize:14, color:T.inkDim, lineHeight:1.75 }}>{bio.legacy?.summary ?? 'A leitura historica deste jogador ainda esta em construcao.'}</div>
         </div>
 
-        <Sh color={sc}>Marcos da Carreira</Sh>
+        <Sh color={sc}>Marcos</Sh>
         <div style={{ display:'grid', gap:8, marginBottom:24 }}>
           {bio.milestones.map((m, i) => {
             const color = toneColor[m.tone] ?? toneColor.neutral;
@@ -7394,13 +8010,13 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
           })}
         </div>
 
-        <Sh color={sc}>Assinatura Atual</Sh>
+        <Sh color={sc}>Sinais do Texto</Sh>
         <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:24 }}>
-          {bio.tags.map(tag => (
+          {[...(bio.narrativeSignals ?? []), ...(bio.tags ?? [])].slice(0, 14).map(tag => (
             <span key={tag} style={{
               fontFamily:T.mono, fontSize:8, letterSpacing:'.16em', textTransform:'uppercase',
               color:`${sc}DD`, background:`${sc}12`, border:`1px solid ${sc}30`, padding:'5px 9px',
-            }}>{tag}</span>
+            }}>{String(tag).replace(/_/g, ' ')}</span>
           ))}
         </div>
 
@@ -7419,7 +8035,7 @@ function TabBiografia({ np, sc, tournamentResults, rankingStore, rivalrySystem, 
           ))}
         </div>
 
-        <Sh color={sc}>Linha do Tempo V2</Sh>
+        <Sh color={sc}>Linha do Tempo</Sh>
         <div style={{ display:'grid', gap:8 }}>
           {[
             ['Primeiro titulo', bio.facts?.firstTitle?.name ?? 'Ainda nao venceu'],
@@ -7551,25 +8167,25 @@ function TabBadges({ np, sc, tournamentResults, allPlayers = [], year = null }) 
 // TABS CONFIG
 // -----------------------------------------------------------------
 const TABS = [
-  { id:'overview',     name:'VISÃO GERAL',  icon:'??'  },
-  { id:'biografia',    name:'BIOGRAFIA',    icon:'??'  },
-  { id:'identidade',   name:'IDENTIDADE',   icon:'??' },
-  { id:'jogo',         name:'JOGO',         icon:'?'  },
-  { id:'percepcoes',   name:'CIRCUITO',     icon:'??'  },
-  { id:'carreira',     name:'CARREIRA',     icon:'??'  },
-  { id:'badges',       name:'BADGES',       icon:'*'   },
-  { id:'grand_slam',   name:'GRAND SLAM',   icon:'?'  },
-  { id:'trajetoria',   name:'TRAJETÓRIA',   icon:'??'  },
-  { id:'resultados',   name:'RESULTADOS',   icon:'??'  },
-  { id:'hist_anual',   name:'HIST. ANUAL',  icon:'??'  },
-  { id:'rivalidades',  name:'RIVALIDADES',  icon:'??'  },
-  { id:'fisico',       name:'FÍSICO & DNA', icon:'??'  },
-  { id:'tecnico',      name:'TÉCNICO',      icon:'??'  },
-  { id:'financeiro',   name:'FINANCEIRO',   icon:'??'  },
-  { id:'forma',        name:'FORMA & IFR',  icon:'??'  },
-  { id:'patrocinio',   name:'PATROCÍNIO',   icon:'??'  },
-  { id:'vida',         name:'VIDA',         icon:'??'  },
-  { id:'entrevistas',  name:'ENTREVISTAS',  icon:'???' },
+  { id:'overview',     name:'VISÃO GERAL',  icon:'OVR' },
+  { id:'biografia',    name:'BIOGRAFIA',    icon:'BIO' },
+  { id:'identidade',   name:'IDENTIDADE',   icon:'ID'  },
+  { id:'jogo',         name:'JOGO',         icon:'TV'  },
+  { id:'percepcoes',   name:'CIRCUITO',     icon:'PUB' },
+  { id:'carreira',     name:'CARREIRA',     icon:'CAR' },
+  { id:'badges',       name:'BADGES',       icon:'BDG' },
+  { id:'grand_slam',   name:'GRAND SLAM',   icon:'GS'  },
+  { id:'trajetoria',   name:'TRAJETÓRIA',   icon:'TRJ' },
+  { id:'resultados',   name:'RESULTADOS',   icon:'RES' },
+  { id:'hist_anual',   name:'HIST. ANUAL',  icon:'ANO' },
+  { id:'rivalidades',  name:'RIVALIDADES',  icon:'RIV' },
+  { id:'fisico',       name:'FÍSICO & DNA', icon:'DNA' },
+  { id:'equipe',       name:'BANCO',        icon:'TEC' },
+  { id:'financeiro',   name:'FINANCEIRO',   icon:'FIN' },
+  { id:'forma',        name:'FORMA & IFR',  icon:'IFR' },
+  { id:'patrocinio',   name:'PATROCÍNIO',   icon:'PAT' },
+  { id:'vida',         name:'VIDA',         icon:'VID' },
+  { id:'entrevistas',  name:'ENTREVISTAS',  icon:'ENT' },
 ];
 
 // -----------------------------------------------------------------
@@ -7595,7 +8211,7 @@ const TAB_GROUPS = [
     name: 'Estrutura',
     kicker: 'Base da maquina',
     desc: 'Corpo, equipe, dinheiro, forma recente e patrocinios sob uma mesma lente.',
-    tabs: ['fisico', 'tecnico', 'financeiro', 'forma', 'patrocinio'],
+    tabs: ['fisico', 'equipe', 'financeiro', 'forma', 'patrocinio'],
   },
   {
     id: 'universo',
@@ -7607,20 +8223,20 @@ const TAB_GROUPS = [
 ];
 
 const TAB_META = {
-  overview:    { group:'essencia', title:'Visao Geral Premium', desc:'A entrada editorial da ficha: identidade, momento, curva de carreira e atalhos para tudo o que realmente importa nesse jogador.', bullets:['momento','dna','evolucao'] },
-  biografia:   { group:'essencia', title:'Biografia do Jogador', desc:'Resumo procedural da carreira com narrativa viva, marcos automáticos e leitura rápida do momento atual.', bullets:['resumo','marcos','momento'] },
+  overview:    { group:'essencia', title:'Dossie Geral', desc:'A entrada editorial da ficha: identidade, momento, curva de carreira e atalhos para tudo o que realmente importa nesse jogador.', bullets:['momento','dna','evolucao'] },
+  biografia:   { group:'essencia', title:'Biografia Oficial', desc:'Narrativa procedural em bloco unico, com carreira, vida, lesoes, rivalidades e memoria competitiva costuradas como documentario.', bullets:['narrativa','marcos','memoria'] },
   identidade:  { group:'essencia', title:'Identidade do Personagem', desc:'Perfil humano e competitivo do tenista: personalidade, fama, reputacao e sinais do que ele representa no circuito.', bullets:['personalidade','reputacao','mercado'] },
-  jogo:        { group:'essencia', title:'Leitura de Jogo', desc:'Arquitetura tecnica completa: estilo, atributos, preferencias e o mapa do que esse jogador sabe fazer em quadra.', bullets:['estilo','atributos','preferencias'] },
+  jogo:        { group:'essencia', title:'Scout TV', desc:'Mapa visual de quadra com estilo, atributos, Marca em Quadra e o peso real dessas escolhas no comportamento do jogador.', bullets:['marca','quadra','engine'] },
   percepcoes:  { group:'essencia', title:'Olhar do Circuito', desc:'Como o resto do mundo enxerga esse nome: hype, medo, respeito, subestimacao e narrativa publica.', bullets:['mercado','narrativa','respeito'] },
-  carreira:    { group:'carreira', title:'Obra da Carreira', desc:'Conquistas, marcos, premios e os capitulos mais importantes que ajudam a explicar o tamanho esportivo do jogador.', bullets:['titulos','marcos','legado'] },
+  carreira:    { group:'carreira', title:'Arquivo da Carreira', desc:'Dossie historico de titulos, anos-chave, palmares, rivalidade central e memoria esportiva acumulada.', bullets:['titulos','anos-chave','legado'] },
   badges:      { group:'carreira', title:'Galeria de Badges', desc:'Conquistas de carreira reveladas apenas quando o jogador ja desbloqueou o Bronze em cada trilha.', bullets:['badges','tiers','legado'] },
   grand_slam:  { group:'carreira', title:'Memoria nos Slams', desc:'Um recorte cerimonial da carreira nos quatro majors, com leitura rapida de grandes campanhas e tempos fortes.', bullets:['slams','campanhas','recordes'] },
-  trajetoria:  { group:'carreira', title:'Curva de Evolucao', desc:'Ascensao, queda, estabilizacao e desenvolvimento vistos pela trajetoria de ranking e de nivel ao longo do tempo.', bullets:['ranking','evolucao','fase'] },
+  trajetoria:  { group:'carreira', title:'Curva Viva', desc:'Ascensao, queda, estabilizacao, pico previsto e desenvolvimento vistos por ranking, idade, nivel e temporadas recentes.', bullets:['ranking','pico','fase'] },
   resultados:  { group:'carreira', title:'Mapa de Resultados', desc:'Volume de torneios, consistencia por categoria e a forma como o jogador performa no calendario completo.', bullets:['torneios','superficies','consistencia'] },
   hist_anual:  { group:'carreira', title:'Leitura Ano a Ano', desc:'Temporadas quebradas em recortes claros, para entender mudancas de patamar e anos fora da curva.', bullets:['temporadas','picos','quedas'] },
   rivalidades: { group:'carreira', title:'Conflitos e Espelhos', desc:'Os nomes que ajudam a definir a carreira: freguesias, duelos historicos e historias que voltam sempre.', bullets:['duelos','historias','contexto'] },
   fisico:      { group:'estrutura', title:'Fisico e DNA', desc:'Condicao corporal, carga, lesoes, tracos biologicos e tudo o que sustenta ou limita o teto competitivo.', bullets:['saude','carga','dna'] },
-  tecnico:     { group:'estrutura', title:'Base Tecnica', desc:'Treinadores, parceria, plano de desenvolvimento e a equipe que molda o jogador fora do placar.', bullets:['coach','parceria','plano'] },
+  equipe:      { group:'estrutura', title:'Banco Vivo', desc:'Tecnico atual, metodo, confianca, atrito, expectativa e memoria da parceria como parte real da carreira.', bullets:['tecnico','confianca','metodo'] },
   financeiro:  { group:'estrutura', title:'Pressao Financeira', desc:'Fluxo de carreira pela lente do dinheiro: ganhos, despesas, contexto economico e estabilidade.', bullets:['ganhos','pressao','planejamento'] },
   forma:       { group:'estrutura', title:'Forma Recente', desc:'Momento atual do atleta, pulsacao competitiva e sinais de alta ou baixa antes de olhar o resto da ficha.', bullets:['momento','ifr','tendencia'] },
   patrocinio:  { group:'estrutura', title:'Ecossistema Comercial', desc:'Contratos, poder de atracao e leitura comercial do nome, com foco em clareza e peso de mercado.', bullets:['contratos','sinal','historico'] },
@@ -7633,10 +8249,12 @@ export default function DefinitivePlayerProfile({
   allKeys, formPoints = 0, formHistory = [],
   tournamentResults = null, rivalrySystem = null,
   allPlayers = [], rankingStore = null,
-  coachPool = [], dispatch = null, year = null,
+  coachPool = [], coachMarket = null, dispatch = null, year = null,
   newsEngine = null,
   sponsorPool = null, pendingOffers = [], highestPaidPlayerId = null,
   chronicleEngine = null,
+  historyBook = null,
+  radarFollowed = false, onToggleRadar = null,
 }) {
   injectCSS();
   const [activeTab, setActiveTab] = useState('overview');
@@ -7663,9 +8281,11 @@ export default function DefinitivePlayerProfile({
   const potCat  = np?.potential ? getPotentialCategory(np.potential) : null;
   const arc     = np?.developmentStyle ? getCareerArc(np.developmentStyle) : null;
   const alcunha = np?.alcunha ? (ALCUNHA_BY_ID[np.alcunha] ?? { label:np.alcunha }) : null;
-  const currentRank = rankingStore ? getPlayerRank(rankingStore, np.id) : (np.rankPosition ?? null);
-  const juniorMode = isJuniorPlayer(np);
-  const circuitLabel = juniorMode ? 'Junior' : ((np.rankPosition ?? 999) > 64 ? 'Challenger' : 'Tour principal');
+  // A ficha pode abrir durante uma atualização de ranking/save em que a seleção
+  // anterior já não existe mais. Mantém os hooks estáveis e sai limpo abaixo.
+  const currentRank = np ? (rankingStore ? getPlayerRank(rankingStore, np.id) : (np.rankPosition ?? null)) : null;
+  const juniorMode = np ? isJuniorPlayer(np) : false;
+  const circuitLabel = juniorMode ? 'Junior' : ((np?.rankPosition ?? 999) > 64 ? 'Challenger' : 'Tour principal');
   const totalTitles = Object.values(np?.careerTitles ?? {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
   const bestRank = np?.careerBest?.rank ?? np?.peakRank ?? currentRank ?? '—';
   const identityProfile = useMemo(
@@ -7676,7 +8296,7 @@ export default function DefinitivePlayerProfile({
     [juniorMode ? 'Ranking júnior' : 'Ranking atual', currentRank ? `#${currentRank}` : '—', currentRank ? (juniorMode ? 'posição atual no recorte júnior' : 'posição atual no mapa do circuito') : 'a carreira ainda não gerou posição consolidada'],
     ['Melhor ranking', bestRank !== '—' ? `#${bestRank}` : '—', bestRank !== '—' ? 'pico máximo alcançado até aqui' : 'o auge ainda não apareceu'],
     ['Títulos', `${totalTitles}`, totalTitles ? 'taças que já dão forma ao legado' : 'o currículo ainda está sendo escrito'],
-    ['Arco atual', identityProfile?.form?.label ?? scoutPhaseLabel(np)?.label ?? 'em leitura', identityProfile?.contradictions?.[0]?.summary ?? identityProfile?.signature?.subline ?? 'a ficha ainda está montando a narrativa central'],
+    ['Arco atual', identityProfile?.form?.label ?? (np ? scoutPhaseLabel(np)?.label : null) ?? 'em leitura', identityProfile?.contradictions?.[0]?.summary ?? identityProfile?.signature?.subline ?? 'a ficha ainda está montando a narrativa central'],
   ];
   const activeMeta = TAB_META[activeTab] ?? TAB_META.identidade;
   const activeGroup = TAB_GROUPS.find(group => group.id === activeMeta.group) ?? TAB_GROUPS[0];
@@ -7703,14 +8323,15 @@ export default function DefinitivePlayerProfile({
         <div style={{ width:1, height:14, background:T.line, flexShrink:0 }}/>
         <span style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.42em', textTransform:'uppercase', color:T.inkFaint }}>Ficha do Tenista</span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:7 }}>
-        <button className="upp2-chrome-btn" disabled={!prevKey} onClick={() => prevKey && onNavigate(prevKey)}>← Ant</button>
+          {onToggleRadar && <button className="upp2-chrome-btn" onClick={() => onToggleRadar(np)} style={{ color:radarFollowed ? T.gold : undefined }} title={radarFollowed ? 'Parar de acompanhar' : 'Adicionar ao Radar'}>{radarFollowed ? '◉ No Radar' : '◎ Seguir'}</button>}
+        <button className="upp2-chrome-btn" disabled={!prevKey} onClick={() => prevKey && onNavigate(prevKey)}>? Ant</button>
           <span style={{ fontFamily:T.mono, fontSize:8, letterSpacing:2, color:T.inkFaint, minWidth:38, textAlign:'center' }}>{displayNum}/{String(keys.length).padStart(2,'0')}</span>
-          <button className="upp2-chrome-btn" disabled={!nextKey} onClick={() => nextKey && onNavigate(nextKey)}>Próx →</button>
+          <button className="upp2-chrome-btn" disabled={!nextKey} onClick={() => nextKey && onNavigate(nextKey)}>Próx ?</button>
           <button className="upp2-chrome-btn upp2-chrome-close" onClick={onBack} aria-label="Fechar ficha">×</button>
         </div>
       </div>
 
-      {/* ── COMPACT HERO ─────────────────────────────────── */}
+      {/* -- COMPACT HERO ----------------------------------- */}
       <div className="dpp-hero">
         <div className="dpp-hero-stripe"/>
         <div className="dpp-hero-photo">
@@ -7754,7 +8375,7 @@ export default function DefinitivePlayerProfile({
         </div>
       </div>
 
-      {/* ── SINGLE-LEVEL NAV ─────────────────────────────── */}
+      {/* -- SINGLE-LEVEL NAV ------------------------------- */}
       <div className="dpp-nav">
         {TAB_GROUPS.map((group) => (
           <React.Fragment key={group.id}>
@@ -7774,12 +8395,12 @@ export default function DefinitivePlayerProfile({
 
       {/* CONTENT */}
       <div className="upp2-content" key={activeTab}>
-        {activeTab==='overview'    && <PremiumOverviewTab np={np} sc={sc} rankingStore={rankingStore} year={year} identityProfile={identityProfile} setActiveTab={setActiveTab} tournamentResults={tournamentResults} coachPool={coachPool} />}
+        {activeTab==='overview'    && <ArchiveDossierOverview np={np} sc={sc} rankingStore={rankingStore} year={year} identityProfile={identityProfile} setActiveTab={setActiveTab} tournamentResults={tournamentResults} coachMarket={coachMarket} />}
         {activeTab==='biografia'   && <TabBiografia   np={np} sc={sc} tournamentResults={tournamentResults} rankingStore={rankingStore} rivalrySystem={rivalrySystem} year={year} />}
         {activeTab==='identidade'  && <TabIdentidade  np={np} sc={sc} identityProfile={identityProfile} />}
         {activeTab==='jogo'        && <TabJogo        np={np} sc={sc} potCat={potCat} arc={arc} year={year} />}
         {activeTab==='percepcoes'  && <TabPercepcoes  np={np} sc={sc} year={year} tournamentResults={tournamentResults} allPlayers={allPlayers} />}
-        {activeTab==='carreira'    && <TabCarreira    np={np} sc={sc} tournamentResults={tournamentResults} chronicleEngine={chronicleEngine} rivalrySystem={rivalrySystem} allPlayers={allPlayers} coachPool={coachPool} year={year} />}
+        {activeTab==='carreira'    && <TabCarreira    np={np} sc={sc} tournamentResults={tournamentResults} chronicleEngine={chronicleEngine} historyBook={historyBook} rivalrySystem={rivalrySystem} allPlayers={allPlayers} year={year} />}
         {activeTab==='badges'      && <TabBadges      np={np} sc={sc} tournamentResults={tournamentResults} allPlayers={allPlayers} year={year} />}
         {activeTab==='grand_slam'  && <TabGrandSlam   np={np} sc={sc} tournamentResults={tournamentResults} />}
         {activeTab==='trajetoria'  && <TabTrajetoria  np={np} sc={sc} rankingStore={rankingStore} year={year} />}
@@ -7787,7 +8408,7 @@ export default function DefinitivePlayerProfile({
         {activeTab==='hist_anual'  && <TabHistAnual   np={np} sc={sc} tournamentResults={tournamentResults} />}
         {activeTab==='rivalidades' && <TabRivalidades np={np} sc={sc} rivalrySystem={rivalrySystem} allPlayers={allPlayers} />}
         {activeTab==='fisico'      && <TabFisicoDNA   np={np} sc={sc} tournamentResults={tournamentResults} />}
-        {activeTab==='tecnico'     && <TabTecnico     np={np} sc={sc} coachPool={coachPool} dispatch={dispatch} year={year} rivalrySystem={rivalrySystem} />}
+        {activeTab==='equipe'      && <TabEquipe      np={np} sc={sc} coachMarket={coachMarket} year={year} />}
         {activeTab==='financeiro'  && <TabFinanceiro  np={np} sc={sc} />}
         {activeTab==='forma'       && <TabFormaRecente np={np} sc={sc} allPlayers={allPlayers} newsEngine={newsEngine} rivalrySystem={rivalrySystem} />}
         {activeTab==='patrocinio'  && <TabPatrocinio   np={np} sc={sc} sponsorPool={sponsorPool} year={year} highestPaidPlayerId={highestPaidPlayerId} pendingOffers={pendingOffers} />}
@@ -7802,12 +8423,3 @@ export default function DefinitivePlayerProfile({
 
 // Re-exports para compatibilidade
 export { AttrRow, CatBlock };
-
-
-
-
-
-
-
-
-

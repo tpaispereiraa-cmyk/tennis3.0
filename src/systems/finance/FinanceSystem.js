@@ -3,7 +3,7 @@
  *
  * Implementa:
  *   1. Prize money por categoria/rodada
- *   2. Custos fixos e variáveis (coach, fisio, viagem, equipamento)
+ *   2. Custos fixos e variáveis (fisio, viagem, equipamento)
  *   3. Finance object no perfil do jogador
  *   4. Acumulação de earnings por temporada e carreira
  *   5. Budget como pressão de gameplay
@@ -17,7 +17,6 @@
  *   processMonthlyFinances(player, season, monthIndex) → { player, summary }
  *   processYearEndFinances(player, season) → { player, summary }
  *   getFinancialPressure(player)     → { level, label, color }
- *   getCoachSalary(coach)            → valor anual estimado
  */
 
 // ── Prize Money por categoria e rodada (USD) ────────────────────────────────
@@ -93,29 +92,12 @@ export function getTournamentCosts(tournament) {
   return TOURNAMENT_TRAVEL_COSTS[category] ?? 3_000;
 }
 
-// ── Salary do coach baseado na reputação ─────────────────────────────────────
-/**
- * Estima o salário anual de um coach baseado em sua reputação (0–100).
- * Top coaches (rep 80+): $25k/mês = $300k/ano
- * Mid coaches (rep 50):  $12k/mês = $144k/ano
- * Entry coaches (rep 20): $5k/mês = $60k/ano
- */
-export function getCoachSalary(coach) {
-  if (!coach) return 0;
-  const rep = coach.reputation ?? 40;
-  // Escala linear: rep 0 → $4k/mês, rep 100 → $26k/mês
-  const monthly = 4_000 + (rep / 100) * 22_000;
-  return Math.round(monthly) * 12; // anual
-}
-
 // ── Custos anuais fixos ──────────────────────────────────────────────────────
 /**
  * Calcula todos os custos anuais de um jogador.
- * @returns {{ coach: number, equipment: number, physio: number, total: number }}
+ * @returns {{ equipment: number, physio: number, prepFisico: number, total: number }}
  */
 export function computeAnnualCosts(player) {
-  const coachSalary = getCoachSalary(player.coach);
-
   // Equipamentos: escala com ranking (melhores jogadores usam mais)
   const rank = player.rankPosition ?? 200;
   const equipment = rank <= 10  ? 8_000
@@ -128,14 +110,11 @@ export function computeAnnualCosts(player) {
   const physioPerTournament = rank <= 20 ? 4_000 : rank <= 100 ? 2_500 : 1_200;
   const physio = physioPerTournament * Math.min(tournamentsThisSeason(player), 20);
 
-  // Preparador físico (opcional — jogadores com coach de elite geralmente têm)
-  const hasPrepFisico = coachSalary >= 120_000; // coach de reputação ~50+
-  const prepFisico = hasPrepFisico
-    ? (rank <= 20 ? 15_000 : rank <= 100 ? 8_000 : 4_000)
-    : 0;
+  // Preparador físico básico: custo estrutural próprio, sem depender de treinador.
+  const prepFisico = rank <= 20 ? 15_000 : rank <= 100 ? 8_000 : rank <= 200 ? 4_000 : 0;
 
-  const total = coachSalary + equipment + physio + prepFisico;
-  return { coach: coachSalary, equipment, physio, prepFisico, total };
+  const total = equipment + physio + prepFisico;
+  return { equipment, physio, prepFisico, total };
 }
 
 function tournamentsThisSeason(player) {
@@ -155,6 +134,10 @@ export function initPlayerFinance(player) {
     player.finance.prizeMoneyLog      = player.finance.prizeMoneyLog      ?? [];
     player.finance.monthlyCostsPaidBySeason = player.finance.monthlyCostsPaidBySeason ?? {};
     player.finance.monthlyCostLog      = player.finance.monthlyCostLog      ?? [];
+    // Fluxo financeiro vindo de decisões e situações de vida fora da quadra.
+    player.finance.lifeEarnings        = player.finance.lifeEarnings        ?? 0;
+    player.finance.propertyAssets      = player.finance.propertyAssets      ?? 0;
+    player.finance.propertyInvested    = player.finance.propertyInvested    ?? 0;
     player.finance.tournamentsThisSeason = player.finance.tournamentsThisSeason ?? 0;
     player.finance.totalTournamentsPlayed = player.finance.totalTournamentsPlayed ?? 0;
     return player;
@@ -167,6 +150,9 @@ export function initPlayerFinance(player) {
     costsBySeason:        {},      // { ano: valor } custos por temporada
     monthlyCostsPaidBySeason: {},  // { ano: [1..12] } meses ja debitados
     careerBudgetNet:      0,       // earnings - custos acumulado da carreira
+    lifeEarnings:         0,       // receita líquida gerada fora de premiações
+    propertyAssets:       0,       // valor estimado do portfólio residencial
+    propertyInvested:     0,       // entrada/capital já destinado a imóveis
 
     // ── Temporada corrente ────────────────────────────────────
     currentSeasonEarnings: 0,      // prize money da temporada atual
@@ -285,12 +271,11 @@ export function processMonthlyFinances(player, season, monthIndex = 1) {
 
   const annual = computeAnnualCosts(player);
   const monthly = {
-    coach: Math.round((annual.coach ?? 0) / 12),
     equipment: Math.round((annual.equipment ?? 0) / 12),
     physio: Math.round((annual.physio ?? 0) / 12),
     prepFisico: Math.round((annual.prepFisico ?? 0) / 12),
   };
-  monthly.total = monthly.coach + monthly.equipment + monthly.physio + monthly.prepFisico;
+  monthly.total = monthly.equipment + monthly.physio + monthly.prepFisico;
 
   paid.add(month);
   player.finance.monthlyCostsPaidBySeason[season] = [...paid].sort((a, b) => a - b);

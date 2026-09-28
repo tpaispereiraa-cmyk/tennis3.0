@@ -29,7 +29,9 @@ export const SURFACE_THEME = {
   CLAY: { main: '#D4561E', light: '#F06428', glow: 'rgba(212,86,30,.35)', label: 'Saibro' },
   GRASS: { main: '#2E7D32', light: '#43A047', glow: 'rgba(46,125,50,.35)', label: 'Grama' },
   HARD: { main: '#2860A8', light: '#4A90D9', glow: 'rgba(40,96,168,.35)', label: 'Dura' },
-  INDOOR: { main: '#8B2FAA', light: '#C84FEB', glow: 'rgba(139,47,170,.35)', label: 'Indoor' },
+  INDOOR:  { main: '#8B2FAA', light: '#C84FEB', glow: 'rgba(139,47,170,.35)', label: 'Indoor'  },
+  STREET:  { main: '#B45309', light: '#EF9F27', glow: 'rgba(180,83,9,.35)',    label: 'Asfalto' },
+  CARPET:  { main: '#8B1A3A', light: '#C4426A', glow: 'rgba(139,26,58,.35)',   label: 'Veludo'  },
 };
 
 export const HOME_THEME = {
@@ -85,17 +87,20 @@ export const BROADCAST_THEME = {
 
 export const PROFILE_THEME = {
   ...BROADCAST_THEME,
-  bg0: UI_THEME.bg0,
-  bg1: UI_THEME.bg1,
-  bg2: UI_THEME.bg2,
-  bg3: UI_THEME.bg3,
-  bg4: UI_THEME.bg4,
-  ink: UI_THEME.ink,
-  inkDim: UI_THEME.dim,
-  inkFaint: UI_THEME.faint,
-  inkGhost: UI_THEME.ghost,
-  line: UI_THEME.line,
-  lineMid: UI_THEME.lineMid,
+  // A ficha é um documento de arquivo, não uma extensão do broadcast escuro.
+  // Estes tokens garantem contraste nas abas antigas e novas sem apagar as
+  // cores semânticas de ranking, lesão, superfície e legado.
+  bg0: '#E7DDC5',
+  bg1: '#EEE5D1',
+  bg2: '#E3D6BA',
+  bg3: '#D9C9A8',
+  bg4: '#CFBB92',
+  ink: '#2B2117',
+  inkDim: 'rgba(43,33,23,.68)',
+  inkFaint: 'rgba(43,33,23,.46)',
+  inkGhost: 'rgba(43,33,23,.10)',
+  line: 'rgba(69,52,28,.17)',
+  lineMid: 'rgba(69,52,28,.30)',
   display: UI_THEME.display,
 };
 

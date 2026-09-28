@@ -114,6 +114,20 @@ function pct100(n, d = 2) {
   return n != null && Number.isFinite(+n) ? +(+n * 100).toFixed(d) : null;
 }
 
+function incMap(map, key, inc = 1) {
+  const k = key == null || key === '' ? 'UNKNOWN' : String(key);
+  map[k] = (map[k] ?? 0) + inc;
+}
+
+function topPct(map, limit = 10) {
+  const total = Object.values(map ?? {}).reduce((s, v) => s + v, 0) || 1;
+  return Object.entries(map ?? {})
+    .filter(([, v]) => v > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([key, count]) => ({ key, count, pct: round(count / total, 4) }));
+}
+
 function playerSnapshot(player) {
   if (!player) return null;
   const attrs = player.attrs ?? {};
@@ -189,6 +203,8 @@ function compactStats(s = {}) {
       winners: s.winners ?? 0,
       unforcedErrors: s.unforcedErrors ?? 0,
       forcedErrors: s.forcedErrors ?? 0,
+      pointsWonByOutcome: s.pointsWonByOutcome ?? {},
+      pointsLostByOutcome: s.pointsLostByOutcome ?? {},
       avgQuality: s.avgQuality != null ? round(s.avgQuality, 4) : ((s.qualityCount ?? 0) > 0 ? round((s.qualitySum ?? 0) / s.qualityCount, 4) : null),
       qualitySum: round(s.qualitySum, 3),
       qualityCount: s.qualityCount ?? 0,
@@ -212,6 +228,8 @@ function compactStats(s = {}) {
       shotLogCount: Array.isArray(s.shotLog) ? s.shotLog.length : 0,
       intentLogSample: Array.isArray(s.intentLog) ? s.intentLog.slice(0, 40) : [],
       intentLogCount: Array.isArray(s.intentLog) ? s.intentLog.length : 0,
+      pointOutcomeLogSample: Array.isArray(s.pointOutcomeLog) ? s.pointOutcomeLog.slice(0, 40) : [],
+      pointOutcomeLogCount: s.pointOutcomeCount ?? (Array.isArray(s.pointOutcomeLog) ? s.pointOutcomeLog.length : 0),
     },
   };
 }
@@ -431,14 +449,30 @@ export default function SimulatorScreen({ onBack }) {
       rallyBuckets:[0,0,0,0],
       totalPts:0,
       byType:{}, setMap:{},
-      pointWinsByType:{},
+      pointWinsByType:{}, pointsWonByOutcome:{}, pointsLostByOutcome:{},
       byTypeQSum:{}, byTypeQCnt:{},
       byTypeKmhSum:{}, byTypeKmhCnt:{},
       attackShots:0, defenseShots:0,
       attackPointsPlayed:0, attackPointsWon:0,
       defensePointsPlayed:0, defensePointsWon:0,
-      modernLogs:{ serveLog:0, returnLog:0, receptionLog:0, contactLog:0, shotLog:0, intentLog:0 },
-      modernLogSamples:{ serveLog:[], returnLog:[], receptionLog:[], contactLog:[], shotLog:[], intentLog:[] },
+      modernLogs:{ serveLog:0, returnLog:0, receptionLog:0, contactLog:0, shotLog:0, intentLog:0, pointOutcomeLog:0 },
+      modernLogSamples:{ serveLog:[], returnLog:[], receptionLog:[], contactLog:[], shotLog:[], intentLog:[], pointOutcomeLog:[] },
+      modernShot:{
+        family:{}, intent:{}, direction:{}, wing:{}, returnFamily:{}, returnIntent:{},
+        bodyState:{}, bodyStateRally:{}, bodyStateReturn:{},
+        contactClass:{}, contactClassRally:{}, contactClassReturn:{},
+        movementPhase:{}, locomotionMode:{}, arrivalBucket:{},
+        favoritePlay:{}, instinct:{}, blindSpot:{},
+        executionMode:{}, executionModeRally:{}, executionModeReturn:{},
+        qSum:0, qCnt:0, returnQSum:0, returnQCnt:0, contactQSum:0, contactQCnt:0,
+        executionQSum:0, executionQCnt:0, intentFitSum:0, intentFitCnt:0,
+        errorRiskSum:0, errorRiskCnt:0, missChanceSum:0, missChanceCnt:0,
+        readinessSum:0, readinessCnt:0, arrivalSum:0, arrivalCnt:0,
+        kmhSum:0, kmhCnt:0,
+        serveThreatSum:0, serveThreatCnt:0,
+        serveAdv:{}, returnPosture:{}, weakReturns:0, returnRealEmergency:0,
+        approachIntent:0, netApproaches:0, momentumExtreme:0,
+      },
     };
   }
 
@@ -474,7 +508,7 @@ export default function SimulatorScreen({ onBack }) {
       b.modernLogSamples.serveLog.push(...s.serveLog.slice(0, Math.max(0, 40 - b.modernLogSamples.serveLog.length)));
       for (const sl of s.serveLog) {
         // Normaliza direção: game.js usa 'BODY'/'WIDE'/'T', bucket usa 'Body'/'Wide'/'T'
-        const dir = sl.dir === 'BODY' ? 'Body' : sl.dir === 'WIDE' ? 'Wide' : sl.dir;
+        const dir = sl.dir === 'BODY' ? 'Body' : sl.dir === 'WIDE' ? 'Wide' : sl.dir === 'CENTER' ? 'T' : sl.dir;
         if (sl.isFirst) {
           if (sl.kmh > 0) {
             if (sl.kmh < b.s1KmhMin) b.s1KmhMin = sl.kmh;
@@ -488,17 +522,86 @@ export default function SimulatorScreen({ onBack }) {
           }
           if (dir && dir in b.serve2Dir) b.serve2Dir[dir]++;
         }
+        if (Number.isFinite(+sl.pressureHint)) {
+          b.modernShot.serveThreatSum += +sl.pressureHint;
+          b.modernShot.serveThreatCnt++;
+        }
       }
     }
-    for (const key of ['returnLog', 'receptionLog', 'contactLog', 'shotLog', 'intentLog']) {
+    for (const key of ['returnLog', 'receptionLog', 'contactLog', 'shotLog', 'intentLog', 'pointOutcomeLog']) {
       if (Array.isArray(s[key])) {
-        b.modernLogs[key] += s[key].length;
+        b.modernLogs[key] += key === 'pointOutcomeLog'
+          ? (s.pointOutcomeCount ?? s[key].length)
+          : s[key].length;
         b.modernLogSamples[key].push(...s[key].slice(0, Math.max(0, 40 - b.modernLogSamples[key].length)));
+      }
+    }
+    if (Array.isArray(s.shotLog)) {
+      for (const sh of s.shotLog) {
+        incMap(b.modernShot.family, sh.family ?? sh.type);
+        incMap(b.modernShot.intent, sh.intent);
+        incMap(b.modernShot.direction, sh.direction);
+        incMap(b.modernShot.wing, sh.wing);
+        incMap(b.modernShot.serveAdv, sh.shotEngine?.opportunityEV?.serveAdvantageLevel);
+        const favoritePlayHit = sh.courtIdentity?.favoritePlayHit ?? sh.shotEngine?.courtIdentity?.favoritePlayHit;
+        const instinctTriggered = sh.courtIdentity?.instinctTriggered ?? sh.shotEngine?.courtIdentity?.instinctTriggered;
+        const blindSpotTriggered = sh.courtIdentity?.blindSpotTriggered ?? sh.shotEngine?.courtIdentity?.blindSpotTriggered;
+        if (favoritePlayHit) incMap(b.modernShot.favoritePlay, favoritePlayHit);
+        if (instinctTriggered) incMap(b.modernShot.instinct, instinctTriggered);
+        if (blindSpotTriggered) incMap(b.modernShot.blindSpot, blindSpotTriggered);
+        if (sh.intent === 'APPROACH') b.modernShot.approachIntent++;
+        if ((sh.momentum ?? 0.5) >= 0.92 || (sh.momentum ?? 0.5) <= 0.08) b.modernShot.momentumExtreme++;
+        if (Number.isFinite(+sh.quality)) { b.modernShot.qSum += +sh.quality; b.modernShot.qCnt++; }
+        if (Number.isFinite(+sh.executionQuality)) { b.modernShot.executionQSum += +sh.executionQuality; b.modernShot.executionQCnt++; }
+        if (Number.isFinite(+sh.intentFit)) { b.modernShot.intentFitSum += +sh.intentFit; b.modernShot.intentFitCnt++; }
+        if (Number.isFinite(+sh.errorRisk)) { b.modernShot.errorRiskSum += +sh.errorRisk; b.modernShot.errorRiskCnt++; }
+        if (Number.isFinite(+sh.missChance)) { b.modernShot.missChanceSum += +sh.missChance; b.modernShot.missChanceCnt++; }
+        incMap(b.modernShot.executionMode, sh.executionMode);
+        incMap(sh.isReturnContact ? b.modernShot.executionModeReturn : b.modernShot.executionModeRally, sh.executionMode);
+        if (Number.isFinite(+sh.kmh)) { b.modernShot.kmhSum += +sh.kmh; b.modernShot.kmhCnt++; }
+      }
+    }
+    if (Array.isArray(s.returnLog)) {
+      for (const rt of s.returnLog) {
+        incMap(b.modernShot.returnFamily, rt.family ?? rt.type);
+        incMap(b.modernShot.returnIntent, rt.intent);
+        incMap(b.modernShot.returnPosture, rt.returnPosture ?? rt.shotEngine?.returnPosture);
+        if (rt.returnRealEmergency || rt.shotEngine?.returnRealEmergency) b.modernShot.returnRealEmergency++;
+        if (['LOW_CENTER_BLOCK', 'SOFT_WIDE_BLOCK', 'SHORT_SITTER', 'FLOATED_RESCUE', 'LOBBED_RETURN'].includes(rt.returnOutcome)) b.modernShot.weakReturns++;
+        if (Number.isFinite(+rt.quality)) { b.modernShot.returnQSum += +rt.quality; b.modernShot.returnQCnt++; }
+      }
+    }
+    if (Array.isArray(s.contactLog)) {
+      for (const ct of s.contactLog) {
+        if (Number.isFinite(+ct.quality)) { b.modernShot.contactQSum += +ct.quality; b.modernShot.contactQCnt++; }
+        incMap(b.modernShot.bodyState, ct.bodyState);
+        incMap(b.modernShot.contactClass, ct.contactClass);
+        incMap(ct.isReturnContact ? b.modernShot.bodyStateReturn : b.modernShot.bodyStateRally, ct.bodyState);
+        incMap(ct.isReturnContact ? b.modernShot.contactClassReturn : b.modernShot.contactClassRally, ct.contactClass);
+        incMap(b.modernShot.movementPhase, ct.movementPhase);
+        incMap(b.modernShot.locomotionMode, ct.locomotionMode);
+        if (Number.isFinite(+ct.contactReadiness)) {
+          b.modernShot.readinessSum += +ct.contactReadiness;
+          b.modernShot.readinessCnt++;
+        }
+        if (Number.isFinite(+ct.arrivalMargin)) {
+          const arrival = +ct.arrivalMargin;
+          b.modernShot.arrivalSum += arrival;
+          b.modernShot.arrivalCnt++;
+          incMap(
+            b.modernShot.arrivalBucket,
+            arrival < -0.24 ? 'VERY_LATE'
+              : arrival < -0.12 ? 'LATE'
+                : arrival < -0.04 ? 'TIGHT'
+                  : arrival <= 0.12 ? 'ON_TIME'
+                    : 'EARLY',
+          );
+        }
       }
     }
 
     if (s.byType) for (const [k,v] of Object.entries(s.byType)) b.byType[k] = (b.byType[k]??0)+v;
-    for (const field of ['pointWinsByType', 'byTypeQSum', 'byTypeQCnt', 'byTypeKmhSum', 'byTypeKmhCnt']) {
+    for (const field of ['pointWinsByType', 'pointsWonByOutcome', 'pointsLostByOutcome', 'byTypeQSum', 'byTypeQCnt', 'byTypeKmhSum', 'byTypeKmhCnt']) {
       if (s[field]) for (const [k, v] of Object.entries(s[field])) b[field][k] = (b[field][k] ?? 0) + v;
     }
     b.attackShots += s.attackShots ?? 0;
@@ -549,6 +652,8 @@ export default function SimulatorScreen({ onBack }) {
       totalPts: b.totalPts/d,
       byType: b.byType, setMap: b.setMap,
       pointWinsByType: b.pointWinsByType,
+      pointsWonByOutcome: b.pointsWonByOutcome,
+      pointsLostByOutcome: b.pointsLostByOutcome,
       byTypeQAvg: Object.fromEntries(Object.keys(b.byTypeQSum).map(k => [k, b.byTypeQCnt[k] > 0 ? b.byTypeQSum[k] / b.byTypeQCnt[k] : null])),
       byTypeKmhAvg: Object.fromEntries(Object.keys(b.byTypeKmhSum).map(k => [k, b.byTypeKmhCnt[k] > 0 ? b.byTypeKmhSum[k] / b.byTypeKmhCnt[k] : null])),
       tacticalState: {
@@ -563,6 +668,49 @@ export default function SimulatorScreen({ onBack }) {
       },
       modernLogs: { ...b.modernLogs },
       modernLogSamples: Object.fromEntries(Object.entries(b.modernLogSamples).map(([k, v]) => [k, v.slice(0, 40)])),
+      modernShotSummary: {
+        family: topPct(b.modernShot.family, 14),
+        intent: topPct(b.modernShot.intent, 10),
+        direction: topPct(b.modernShot.direction, 10),
+        wing: topPct(b.modernShot.wing, 8),
+        returnFamily: topPct(b.modernShot.returnFamily, 10),
+        returnIntent: topPct(b.modernShot.returnIntent, 10),
+        returnPosture: topPct(b.modernShot.returnPosture, 8),
+        bodyState: topPct(b.modernShot.bodyState, 12),
+        bodyStateRally: topPct(b.modernShot.bodyStateRally, 12),
+        bodyStateReturn: topPct(b.modernShot.bodyStateReturn, 12),
+        contactClass: topPct(b.modernShot.contactClass, 10),
+        contactClassRally: topPct(b.modernShot.contactClassRally, 10),
+        contactClassReturn: topPct(b.modernShot.contactClassReturn, 10),
+        movementPhase: topPct(b.modernShot.movementPhase, 12),
+        locomotionMode: topPct(b.modernShot.locomotionMode, 10),
+        arrivalBuckets: topPct(b.modernShot.arrivalBucket, 8),
+        avgQuality: b.modernShot.qCnt > 0 ? b.modernShot.qSum / b.modernShot.qCnt : null,
+        avgExecutionQuality: b.modernShot.executionQCnt > 0 ? b.modernShot.executionQSum / b.modernShot.executionQCnt : null,
+        avgIntentFit: b.modernShot.intentFitCnt > 0 ? b.modernShot.intentFitSum / b.modernShot.intentFitCnt : null,
+        avgErrorRisk: b.modernShot.errorRiskCnt > 0 ? b.modernShot.errorRiskSum / b.modernShot.errorRiskCnt : null,
+        avgMissChance: b.modernShot.missChanceCnt > 0 ? b.modernShot.missChanceSum / b.modernShot.missChanceCnt : null,
+        executionMode: topPct(b.modernShot.executionMode, 6),
+        executionModeRally: topPct(b.modernShot.executionModeRally, 6),
+        executionModeReturn: topPct(b.modernShot.executionModeReturn, 6),
+        avgReturnQuality: b.modernShot.returnQCnt > 0 ? b.modernShot.returnQSum / b.modernShot.returnQCnt : null,
+        avgContactQuality: b.modernShot.contactQCnt > 0 ? b.modernShot.contactQSum / b.modernShot.contactQCnt : null,
+        avgContactReadiness: b.modernShot.readinessCnt > 0 ? b.modernShot.readinessSum / b.modernShot.readinessCnt : null,
+        avgArrivalMargin: b.modernShot.arrivalCnt > 0 ? b.modernShot.arrivalSum / b.modernShot.arrivalCnt : null,
+        avgKmh: b.modernShot.kmhCnt > 0 ? b.modernShot.kmhSum / b.modernShot.kmhCnt : null,
+        avgServeThreat: b.modernShot.serveThreatCnt > 0 ? b.modernShot.serveThreatSum / b.modernShot.serveThreatCnt : null,
+        serveAdvantage: topPct(b.modernShot.serveAdv, 6),
+        courtIdentity: {
+          favoritePlay: topPct(b.modernShot.favoritePlay, 8),
+          instinct: topPct(b.modernShot.instinct, 8),
+          blindSpot: topPct(b.modernShot.blindSpot, 8),
+        },
+        weakReturns: b.modernShot.weakReturns,
+        returnRealEmergency: b.modernShot.returnRealEmergency,
+        approachIntent: b.modernShot.approachIntent,
+        netApproaches: b.netApp,
+        momentumExtreme: b.modernShot.momentumExtreme,
+      },
     };
   }
 
@@ -667,6 +815,8 @@ export default function SimulatorScreen({ onBack }) {
         maxRallyObserved:    d.rallyMax,
         netApproachPerMatch: +d.netApp.toFixed(2),
         netWinPct:           d.netPct != null ? +(d.netPct*100).toFixed(2) : null,
+        pointsWonByOutcome:  { ...(d.pointsWonByOutcome ?? {}) },
+        pointsLostByOutcome: { ...(d.pointsLostByOutcome ?? {}) },
         rallyDistribution_pct: {
           '1-4':   +(d.rallyBucketsPct[0]*100).toFixed(2),
           '5-9':   +(d.rallyBucketsPct[1]*100).toFixed(2),
@@ -698,6 +848,7 @@ export default function SimulatorScreen({ onBack }) {
         availableLogs: {
           ...(d.modernLogs ?? {}),
         },
+        summary: d.modernShotSummary ?? null,
         samples: d.modernLogSamples ?? {},
       },
     });
@@ -754,6 +905,7 @@ export default function SimulatorScreen({ onBack }) {
     const addFlag = (severity, code, message, evidence = {}) => diagnosticFlags.push({ severity, code, message, evidence });
     if (ran < 50) addFlag('INFO', 'LOW_SAMPLE', 'Amostra pequena. Use 50+ para tendência e 100/200 para calibração fina.', { matchCount: ran });
     if (a.winPct === 0 || b.winPct === 0) addFlag('CRITICAL', 'TOTAL_SWEEP', 'Um jogador venceu 100% das partidas. Em duelo de elite isso costuma indicar matchup extremo ou desbalanceamento.', { winRateA: pct100(a.winPct), winRateB: pct100(b.winPct) });
+    if (Math.max(a.winPct, b.winPct) >= 0.95 && Math.abs((config?.ovrA ?? 0) - (config?.ovrB ?? 0)) <= 4) addFlag('CRITICAL', 'ELITE_SWEEP', 'Varredura quase total entre jogadores de nível parecido. Isso costuma apontar avalanche sistêmica, não superioridade natural.', { ovrA: config?.ovrA, ovrB: config?.ovrB, winRateA: pct100(a.winPct), winRateB: pct100(b.winPct) });
     if (qualityWinnerParadox.exists) addFlag('CRITICAL', 'QUALITY_WINNER_PARADOX', 'O jogador com melhor qualidade média agregada está perdendo o confronto. Isso sugere que outra camada está sobrepondo a qualidade do ponto.', qualityWinnerParadox);
     if ((a.netApp / Math.max(1, ran)) > 30 && (a.netWon / Math.max(1, a.netApp)) < 0.5) addFlag('HIGH', 'A_NET_SUICIDE', `${config.nameA} está subindo demais à rede e vencendo pouco. Verificar netGame/prefs e decisão tática por superfície.`, { netApproachesPerMatch: tacticalUsage.A.netApproachesPerMatch, netWinPct: tacticalUsage.A.netWinPct, playerPref: profileA?.prefs?.netGame });
     if ((b.netApp / Math.max(1, ran)) > 30 && (b.netWon / Math.max(1, b.netApp)) < 0.5) addFlag('HIGH', 'B_NET_SUICIDE', `${config.nameB} está subindo demais à rede e vencendo pouco. Verificar netGame/prefs e decisão tática por superfície.`, { netApproachesPerMatch: tacticalUsage.B.netApproachesPerMatch, netWinPct: tacticalUsage.B.netWinPct, playerPref: profileB?.prefs?.netGame });
@@ -761,16 +913,63 @@ export default function SimulatorScreen({ onBack }) {
     if ((b.s2WonPts + b.s2LostPts) > 0 && (b.s2WonPts / (b.s2WonPts + b.s2LostPts)) > 0.65) addFlag('MEDIUM', 'B_SECOND_SERVE_TOO_SAFE', `${config.nameB} está vencendo pontos demais com segundo saque.`, { ptsWonOnS2: playerBReport.serve.ptsWonOnS2, serveAttrs: { saqueForca: profileB?.attrs?.saqueForca, saquePrecisao: profileB?.attrs?.saquePrecisao } });
     if ((tacticalUsage.A.sliceSharePct + tacticalUsage.B.sliceSharePct) / 2 > 35 && String(config.surface).toLowerCase().includes('clay')) addFlag('MEDIUM', 'CLAY_SLICE_OVERUSE', 'Uso de slice muito alto para saibro. Pode estar distorcendo rallies e premiando perfis defensivos além do realista.', { sliceShareA: tacticalUsage.A.sliceSharePct, sliceShareB: tacticalUsage.B.sliceSharePct });
     if (playerAReport.rally.uePerMatch < 5 || playerBReport.rally.uePerMatch < 5) addFlag('HIGH', 'UNFORCED_ERRORS_TOO_LOW', 'Erros não-forçados por partida estão muito baixos. Isso infla W/UE e pode esconder a verdadeira troca risco/consistência.', { uePerMatchA: playerAReport.rally.uePerMatch, uePerMatchB: playerBReport.rally.uePerMatch });
+    const expectedPointOutcomes = Math.round((a.totalPts ?? 0) * ran);
+    const classifiedPointOutcomes = [a.pointsWonByOutcome, b.pointsWonByOutcome]
+      .reduce((total, map) => total + Object.values(map ?? {}).reduce((sum, value) => sum + (Number(value) || 0), 0), 0);
+    if (classifiedPointOutcomes !== expectedPointOutcomes) {
+      addFlag('CRITICAL', 'POINT_OUTCOME_PARTITION_BROKEN', 'A quantidade de desfechos exclusivos não fecha com o total de pontos simulados.', {
+        expectedPointOutcomes,
+        classifiedPointOutcomes,
+        difference: classifiedPointOutcomes - expectedPointOutcomes,
+      });
+    }
+    for (const [side, d, report, profile] of [['A', a, playerAReport, profileA], ['B', b, playerBReport, profileB]]) {
+      const summary = report.modernShotTelemetry?.summary ?? {};
+      const aceZone = summary.serveAdvantage?.find(x => x.key === 'ACE_ZONE')?.count ?? 0;
+      const shotsLogged = d.modernLogs?.shotLog ?? 0;
+      const returnsLogged = d.modernLogs?.returnLog ?? 0;
+      const weakReturnRate = returnsLogged > 0 ? (summary.weakReturns ?? 0) / returnsLogged : 0;
+      const rallyContactsLogged = (summary.bodyStateRally ?? []).reduce((sum, item) => sum + (item.count ?? 0), 0);
+      const stretchedCount = summary.bodyStateRally?.find(x => x.key === 'STRETCHED')?.count ?? 0;
+      const lateCount = summary.bodyStateRally?.find(x => x.key === 'LATE')?.count ?? 0;
+      const emergencyContactRate = rallyContactsLogged > 0 ? (stretchedCount + lateCount) / rallyContactsLogged : 0;
+      const returnEmergencyRate = returnsLogged > 0 ? (summary.returnRealEmergency ?? 0) / returnsLogged : 0;
+      const rallyExecutionTotal = (summary.executionModeRally ?? []).reduce((sum, item) => sum + (item.count ?? 0), 0);
+      const survivalRally = summary.executionModeRally?.find(item => item.key === 'SURVIVAL')?.count ?? 0;
+      const survivalRallyRate = rallyExecutionTotal > 0 ? survivalRally / rallyExecutionTotal : 0;
+      const approachNoNet = (summary.approachIntent ?? 0) >= 8 && (summary.netApproaches ?? 0) <= Math.max(2, (summary.approachIntent ?? 0) * 0.18);
+      if (shotsLogged > 0 && aceZone / shotsLogged > 0.12) addFlag('HIGH', `${side}_SERVE_ADVANTAGE_OVERUSE`, 'Serve advantage apareceu demais na construção dos pontos.', { aceZone, shotsLogged });
+      if (weakReturnRate > 0.28) addFlag('HIGH', `${side}_RETURN_TOO_WEAK`, 'Devoluções fracas/curtas demais para amostra agregada.', { weakReturns: summary.weakReturns, returnsLogged, weakReturnRate: +(weakReturnRate * 100).toFixed(2) });
+      if (returnEmergencyRate > 0.30) addFlag('CRITICAL', `${side}_RETURN_EMERGENCY_OVERUSE`, 'Devoluções realmente emergenciais aparecem demais mesmo após aplicar a janela reativa.', { returnsLogged, returnRealEmergency: summary.returnRealEmergency, returnEmergencyRate: +(returnEmergencyRate * 100).toFixed(2), returnPosture: summary.returnPosture });
+      if (returnsLogged >= 100 && (summary.returnRealEmergency ?? 0) === 0) addFlag('MEDIUM', `${side}_RETURN_EMERGENCY_NEVER`, 'Nenhuma devolução realmente emergencial apareceu numa amostra grande. A janela reativa pode estar permissiva demais.', { returnsLogged, returnPosture: summary.returnPosture, avgServeThreat: summary.avgServeThreat });
+      if (summary.avgServeThreat != null && (summary.avgServeThreat >= 0.92 || summary.avgServeThreat <= 0.18)) addFlag('HIGH', `${side}_SERVE_THREAT_SATURATION`, 'A ameaça média do saque está saturada ou sem efeito; ritmo, spin e colocação deixaram de produzir gradação útil.', { avgServeThreat: summary.avgServeThreat });
+      if (survivalRallyRate > 0.28) addFlag('HIGH', `${side}_RALLY_SURVIVAL_OVERUSE`, 'Execuções de sobrevivência aparecem demais no rally e podem estar substituindo trocas normais.', { survivalRally, rallyExecutionTotal, survivalRallyRate: +(survivalRallyRate * 100).toFixed(2), executionModeRally: summary.executionModeRally });
+      if (emergencyContactRate > 0.30) addFlag('CRITICAL', `${side}_CONTACT_EMERGENCY_OVERUSE`, 'Contatos STRETCHED/LATE aparecem demais. Movimento e janela corporal estão transformando rally normal em emergência.', {
+        stretched: stretchedCount,
+        late: lateCount,
+        rallyContactsLogged,
+        emergencyContactRate: +(emergencyContactRate * 100).toFixed(2),
+        avgReadiness: summary.avgContactReadiness,
+        avgArrivalMargin: summary.avgArrivalMargin,
+      });
+      if (approachNoNet) addFlag('MEDIUM', `${side}_APPROACH_INTENT_NO_NET`, 'O jogador escolhe APPROACH mas quase não transforma isso em subida real.', { approachIntent: summary.approachIntent, netApproaches: summary.netApproaches, netGame: profile?.prefs?.netGame });
+      if ((summary.momentumExtreme ?? 0) / Math.max(1, shotsLogged) > 0.16) addFlag('MEDIUM', `${side}_MOMENTUM_AVALANCHE`, 'Muitos golpes ocorreram com momentum extremo. Pode indicar avalanche cedo demais.', { momentumExtreme: summary.momentumExtreme, shotsLogged });
+      const winnerOutcomes = d.pointsWonByOutcome?.WINNER ?? 0;
+      const forcedLostOutcomes = d.pointsLostByOutcome?.FORCED_ERROR ?? 0;
+      if (Math.abs(winnerOutcomes - d.winners * ran) > 1) addFlag('CRITICAL', `${side}_WINNER_OUTCOME_MISMATCH`, 'A coluna de winners não fecha com os desfechos exclusivos classificados como WINNER.', { winnerOutcomes, legacyWinnerCount: d.winners * ran });
+      if (Math.abs(forcedLostOutcomes - d.fe * ran) > 1) addFlag('CRITICAL', `${side}_FORCED_ERROR_OUTCOME_MISMATCH`, 'A coluna de erros forçados não fecha com os desfechos exclusivos perdidos por erro forçado.', { forcedLostOutcomes, legacyForcedErrorCount: d.fe * ran });
+    }
     for (const [side, d, report] of [['A', a, playerAReport], ['B', b, playerBReport]]) {
-      const missing = ['returnLog', 'receptionLog', 'contactLog', 'shotLog', 'intentLog'].filter(k => !(d.modernLogs?.[k] > 0));
+      const missing = ['returnLog', 'receptionLog', 'contactLog', 'shotLog', 'intentLog', 'pointOutcomeLog'].filter(k => !(d.modernLogs?.[k] > 0));
       if (missing.length) addFlag('INFO', `${side}_MISSING_MODERN_SHOT_LOGS`, `O Headless ainda nao exportou logs modernos de ${missing.join(', ')} para o jogador ${side}. Para calibrar recepcao/contato/primeira bola com precisao, esses eventos precisam ser instrumentados no motor.`, { missing, availableLogs: report.modernShotTelemetry.availableLogs });
     }
 
     const payload = {
       _meta: {
-        version: '3.0-forensic', exportedAt: new Date().toISOString(),
+        version: '4.0-calibration-lock', exportedAt: new Date().toISOString(),
         engine: 'HeadlessMatchEngine · Tennis Universe',
-        note: 'Arquivo forense para calibragem: inclui perfis, agregados, flags automáticas e match-by-match completo.',
+        shotEngine: 'shotengine-patch-7',
+        note: 'Arquivo forense com partição exclusiva de pontos, perfis, agregados, guardrails automáticos e match-by-match completo.',
       },
       config,
       playersProfile: {
@@ -847,8 +1046,11 @@ export default function SimulatorScreen({ onBack }) {
     const a2   = document.createElement('a');
     a2.href = url;
     a2.download = `${config.nameA.replace(/\s+/g,'_')}_vs_${config.nameB.replace(/\s+/g,'_')}_${ran}sim_${config.court.replace(/\s+/g,'_')}.json`;
+    a2.style.display = 'none';
+    document.body.appendChild(a2);
     a2.click();
-    URL.revokeObjectURL(url);
+    a2.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   /* ── display ─────────────────────────────────────────────── */
@@ -892,7 +1094,7 @@ export default function SimulatorScreen({ onBack }) {
 
         {/* Top bar */}
         <div style={{ position:'sticky', top:0, zIndex:40, background:'rgba(15,34,24,.92)', backdropFilter:'blur(12px)', borderBottom:`2px solid ${RG.clay}`, padding:'0 32px', display:'flex', alignItems:'center', justifyContent:'space-between', height:52 }}>
-          <span style={{ fontFamily:RG.display, fontSize:13, fontWeight:600, letterSpacing:'.3em', color:RG.clay, textTransform:'uppercase' }}>Simulador de Partidas</span>
+          <span style={{ fontFamily:RG.display, fontSize:13, fontWeight:600, letterSpacing:'.3em', color:RG.clay, textTransform:'uppercase' }}>Laboratório do Circuito</span>
           <button onClick={onBack}
             style={{ background:'none', border:`1px solid ${RG.border}`, color:RG.textDim, fontFamily:RG.display, fontSize:12, fontWeight:600, letterSpacing:'2px', padding:'5px 16px', cursor:'pointer', textTransform:'uppercase' }}
             onMouseOver={e=>{e.currentTarget.style.background=RG.bgPanel;e.currentTarget.style.color=RG.white;}}
@@ -904,10 +1106,10 @@ export default function SimulatorScreen({ onBack }) {
         <div style={{ maxWidth:1400, margin:'0 auto', padding:'28px 28px 80px' }}>
           <div style={{ marginBottom:20 }}>
             <div style={{ fontFamily:RG.display, fontWeight:700, fontSize:'clamp(24px,3vw,38px)', color:RG.white, lineHeight:1, marginBottom:4 }}>
-              SIMULADOR <span style={{ color:RG.clay }}>DE PARTIDAS</span>
+              LABORATÓRIO <span style={{ color:RG.clay }}>DE CONFRONTOS</span>
             </div>
             <div style={{ fontFamily:RG.mono, fontSize:9, letterSpacing:'.3em', color:RG.textFaint }}>
-              ENGINE HEADLESS · FÍSICA COMPLETA · ANALYTICS + BENCHMARKS ATP
+              TESTE UM DUELO, LEIA AS TENDÊNCIAS E DESCUBRA O QUE MUDA O PLACAR
             </div>
           </div>
           <div style={{ height:2, background:`linear-gradient(90deg,${RG.clay},transparent)`, marginBottom:24 }} />
@@ -990,8 +1192,8 @@ export default function SimulatorScreen({ onBack }) {
                 <div className="sc" style={{ padding:'72px 24px', textAlign:'center' }}>
                   <div style={{ fontSize:46, marginBottom:18, animation:'s-spin 10s linear infinite', display:'inline-block' }}>🎾</div>
                   <div style={{ fontFamily:RG.mono, fontSize:10, letterSpacing:'.25em', color:RG.textFaint, lineHeight:2.2 }}>
-                    CONFIGURE O MATCHUP<br/>E EXECUTE AS SIMULAÇÕES<br/>
-                    <span style={{ fontSize:8, opacity:.5 }}>analytics completos + benchmarks ATP + export JSON</span>
+                    ESCOLHA OS DOIS LADOS DO DUELO<br/>E RODE CENÁRIOS EM ESCALA<br/>
+                    <span style={{ fontSize:8, opacity:.5 }}>probabilidade, padrões táticos e recorte estatístico</span>
                   </div>
                 </div>
               )}

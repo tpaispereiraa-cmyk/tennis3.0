@@ -1,7 +1,30 @@
 ﻿import { COURT, THRESHOLDS, PLAYER_CFG, STAMINA, INERTIA, MOVEMENT, GameState } from '../../core/constants.js';
 import { clamp, dist2 } from '../../core/math.js';
+import { getCourtIdentity } from '../../domain/players/PlayerCourtIdentity.js';
 import { predictTrajectory } from '../../core/physics.js';
 import { NETPLAY_THRESHOLDS } from './netplayThresholds.js';
+import { getTalentRuntimeEffects } from '../talents/TalentIdentitySystem.js';
+import { updateMovementPerception } from './MovementPerception.js';
+import {
+  applyBodyCommitmentToSteering,
+  getBodyCommitmentPenalty,
+  updateBodyCommitment,
+} from './BodyCommitment.js';
+import {
+  applySplitStepToSteering,
+  beginSplitStep,
+  getSplitStepImpulse,
+  syncLegacySplitFields,
+  updateSplitStep,
+} from './SplitStep.js';
+import { chooseContactPointWindow } from './ContactPointPlanner.js';
+import { resetRecoveryPositioning, resolveRecoveryPosition } from './RecoveryPositioning.js';
+import { planContactFootwork, resetFootworkPlan } from './FootworkPlanner.js';
+import { getSurfaceFootingProfile, resetSurfaceFooting, updateSurfaceFooting } from './SurfaceFooting.js';
+import { evaluateMovementCoherence, resetMovementCoherence } from './MovementCoherence.js';
+import { planInterception } from './InterceptionPlanner.js';
+import { resetMovementPlanState, stabilizeMovementPlan } from './MovementPlanState.js';
+import { resetCourtMovementState, updateCourtMovementState } from './CourtMovementState.js';
 
 // Helper PT-BR:
 // Escala de "vontade de rede". Quanto maior, mais cedo o jogador tenta transicionar.
@@ -40,7 +63,54 @@ function getCourtMode(player) {
 // Inteligência de retorno de saque: lê padrões recentes do sacador e ajusta
 // posicionamento lateral/profundidade do recebedor (sem hard-lock).
 function getServeReturnAdaptiveBias(player, gs) {
-  return { x: 0, y: 0, confidence: 0 };
+  const isReceiver = player?.id === gs?.receiver;
+  const earlyReturn = isReceiver && (gs?.rally ?? 0) === 0;
+  if (!earlyReturn) return { x: 0, y: 0, confidence: 0 };
+
+  const attrs = player?.attrs ?? {};
+  const returnIdentity = getCourtIdentity(player).returnIdentity;
+  const readSkill = clamp(((attrs.leitura ?? 60) * 0.45 + (attrs.devolucao ?? attrs.retorno ?? 60) * 0.55) / 100, 0, 1);
+  const history = gs?._servePatternHistory ?? [];
+  // ServeEngine registra o saque atual no lançamento para telemetria. A leitura
+  // pré-saque só pode usar entradas anteriores — nunca o plano que acabou de nascer.
+  const pastHistory = (gs?.ball?.lastHitBy === gs?.server && (gs?.rally ?? 0) === 0)
+    ? history.slice(0, -1)
+    : history;
+  const recent = pastHistory.slice(-6);
+
+  let xSignal = 0;
+  let ySignal = 0;
+  let confidence = 0;
+
+  if (recent.length >= 3) {
+    const counts = recent.reduce((acc, item) => {
+      const key = `${item.direction ?? 'UNK'}:${item.isFirst === false ? '2' : '1'}:${item.targetSign ?? 0}`;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const patternShare = top ? top[1] / recent.length : 0;
+    if (patternShare >= 0.50) {
+      const [dir, serveNo, targetSignRaw] = top[0].split(':');
+      const targetSign = Number(targetSignRaw) || 0;
+      const sideGuess = dir === 'WIDE'
+        ? targetSign
+        : dir === 'BODY'
+          ? Math.sign(player.pos?.x ?? 0) * 0.18
+          : targetSign * 0.35;
+      xSignal += sideGuess * (0.20 + patternShare * 0.26) * readSkill;
+      ySignal += (serveNo === '1' ? 0.14 : -0.12) * patternShare * readSkill;
+      confidence += patternShare * readSkill * 0.28;
+    }
+  }
+
+  confidence = clamp(confidence, 0, 0.82);
+  if (confidence < 0.12) return { x: 0, y: returnIdentity.positionBias * 0.8, confidence: 0.01 };
+  return {
+    x: clamp(xSignal, -0.62, 0.62) * confidence,
+    y: clamp(ySignal, -0.48, 0.48) * confidence + returnIdentity.positionBias * 0.8,
+    confidence,
+  };
 }
 
 // Helper PT-BR:
@@ -62,10 +132,11 @@ function getBaselineDepth(player) {
   const aggr = player?.attrs?.visaoTatica ?? player?.attrs?.agressividade ?? 60;
   const leitura = player?.attrs?.leitura ?? 60;
   const netAffinity = getNetAffinity(player);
-  const aggrInsideBias = clamp((aggr - 55) / 45, 0, 1) * 0.34;
+  const aggrInsideBias = clamp((aggr - 55) / 45, 0, 1) * 0.52;
   const readBackBias = clamp((leitura - 50) / 50, 0, 1) * 0.20;
   const baselinePlayerBias = (1 - netAffinity) * 0.52;
-  return clamp(0.32 + baselinePlayerBias + readBackBias - aggrInsideBias, 0.20, 1.10);
+  // Valor negativo = dentro da quadra (pressing position). HUNTER+agressivo pode chegar a -0.12m.
+  return clamp(0.28 + baselinePlayerBias + readBackBias - aggrInsideBias + getCourtIdentity(player).positioning.baselineDepthBias, -0.35, 1.10);
 }
 
 // Helper PT-BR:
@@ -79,7 +150,6 @@ function computeBaseTarget(player, gs) {
   const side = player.side > 0 ? 1 : -1;
   const baseDepth = getBaselineDepth(player);
   const baseY = side * (COURT.halfL + baseDepth);
-  const lateralMemoryBias = 0;
   const yClampMin = side > 0 ? 0.55 : -COURT.halfL - THRESHOLDS.outerPlayerY;
   const yClampMax = side > 0 ? COURT.halfL + THRESHOLDS.outerPlayerY : -0.55;
 
@@ -88,7 +158,7 @@ function computeBaseTarget(player, gs) {
   // Em transição, mira a zona ofensiva entre serviço e rede. A qualidade do approach
   // define o quão agressivo pode ser o avanço.
   if (courtMode === 'TRANSITION') {
-    const approachQ = 0.5;
+    const approachQ = clamp(player?.ctx?._approachQuality ?? 0.5, 0, 1);
     const yFraction = clamp(0.44 - approachQ * 0.16, 0.28, 0.44);
     targetY = side * (COURT.halfL * yFraction);
   } else if (player.atNet || courtMode === 'NET') {
@@ -102,7 +172,7 @@ function computeBaseTarget(player, gs) {
     COURT.singlesW / 2 + 0.45,
     COURT.halfW + 0.80,
   );
-  let laneX = clamp((gs?.ball?.pos?.x ?? 0) * (0.24 + netAffinity * 0.18) + lateralMemoryBias, -lateralBaseBand, lateralBaseBand);
+  let laneX = clamp((gs?.ball?.pos?.x ?? 0) * (0.24 + netAffinity * 0.18), -lateralBaseBand, lateralBaseBand);
   if (courtMode === 'TRANSITION') {
     // Helper PT-BR:
     // Cobre o corredor do approach usando memória de onde a bola foi enviada.
@@ -123,6 +193,13 @@ function computeBaseTarget(player, gs) {
     player._returnAdaptiveBias = returnBias;
   } else {
     player._returnAdaptiveBias = { x: 0, y: 0, confidence: 0 };
+  }
+  if (courtMode === 'BASE') {
+    const recoveryPlan = resolveRecoveryPosition(player, gs, { x: laneX, y: targetY });
+    if (recoveryPlan) {
+      laneX = recoveryPlan.x;
+      targetY = recoveryPlan.y;
+    }
   }
   return { x: laneX, y: clamp(targetY, yClampMin, yClampMax) };
 }
@@ -186,8 +263,8 @@ function estimateContactLaneY(player, baseY) {
 
 // Helper PT-BR:
 // Planeja o ponto de contato (x/y/z/t) com fallback robusto para quando a predição não fecha.
-function computeContactPlan(player, gs, baseTarget) {
-  const ball = gs.ball;
+function computeContactPlan(player, gs, baseTarget, perceivedBall = null) {
+  const ball = perceivedBall ?? gs.ball;
   player._movementBallZHint = ball?.pos?.z ?? undefined;
   const side = player.side > 0 ? 1 : -1;
   const courtMode = getCourtMode(player);
@@ -196,7 +273,8 @@ function computeContactPlan(player, gs, baseTarget) {
   const profile = buildInterceptProfile(player);
   const targetY = estimateContactLaneY(player, baseTarget.y);
   const airDensity = gs.environment?.airDensity;
-  const traj = predictTrajectory(ball, targetY, 2.6, airDensity, gs.courtPhysics, profile);
+  const traj = predictTrajectory(ball, targetY, 2.6, airDensity, gs.courtPhysics, profile, gs.environment);
+  const contactTiming = chooseContactPointWindow({ player, gs, trajectory: traj, profile, side });
 
   const fallbackY = clamp(
     targetY,
@@ -229,6 +307,14 @@ function computeContactPlan(player, gs, baseTarget) {
     };
   }
 
+  // Se a busca temporal concluiu que nenhuma janela é alcançável, não deixa o
+  // novo ótimo tardio comandar a corrida. Conserva o cruzamento imediato que o
+  // motor usava como solução de sobrevivência antes de ampliar a previsão.
+  if (contactTiming?.mode === 'EMERGENCY_CONTACT' && traj?.crossPoint) {
+    point = { ...traj.crossPoint };
+    phase = 'TRAVEL';
+  }
+
   // Net players should prioritize aerial interception instead of drifting into bounce-runback.
   if (netPressMode && (ball.bounceCount ?? 0) === 0) {
     const volleyCutY = side * clamp(NETPLAY_THRESHOLDS.NET_CUT_BASE_Y + (1 - netAffinity) * NETPLAY_THRESHOLDS.NET_CUT_STYLE_DELTA,
@@ -251,6 +337,45 @@ function computeContactPlan(player, gs, baseTarget) {
       };
       phase = 'NET_CUT';
     }
+
+    // Se o jogador ja esta na meia quadra/rede e a bola vem jogavel no ar,
+    // prioriza o voleio. Sem isso, quando o preditor so encontra landPoint,
+    // o plano cai no pos-quique e o net player "espera" uma bola que deveria
+    // interceptar antes do bounce.
+    const vy = ball?.vel?.y ?? 0;
+    const vx = ball?.vel?.x ?? 0;
+    const vz = ball?.vel?.z ?? 0;
+    const comingToMe = ball.lastHitBy !== player.id && ballIsComingToPlayer(player, ball);
+    const leadT = Math.abs(vy) > 0.05
+      ? clamp(Math.abs((ball.pos.y ?? player.pos.y) - player.pos.y) / Math.abs(vy), 0.06, 0.42)
+      : 0.12;
+    const leadX = (ball.pos.x ?? 0) + vx * leadT;
+    const leadYRaw = (ball.pos.y ?? 0) + vy * leadT;
+    const leadY = side > 0 ? Math.min(leadYRaw, volleyCutY) : Math.max(leadYRaw, volleyCutY);
+    const leadZ = (ball.pos.z ?? profile.preferredContactZ) + vz * leadT;
+    const liveDist = Math.hypot(leadX - player.pos.x, leadY - player.pos.y);
+    const inVolleyHeight = leadZ >= 0.62 && leadZ <= THRESHOLDS.ballHitMaxZ + 0.62;
+    const notClearLob = !(traj?.landPoint && (
+      side > 0
+        ? traj.landPoint.y > player.pos.y + NETPLAY_THRESHOLDS.LOB_CLEAR_BEHIND_MARGIN
+        : traj.landPoint.y < player.pos.y - NETPLAY_THRESHOLDS.LOB_CLEAR_BEHIND_MARGIN
+    ));
+    const reachableAirVolley = comingToMe
+      && inVolleyHeight
+      && notClearLob
+      && (liveDist <= Math.max((player.reach ?? PLAYER_CFG.reach) * 2.35, 2.05)
+        || Math.abs(leadY) <= COURT.serviceLineY + 0.85);
+
+    if (reachableAirVolley) {
+      point = {
+        x: leadX,
+        y: leadY,
+        z: clamp(leadZ, Math.max(profile.minContactZ, 0.68), Math.min(profile.maxContactZ + 0.42, THRESHOLDS.ballHitMaxZ + 0.62)),
+        t: leadT,
+      };
+      phase = leadZ >= 1.55 ? 'OVERHEAD_CUT' : 'NET_CUT';
+      player._volleyType = leadZ >= 1.55 ? 'smash' : 'position';
+    }
   }
 
   // Verifica se a bola vai pousar no lado do jogador — independente de targetY
@@ -263,7 +388,17 @@ function computeContactPlan(player, gs, baseTarget) {
   );
   if (landingOnMyHalf) {
     const netAffinity = getNetAffinity(player);
-    const behindLandDist = clamp(1.05 + (1 - netAffinity) * 1.20, 1.00, 2.20);
+    const landAbsY = Math.abs(traj.landPoint.y);
+    const isIntermediateZone = landAbsY < COURT.halfL - 0.8 && landAbsY > COURT.serviceLineY;
+    const isDeepZone = landAbsY >= COURT.halfL - 0.8;
+    // Zona funda: comportamento original — recuo total para ter tempo de montar o golpe.
+    // Zona intermediária: recuo mínimo — jogador fica na zona e ataca a bola de frente.
+    // Service box: recuo quase zero — jogador entra na bola.
+    const behindLandDist = isDeepZone
+      ? clamp(1.05 + (1 - netAffinity) * 1.20, 1.00, 2.20)
+      : isIntermediateZone
+        ? clamp(0.28 + (1 - netAffinity) * 0.52, 0.28, 0.80)
+        : clamp(0.18 + (1 - netAffinity) * 0.38, 0.18, 0.56);
     const runbackY = traj.landPoint.y + side * behindLandDist;
 
     // Bug fix: tooCloseToBounce deve medir distância em Y relativa ao jogador,
@@ -287,6 +422,24 @@ function computeContactPlan(player, gs, baseTarget) {
       && traj.landPoint
       && Math.abs(traj.optimalHitPoint.y - traj.landPoint.y) < 1.10;
 
+    // LOB RETREAT — decisão preditiva, não visual.
+    // Antes o jogador na rede só abandonava a tentativa quando a bola já tinha
+    // passado por seu Y. Entre a leitura e esse instante ele ficava preso entre
+    // o estado de voleio e o de recuperação, parecendo travar sob o lob.
+    // Aqui usamos o ponto de queda previsto: se a bola vai cair claramente atrás
+    // dele e fora de uma janela realista de overhead, a prioridade vira corrida.
+    const lobLandingBehind = ballStillInFlight
+      && !!traj?.landPoint
+      && (side > 0
+        ? traj.landPoint.y > player.pos.y + 0.72
+        : traj.landPoint.y < player.pos.y - 0.72);
+    const lobIsDeep = !!traj?.landPoint
+      && Math.abs(traj.landPoint.y) > COURT.serviceLineY + 1.15;
+    const overheadStillPlayable = (ball?.pos?.z ?? 0) <= profile.maxContactZ + 0.38
+      && Math.hypot((ball?.pos?.x ?? 0) - player.pos.x, (ball?.pos?.y ?? 0) - player.pos.y) <= Math.max((player.reach ?? PLAYER_CFG.reach) * 1.36, 1.55);
+    const emergencyLobRetreat = lobLandingBehind && lobIsDeep && !overheadStillPlayable
+      && (player.atNet || getCourtMode(player) === 'NET' || getCourtMode(player) === 'TRANSITION');
+
     // Bola curta/lenta no mesmo lado: não deve acionar runback.
     // Nesses casos, o comportamento realista é entrar na bola e bloquear/chipar.
     const isShortLanding = traj?.landPoint ? Math.abs(traj.landPoint.y) < (COURT.serviceLineY + 1.8) : false;
@@ -307,7 +460,11 @@ function computeContactPlan(player, gs, baseTarget) {
       && ball.lastBounceSide === side
       && ballSpeed2D < 10.8
       && (ball?.vel?.z ?? 0) > -0.12
-      && (ball?.pos?.z ?? 0) >= Math.max(profile.preferredContactZ - 0.04, 1.00)
+      // FIX: floor de 1.00m → 0.78m. Bolas flat/topspin normais picam entre
+      // 0.55-0.85m; só kick serve e loop alto passavam de 1.00m. Com o floor
+      // antigo, ataque-na-subida nunca disparava em rallies comuns e tudo caía
+      // no FORWARD_PICKUP — que bate na altura atual (baixa), não na prevista.
+      && (ball?.pos?.z ?? 0) >= Math.max(profile.preferredContactZ - 0.12, 0.78)
       && (ball?.pos?.z ?? 0) <= 3.25;
     const playerUnderHighBounce = liveBallDistToPlayer <= Math.max((player.reach ?? PLAYER_CFG.reach) * 1.55, 1.30)
       && Math.abs((ball?.pos?.x ?? 0) - player.pos.x) <= 0.95;
@@ -320,6 +477,10 @@ function computeContactPlan(player, gs, baseTarget) {
       && Math.abs((ball?.pos?.x ?? 0) - player.pos.x) <= 1.15
       && Math.abs((ball?.pos?.y ?? 0) - player.pos.y) <= 2.10;
     const hardForwardPickup = easyPostBouncePickup || easyHighBouncePickup || easyBounceAttackBall;
+    const waitForHighFinish = easyHighBouncePickup
+      && (ball?.pos?.z ?? 0) < Math.min(profile.maxContactZ - 0.08, Math.max(profile.preferredContactZ + 0.36, 1.32))
+      && (ball?._timeSinceBounce ?? 0) <= 0.58
+      && liveBallDistToPlayer <= Math.max((player.reach ?? PLAYER_CFG.reach) * 1.75, 1.55);
 
     // FIX: pesos reduzidos para condições que disparam em bolas normais:
     // freshRisingBounce: 0.24→0.08  (bola subindo é normal, não é motivo de runback)
@@ -354,7 +515,20 @@ function computeContactPlan(player, gs, baseTarget) {
     const lobClearlyBehind = traj?.landPoint && (
       side > 0 ? traj.landPoint.y > player.pos.y + NETPLAY_THRESHOLDS.LOB_CLEAR_BEHIND_MARGIN : traj.landPoint.y < player.pos.y - NETPLAY_THRESHOLDS.LOB_CLEAR_BEHIND_MARGIN
     );
-    if (shouldRunBack && (!netPressMode || lobClearlyBehind)) {
+    if (emergencyLobRetreat) {
+      point = {
+        x: traj.landPoint.x,
+        y: runbackY,
+        z: Math.max(profile.minContactZ, Math.min(profile.preferredContactZ, 1.05)),
+        t: Math.max((point.t ?? 0.26) + 0.22, 0.44),
+      };
+      phase = 'LOB_RETREAT';
+      player.atNet = false;
+      if (player.ctx) {
+        player.ctx.courtMode = 'BASE';
+        player.ctx.netPhase = 'BASE';
+      }
+    } else if (shouldRunBack && (!netPressMode || lobClearlyBehind)) {
       point = {
         x: point.x * 0.40 + traj.landPoint.x * 0.60,
         y: runbackY,
@@ -362,20 +536,81 @@ function computeContactPlan(player, gs, baseTarget) {
         t: (point.t ?? 0.26) + 0.16,  // mais tempo para subir
       };
       phase = 'RUNBACK';
+    } else if (waitForHighFinish) {
+      point = {
+        x: ball?.pos?.x ?? point.x,
+        y: ball?.pos?.y ?? point.y,
+        z: clamp(Math.max(profile.preferredContactZ + 0.28, 1.18), profile.minContactZ, profile.maxContactZ),
+        t: clamp(0.30 + (profile.preferredContactZ + 0.34 - (ball?.pos?.z ?? 0)) * 0.18, 0.24, 0.42),
+      };
+      phase = 'WAIT_HIGH_FINISH';
+      player._easyHighBounceAttack = true;
     } else if (hardForwardPickup || afterFirstBounceOnMySide) {
       const forwardBiasY = side > 0 ? 0.18 : -0.18;
       const holdPickupBall = afterFirstBounceOnMySide
         && !hardForwardPickup
         && liveBallDistToPlayer <= Math.max((player.reach ?? PLAYER_CFG.reach) * 1.10, 0.95);
+
+      // FIX: bug do bate-baixo.
+      //
+      // Antes:
+      //   z: clamp(ball?.pos?.z ?? point.z ?? profile.preferredContactZ, ...)
+      // O `ball.pos.z` (altura ATUAL) sobrescrevia o `point.z` (altura PREVISTA
+      // no swing time, vinda do optimalHitPoint da predictTrajectory que já
+      // considera o riseBonus do perfil). Como ball.pos.z nunca é undefined,
+      // o fallback para point.z era código morto. Resultado: swing 0.16-0.20s
+      // depois, mas mirando na altura velha — bola subindo perde a janela.
+      //
+      // Agora:
+      //   - Bola subindo (vel.z > 0.5): respeitar `point.z` (altura prevista
+      //     no swing time) e recuar levemente em Y para dar tempo do pico.
+      //   - Bola caindo/skidando: usar `ball.pos.z` mesmo (não há tempo a ganhar).
+      const ballRising = (ball?.vel?.z ?? 0) > 0.5;
+      const currentBallZ = ball?.pos?.z ?? profile.preferredContactZ;
+      const predictedZ = point.z ?? profile.preferredContactZ;
+      const willRiseToBetterZ = ballRising && predictedZ > currentBallZ + 0.10;
+      const contactZ = willRiseToBetterZ ? predictedZ : currentBallZ;
+      // Quando vamos esperar o pico, recua ~32cm para dar tempo. Senão usa o
+      // forwardBias original (entra na bola para hold/forward pickup curto).
+      const stepBackY = willRiseToBetterZ ? side * 0.32 : forwardBiasY;
+      // Mais tempo para o swing quando esperando subida (0.30s vs 0.20s padrão).
+      const swingT = holdPickupBall ? Math.min(point.t ?? 0.18, 0.16)
+        : willRiseToBetterZ ? Math.min(point.t ?? 0.32, 0.34)
+        : Math.min(point.t ?? 0.22, 0.20);
+
       point = {
         x: ball?.pos?.x ?? point.x,
-        y: holdPickupBall ? player.pos.y : (ball?.pos?.y ?? point.y) + forwardBiasY,
-        z: clamp(ball?.pos?.z ?? point.z ?? profile.preferredContactZ, profile.minContactZ, profile.maxContactZ),
-        t: holdPickupBall ? Math.min(point.t ?? 0.18, 0.16) : Math.min(point.t ?? 0.22, 0.20),
+        y: holdPickupBall ? player.pos.y : (ball?.pos?.y ?? point.y) + stepBackY,
+        z: clamp(contactZ, profile.minContactZ, profile.maxContactZ),
+        t: swingT,
       };
-      phase = holdPickupBall ? 'HOLD_GROUND' : 'FORWARD_PICKUP';
+      phase = holdPickupBall ? 'HOLD_GROUND'
+        : willRiseToBetterZ ? 'PEAK_WAIT'
+        : 'FORWARD_PICKUP';
+      player._easyHighBounceAttack = easyHighBouncePickup || easyBounceAttackBall || willRiseToBetterZ;
     }
   }
+
+  // A escolha temporal é aplicada depois dos fallbacks de pickup, mas nunca
+  // sobrescreve decisões especiais de rede, lob ou recuo emergencial.
+  const protectedPhase = ['NET_CUT', 'OVERHEAD_CUT', 'LOB_RETREAT', 'RUNBACK', 'WAIT_HIGH_FINISH'].includes(phase);
+  // A camada nova interfere apenas quando encontrou uma melhora temporal real.
+  // Contatos que já eram bons continuam no caminho calibrado; isto evita trocar
+  // uma solução estável por outra apenas alguns centímetros mais "ideal".
+  const deliberateWaitSafe = !!contactTiming?.waitForBetterContact
+    && (contactTiming?.arrivalMargin ?? -1) >= 0.18;
+  const appliedContactWait = !!(contactTiming?.point && deliberateWaitSafe && !netPressMode && !protectedPhase);
+  if (appliedContactWait) {
+    point = { ...contactTiming.point };
+    // O subtipo pode mudar de WAIT_FOR_PEAK para IDEAL_HEIGHT conforme a bola
+    // sobe. Isso é progresso do mesmo plano, não uma nova decisão que justifica
+    // frear e recomputar toda a corrida a cada frame.
+    phase = contactTiming.mode === 'EMERGENCY_CONTACT' ? 'CONTACT_EMERGENCY' : 'CONTACT_WINDOW';
+  }
+  player._contactTimingPlan = contactTiming;
+
+  const footwork = planContactFootwork({ player, gs, point, phase, profile });
+  if (footwork?.bodyTarget) point = { ...footwork.bodyTarget };
 
   const x = clamp(point.x, -COURT.singlesW / 2 - THRESHOLDS.outerPlayerX, COURT.singlesW / 2 + THRESHOLDS.outerPlayerX);
   const y = clamp(
@@ -393,6 +628,16 @@ function computeContactPlan(player, gs, baseTarget) {
     profile,
     phase,
     runbackScore: player?._tm?.runbackScore ?? 0,
+    contactTiming: contactTiming?.mode ?? null,
+    contactTimingReason: contactTiming?.reason ?? null,
+    contactCandidateCount: contactTiming?.candidateCount ?? 0,
+    waitedForBetterContact: !!contactTiming?.waitForBetterContact,
+    appliedContactWait,
+    footworkStance: footwork?.stance ?? null,
+    footworkWing: footwork?.wing ?? null,
+    footworkPreparation: footwork?.preparationQuality ?? null,
+    idealContactRadius: footwork?.idealContactRadius ?? null,
+    runAroundForehand: !!footwork?.runAround,
     isAfterBounce: (ball.bounceCount ?? 0) >= 1 && ball.lastBounceSide === player.side,
   };
 }
@@ -407,6 +652,7 @@ function chooseMoveFamily(player, target) {
   const side = player.side > 0 ? 1 : -1;
   const movingBack = side > 0 ? dy > 0 : dy < 0;
 
+  if (target?.phase === 'LOB_RETREAT') return 'CROSSOVER';
   if (adx < 0.45 && ady < 0.45) return 'ADJUST';
   if (movingBack && ady > 1.0) return 'BACKPEDAL';
   if (adx > ady * 1.35) return adx > 1.7 ? 'CROSSOVER' : 'LATERAL';
@@ -416,10 +662,12 @@ function chooseMoveFamily(player, target) {
 
 // Helper PT-BR:
 // Caps de movimento por família. Aqui você controla "personalidade" cinemática.
-function movementCaps(player, family) {
-  const baseSpeed = player.playerSpeed ?? PLAYER_CFG.speed;
-  const baseAccel = player.playerAccel ?? PLAYER_CFG.maxAccel;
-  const baseDecel = player.playerDecel ?? PLAYER_CFG.maxDecel;
+function movementCaps(player, family, gs = null) {
+  const talent = getTalentRuntimeEffects(player, { phase: player?.atNet ? 'NET' : 'RALLY', stamina: player?.stamina });
+  const footing = getSurfaceFootingProfile(player, gs);
+  const baseSpeed = (player.playerSpeed ?? PLAYER_CFG.speed) * (1 + talent.movementAdd) * footing.speedMult;
+  const baseAccel = (player.playerAccel ?? PLAYER_CFG.maxAccel) * (1 + talent.accelAdd) * footing.accelMult;
+  const baseDecel = (player.playerDecel ?? PLAYER_CFG.maxDecel) * footing.decelMult;
 
   switch (family) {
     case 'ADJUST':
@@ -427,7 +675,7 @@ function movementCaps(player, family) {
     case 'BACKPEDAL':
       return { speed: baseSpeed * MOVEMENT.backwardSpeedMult * 0.94, accel: baseAccel * 0.90, decel: baseDecel * 0.98, lateral: 0.72 };
     case 'LATERAL':
-      return { speed: baseSpeed * MOVEMENT.lateralSpeedMult * 1.02, accel: baseAccel * 0.98, decel: baseDecel * 1.03, lateral: 1.00 };
+      return { speed: baseSpeed * MOVEMENT.lateralSpeedMult * 1.02 * footing.lateralMult, accel: baseAccel * 0.98, decel: baseDecel * 1.03, lateral: 1.00 };
     case 'CROSSOVER':
       return { speed: baseSpeed * 1.06, accel: baseAccel * 1.06, decel: baseDecel * 0.96, lateral: 0.90 };
     default:
@@ -437,18 +685,25 @@ function movementCaps(player, family) {
 
 // Helper PT-BR:
 // Steering físico: acelera/freia até o alvo respeitando stamina e inércia.
-function applySteering(player, target, dt, family) {
+function applySteering(player, target, dt, family, gs = null) {
   const dx = target.x - player.pos.x;
   const dy = target.y - player.pos.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const dirX = dist > 1e-5 ? dx / dist : 0;
   const dirY = dist > 1e-5 ? dy / dist : 0;
-  const caps = movementCaps(player, family);
+  const caps = movementCaps(player, family, gs);
 
   const staminaFrac = clamp(player.stamina ?? 1.0, 0, 1);
-  const speedStamina = STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor);
-  const accelStamina = INERTIA.staminaAccelMin + staminaFrac * (1 - INERTIA.staminaAccelMin);
+  const resistance = clamp((player?.attrs?.resistencia ?? 70) / 100, 0, 1);
+  // Resistência não deixa o jogador mais rápido descansado; ela preserva uma
+  // parcela maior da perna quando a stamina acabou. Isso faz a diferença aparecer
+  // no fim do set, não no primeiro sprint da partida.
+  const fatigueProtection = clamp((resistance - 0.45) / 0.55 + getTalentRuntimeEffects(player).fatigueProtectionAdd, 0, 1);
+  const effectiveStamina = clamp(staminaFrac + (1 - staminaFrac) * fatigueProtection * 0.24, 0, 1);
+  const speedStamina = STAMINA.speedMinFactor + effectiveStamina * (1 - STAMINA.speedMinFactor);
+  const accelStamina = INERTIA.staminaAccelMin + effectiveStamina * (1 - INERTIA.staminaAccelMin);
   const currentSpeed = Math.sqrt(player.vel.x * player.vel.x + player.vel.y * player.vel.y);
+  const surfaceFooting = updateSurfaceFooting(player, gs, { target, currentSpeed, baseDecel: player.playerDecel ?? PLAYER_CFG.maxDecel });
   const urgency = dist < 0.75 ? 0.52 : dist < 1.8 ? 0.76 : dist < 3.0 ? 0.92 : 1.03;
   let targetSpeed = caps.speed * speedStamina * urgency;
 
@@ -463,11 +718,22 @@ function applySteering(player, target, dt, family) {
     desiredVy *= slow;
   }
 
-  const dvx = desiredVx - player.vel.x;
-  const dvy = desiredVy - player.vel.y;
-  const dvMag = Math.sqrt(dvx * dvx + dvy * dvy) || 1e-9;
+  let dvx = desiredVx - player.vel.x;
+  let dvy = desiredVy - player.vel.y;
+  let dvMag = Math.sqrt(dvx * dvx + dvy * dvy) || 1e-9;
   let maxAccelStep = caps.accel * accelStamina * dt;
   let maxDecelStep = caps.decel * dt;
+
+  if (surfaceFooting.slideActive) {
+    const carry = surfaceFooting.momentumCarry;
+    desiredVx = desiredVx * (1 - carry) + player.vel.x * carry;
+    desiredVy = desiredVy * (1 - carry) + player.vel.y * carry;
+    maxDecelStep *= 0.92 + surfaceFooting.slideControl * 0.10;
+  }
+  if (surfaceFooting.slipRisk > 0) {
+    maxAccelStep *= 1 - surfaceFooting.slipRisk * 0.34;
+    maxDecelStep *= 1 - surfaceFooting.slipRisk * 0.22;
+  }
 
   // Janela curta de recuperação inercial pós-golpe:
   // impede retorno "trilhado" imediato após corrida/estirada.
@@ -496,6 +762,33 @@ function applySteering(player, target, dt, family) {
     }
   }
 
+  const committedSteering = applyBodyCommitmentToSteering(player, {
+    desiredVx,
+    desiredVy,
+    maxAccelStep,
+    maxDecelStep,
+  });
+  desiredVx = committedSteering.desiredVx;
+  desiredVy = committedSteering.desiredVy;
+  maxAccelStep = committedSteering.maxAccelStep;
+  maxDecelStep = committedSteering.maxDecelStep;
+
+  const splitSteering = applySplitStepToSteering(player, {
+    desiredVx,
+    desiredVy,
+    maxAccelStep,
+    maxDecelStep,
+  });
+  desiredVx = splitSteering.desiredVx;
+  desiredVy = splitSteering.desiredVy;
+  maxAccelStep = splitSteering.maxAccelStep;
+  maxDecelStep = splitSteering.maxDecelStep;
+
+  // Os vetores precisam refletir o carry aplicado acima, não o alvo original.
+  dvx = desiredVx - player.vel.x;
+  dvy = desiredVy - player.vel.y;
+  dvMag = Math.sqrt(dvx * dvx + dvy * dvy) || 1e-9;
+
   const step = dvMag > 0 ? (dvMag > 0 && currentSpeed <= targetSpeed ? maxAccelStep : maxDecelStep) / dvMag : 0;
   const alpha = clamp(step, 0, 1);
 
@@ -509,10 +802,24 @@ function applySteering(player, target, dt, family) {
     player.vel.y = (player.vel.y / spd) * maxSpd;
   }
 
+  const oldX = player.pos.x;
+  const oldY = player.pos.y;
   player.pos.x += player.vel.x * dt;
   player.pos.y += player.vel.y * dt;
   player.pos.x = clamp(player.pos.x, -COURT.singlesW / 2 - THRESHOLDS.outerPlayerX, COURT.singlesW / 2 + THRESHOLDS.outerPlayerX);
   player.pos.y = clamp(player.pos.y, -COURT.halfL - THRESHOLDS.outerPlayerY, COURT.halfL + THRESHOLDS.outerPlayerY);
+
+  // Corrida passa a cansar de verdade. A distância percorrida é pequena por
+  // frame, mas rallies longos e perseguições cruzadas acumulam um custo visível.
+  const travelled = Math.hypot(player.pos.x - oldX, player.pos.y - oldY);
+  const familyCost = family === 'CROSSOVER' ? 1.28 : family === 'BACKPEDAL' ? 1.18 : family === 'LATERAL' ? 1.12 : family === 'TRAVEL' ? 1.06 : 0.68;
+  const courtCost = gs?.courtMods?.staminaDecayMult ?? 1;
+  const resistanceDrain = clamp(1.28 - resistance * 0.56, 0.72, 1.14);
+  const wrongFootCost = (player?._tm?.bodyCommitment?.reversalTimer ?? 0) > 0 ? 1.14 : 1;
+  // O golpe já tem custo físico próprio. Mantemos corrida relevante em perseguições,
+  // mas evitamos somar um segundo dreno alto em cada frame de rally.
+  const movementDrain = travelled * 0.0020 * familyCost * courtCost * resistanceDrain * wrongFootCost * (surfaceFooting.energyMult ?? 1);
+  player.stamina = clamp((player.stamina ?? 1) - movementDrain, 0, 1);
 }
 
 // Helper PT-BR:
@@ -535,9 +842,30 @@ function refreshContactFlags(player, gs, plan) {
     && !secondBounceThreat;
 
   const baseReach = player.reach ?? PLAYER_CFG.reach;
-  const moveClass = d <= baseReach * 0.92 ? 'NORMAL_HIT' : d <= baseReach * 1.08 ? 'EMERGENCY_REACH' : 'CHASE';
-  const canContactRaw = sideOk && d <= baseReach * 1.08 && ball.pos.z < THRESHOLDS.ballHitMaxZ + 0.3 && ball.lastHitBy !== player.id;
-  const execDistNorm = clamp(1 - d / Math.max(baseReach * 1.04, 0.1), 0, 1);
+  const defense = clamp((player?.attrs?.defesa ?? 60) / 100, 0, 1);
+  // `player.reach` é o alcance corporal de referência. Um groundstroke normal
+  // usa rotação de tronco + extensão da raquete sem ser uma estirada defensiva.
+  const normalContactReach = baseReach * 1.14;
+  // Defesa só amplia o alcance na zona de recuperação. Uma bola confortável
+  // continua igual para todos; a diferença aparece quando o jogador chega no limite.
+  const recoveryReachMult = 1 + clamp((defense - 0.42) / 0.58, 0, 1) * 0.12 + getTalentRuntimeEffects(player, { phase: player?.atNet ? 'NET' : 'RALLY' }).defenseReachBonus;
+  const recoveryReach = normalContactReach * recoveryReachMult;
+  const useRecoveryReach = d > normalContactReach;
+  const contactReach = useRecoveryReach ? recoveryReach : normalContactReach;
+  const moveClass = d <= normalContactReach ? 'NORMAL_HIT' : d <= recoveryReach * 1.04 ? 'EMERGENCY_REACH' : 'CHASE';
+  const aerialWindow = !hasBounced
+    && (player.atNet || getCourtMode(player) === 'NET' || plan?.phase === 'NET_CUT')
+    && ball.pos.z < THRESHOLDS.ballHitMaxZ + 0.72;
+  const overheadWindow = ball.lastHitBy !== player.id
+    && sideOk
+    && ball.pos.z >= 1.55
+    && ball.pos.z < THRESHOLDS.ballHitMaxZ + 0.72
+    && d <= contactReach * 1.18;
+  const canContactRaw = sideOk
+    && d <= contactReach * (aerialWindow || overheadWindow ? 1.18 : 1.04)
+    && (ball.pos.z < THRESHOLDS.ballHitMaxZ + 0.3 || aerialWindow || overheadWindow)
+    && ball.lastHitBy !== player.id;
+  const execDistNorm = clamp(1 - d / Math.max(contactReach * 1.04, 0.1), 0, 1);
   const execHeightNorm = clamp(1 - Math.abs((ball.pos.z ?? prefZ) - prefZ) / 0.44, 0, 1);
   const execRiseNorm = clamp(1 - Math.max(0, minZ - (ball.pos.z ?? minZ)) / 0.24, 0, 1);
   const executionScore = clamp(execDistNorm * 0.52 + execHeightNorm * 0.33 + execRiseNorm * 0.15, 0, 1);
@@ -546,7 +874,7 @@ function refreshContactFlags(player, gs, plan) {
     && sideOk
     && ball.lastBounceSide === player.side
     && ball.lastHitBy !== player.id
-    && d <= baseReach * 1.14
+    && d <= contactReach * 1.08
     && Math.abs((ball.pos.x ?? 0) - player.pos.x) <= 1.05
     && Math.abs((ball.pos.y ?? 0) - player.pos.y) <= 1.35
     && (ball.pos.z ?? 0) <= THRESHOLDS.ballHitMaxZ + 0.95
@@ -558,14 +886,25 @@ function refreshContactFlags(player, gs, plan) {
   player._holdForRiseMinZ = minZ;
   player._movementCanExecutePlannedShot = !!canContact;
   player._movementCanContactBall = !!canContact;
+  player._movementDistanceToBall = d;
+  player._movementBaseReach = baseReach;
+  player._movementNormalContactReach = normalContactReach;
+  player._movementContactReach = contactReach;
+  player._movementEmergencyReachActive = moveClass === 'EMERGENCY_REACH';
+  player._defensiveContact = {
+    active: moveClass === 'EMERGENCY_REACH' || moveClass === 'CHASE' || (player._arrivalMargin ?? 0) < -0.12,
+    defense,
+    reachMult: recoveryReachMult,
+    emergency: moveClass === 'EMERGENCY_REACH' || moveClass === 'CHASE',
+  };
   player._movementContactClass = isAerialIntercept
     ? 'AERIAL_INTERCEPT'
-    : canContact ? 'NORMAL_HIT' : localBallPassedWindow
+    : overheadWindow
+      ? 'OVERHEAD'
+    : canContact ? moveClass : localBallPassedWindow
         ? 'LOCAL_BOUNCE_HIT'
-        : canContact
-          ? moveClass
-          : 'CHASE';
-  player._movementContactScore = clamp(1 - d / Math.max(baseReach * 1.12, 0.1), 0, 1);
+        : 'CHASE';
+  player._movementContactScore = clamp(1 - d / Math.max(contactReach * 1.12, 0.1), 0, 1);
 }
 
 // Helper PT-BR:
@@ -580,7 +919,7 @@ function updateNetIntent(player, gs) {
   // Helper PT-BR:
   // CONSOLIDA subida: quando o jogador em TRANSITION cruza a zona de rede, vira NET real.
   if (courtMode === 'TRANSITION' && !player.atNet) {
-    const approachQ = 0.5;
+    const approachQ = clamp(player?.ctx?._approachQuality ?? 0.5, 0, 1);
     const netZoneFrac = clamp(0.42 - approachQ * 0.08, 0.30, 0.42);
     const netZoneY = side * (COURT.halfL * netZoneFrac);
     const reachedNet = side > 0 ? player.pos.y <= netZoneY : player.pos.y >= netZoneY;
@@ -632,6 +971,10 @@ function ensureRuntime(player) {
     runbackScore: 0,
     contactSettleTime: 0,
     contactReadiness: 0,
+    perception: null,
+    bodyCommitment: null,
+    splitStep: null,
+    planState: null,
   };
 }
 
@@ -647,32 +990,56 @@ function updateContactReadiness(player, target, dt, defendNow) {
     player._contactReadiness = 0;
     player._contactSettleTime = 0;
     player._commitDistance = null;
+    player._commitDistanceRaw = null;
+    player._contactPositionError = null;
     return 0;
   }
 
   const dx = (target.x ?? player.pos.x) - player.pos.x;
   const dy = (target.y ?? player.pos.y) - player.pos.y;
-  const commitDistance = Math.sqrt(dx * dx + dy * dy);
+  const commitDistanceRaw = Math.sqrt(dx * dx + dy * dy);
   const speed = Math.hypot(player.vel?.x ?? 0, player.vel?.y ?? 0);
-  const reach = Math.max(player.reach ?? PLAYER_CFG.reach, 0.1);
+  const baseReach = Math.max(player._movementBaseReach ?? player.reach ?? PLAYER_CFG.reach, 0.1);
+  const contactReach = Math.max(player._movementContactReach ?? baseReach, baseReach);
   const arrivalMargin = player._arrivalMargin ?? 0;
   const contactScore = player._movementContactScore ?? 0;
+  const liveContactDistance = Number.isFinite(player._movementDistanceToBall)
+    ? player._movementDistanceToBall
+    : commitDistanceRaw;
+  const inLiveContactWindow = !!player._movementCanContactBall || !!player._movementCanExecutePlannedShot;
 
-  const closeScore = clamp(1 - commitDistance / Math.max(reach * 0.92, 0.25), 0, 1);
-  const speedScore = clamp(1 - speed / 2.15, 0, 1);
+  // O alvo do preditor é o ponto da BOLA. O corpo não precisa ocupar esse
+  // ponto: um contato preparado acontece dentro de uma "casca" de alcance da
+  // raquete. Medir distância absoluta até zero fazia qualquer golpe a 70–95 cm
+  // parecer uma perseguição ainda incompleta.
+  const idealContactRadius = player?._footworkPlan?.idealContactRadius ?? baseReach * 0.86;
+  const distanceForReadiness = inLiveContactWindow
+    ? (player?._footworkPlan ? liveContactDistance : Math.min(commitDistanceRaw, liveContactDistance))
+    : commitDistanceRaw;
+  const contactPositionError = Math.abs(distanceForReadiness - idealContactRadius);
+  const commitDistance = distanceForReadiness;
+
+  const explosiveness = clamp((player?.attrs?.explosividade ?? 60) / 100, 0, 1);
+  const reading = clamp((player?.attrs?.leitura ?? 60) / 100, 0, 1);
+  const decelSkill = explosiveness * 0.62 + reading * 0.38;
+  const closeScore = clamp(1 - contactPositionError / Math.max(contactReach * 0.72, 0.25), 0, 1);
+  const settledSpeedLimit = 1.85 + decelSkill * 0.90;
+  const speedScore = clamp(1 - speed / settledSpeedLimit, 0, 1);
   const timingScore = clamp((arrivalMargin + 0.10) / 0.34, 0, 1);
   const sensorScore = clamp(contactScore, 0, 1);
+  const footingStability = clamp(player?._surfaceFooting?.stability ?? 1, 0, 1);
   const rawReadiness = clamp(
     closeScore * 0.40
       + speedScore * 0.24
       + timingScore * 0.22
-      + sensorScore * 0.14,
+      + sensorScore * 0.14
+      - (1 - footingStability) * 0.14,
     0,
     1,
   );
 
-  const inSetZone = commitDistance <= reach * 0.72
-    && speed <= 2.25
+  const inSetZone = contactPositionError <= contactReach * 0.38
+    && speed <= settledSpeedLimit
     && arrivalMargin > -0.12;
   player._tm.contactSettleTime = inSetZone
     ? clamp((player._tm.contactSettleTime ?? 0) + dt, 0, 0.42)
@@ -681,13 +1048,59 @@ function updateContactReadiness(player, target, dt, defendNow) {
   const settleBoost = clamp((player._tm.contactSettleTime ?? 0) / 0.16, 0, 1) * 0.16;
   const previous = player._tm.contactReadiness ?? 0;
   const blendUp = rawReadiness > previous ? 0.46 : 0.28;
-  const readiness = clamp(previous + (rawReadiness + settleBoost - previous) * blendUp, 0, 1);
+  const blendedReadiness = previous + (rawReadiness + settleBoost - previous) * blendUp;
+  // O primeiro frame dentro da janela de contato não pode herdar quase toda a
+  // prontidão baixa da corrida anterior. O snapshot atual já conhece distância,
+  // velocidade e timing; quando o contato abriu, ele é a fonte mais fiel.
+  const liveContactFloor = inLiveContactWindow ? rawReadiness * 0.90 : 0;
+  const readiness = clamp(Math.max(blendedReadiness, liveContactFloor), 0, 1);
 
   player._tm.contactReadiness = readiness;
   player._contactReadiness = readiness;
   player._contactSettleTime = player._tm.contactSettleTime;
   player._commitDistance = commitDistance;
+  player._commitDistanceRaw = commitDistanceRaw;
+  player._contactPositionError = contactPositionError;
+  player._footworkSpacingQuality = clamp(1 - contactPositionError / Math.max(baseReach * 0.46, 0.22), 0, 1);
+  // Alcance amplo não é sinônimo de estirada. Se o jogador chegou com timing,
+  // postura e distância controláveis, o contato é um groundstroke em movimento.
+  // Mantemos EMERGENCY_REACH para quem realmente chega tarde ou desmontado.
+  if (player._movementContactClass === 'EMERGENCY_REACH'
+      && readiness >= 0.24
+      && arrivalMargin > -0.18
+      && contactPositionError <= contactReach * 0.46) {
+    player._movementContactClass = 'MOVING_HIT';
+    player._movementEmergencyReachActive = false;
+    if (player._defensiveContact) {
+      player._defensiveContact.active = false;
+      player._defensiveContact.emergency = false;
+    }
+  }
   return readiness;
+}
+
+// Helper PT-BR:
+// Estima chegada respeitando velocidade atual e aceleração. distance/speed puro
+// tratava primeira passada e frenagem como instantâneas, escondendo a diferença
+// entre correr até a bola e realmente chegar a tempo de montar o golpe.
+function estimateArrivalTime(player, target, caps, effectiveSpeed) {
+  const dx = (target?.x ?? player.pos.x) - player.pos.x;
+  const dy = (target?.y ?? player.pos.y) - player.pos.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= 0.001) return 0;
+
+  const dirX = dx / distance;
+  const dirY = dy / distance;
+  const projectedSpeed = Math.max(0, (player.vel?.x ?? 0) * dirX + (player.vel?.y ?? 0) * dirY);
+  const accel = Math.max(2.5, caps?.accel ?? player.playerAccel ?? PLAYER_CFG.maxAccel);
+  const topSpeed = Math.max(2.05, effectiveSpeed);
+  const accelTime = Math.max(0, (topSpeed - projectedSpeed) / accel);
+  const accelDistance = projectedSpeed * accelTime + 0.5 * accel * accelTime * accelTime;
+
+  if (distance <= accelDistance) {
+    return Math.max(0, (-projectedSpeed + Math.sqrt(projectedSpeed * projectedSpeed + 2 * accel * distance)) / accel);
+  }
+  return accelTime + (distance - accelDistance) / topSpeed;
 }
 
 // Helper PT-BR:
@@ -717,14 +1130,32 @@ export function resetMovementRuntime(player) {
   player._riseReadError = 0;
   player._urgentDeadBallPickup = false;
   player._pickupReadyNow = false;
+  player._easyHighBounceAttack = false;
   player._movementCanContactBall = false;
   player._movementCanExecutePlannedShot = false;
   player._movementContactClass = null;
   player._returnAdaptiveBias = { x: 0, y: 0, confidence: 0 };
+  player._wrongFootPenalty = null;
   player._movementContactScore = 0;
+  player._movementDistanceToBall = null;
+  player._movementBaseReach = null;
+  player._movementNormalContactReach = null;
+  player._movementContactReach = null;
+  player._movementEmergencyReachActive = false;
+  player._defensiveContact = null;
   player._contactReadiness = 0;
   player._contactSettleTime = 0;
   player._commitDistance = null;
+  player._commitDistanceRaw = null;
+  player._contactPositionError = null;
+  player._contactTimingPlan = null;
+  resetFootworkPlan(player);
+  player._footworkSpacingQuality = null;
+  resetSurfaceFooting(player);
+  resetMovementCoherence(player);
+  resetRecoveryPositioning(player);
+  resetMovementPlanState(player);
+  resetCourtMovementState(player);
   player._bounceReplanTimer = 0;
   player._movementCommit = null;
   player._approachAnchor = null;
@@ -732,6 +1163,7 @@ export function resetMovementRuntime(player) {
   player._variedWaitSeedShotX = undefined;
   player._variedWaitSeedRally = undefined;
   player._serveReturnFlightActive = false;
+  player._perceptionState = null;
   player._tm = null;
   if (player.ctx) {
     player.ctx._readLaneX = undefined;
@@ -753,130 +1185,132 @@ export function updatePlayerMovement(player, gs, dt) {
   if (!player.ctx) player.ctx = {};
 
   ensureRuntime(player);
-  updateNetIntent(player, gs);
 
   const ball = gs.ball;
-  const baseTarget = computeBaseTarget(player, gs);
-  player.basePos.x = baseTarget.x;
-  player.basePos.y = baseTarget.y;
-
   const prevLastHitBy = player._tm.lastHitBy;
   const myJustHit = ball.lastHitBy === player.id && prevLastHitBy !== player.id;
   const oppJustHit = ball.lastHitBy !== player.id && ball.lastHitBy !== player._tm.lastHitBy;
   player._tm.lastHitBy = ball.lastHitBy;
+  const perceivedBall = ball.lastHitBy !== player.id
+    ? updateMovementPerception(player, gs, dt, oppJustHit)
+    : ball;
+  updateCourtMovementState(player, gs, perceivedBall);
+  const baseTarget = computeBaseTarget(player, gs);
+  player.basePos.x = baseTarget.x;
+  player.basePos.y = baseTarget.y;
 
   if (myJustHit) {
+    player._tm.splitStep = null;
+    syncLegacySplitFields(player);
     const currSpeed = Math.sqrt(player.vel.x * player.vel.x + player.vel.y * player.vel.y);
     const contactClass = player._movementContactClass ?? 'NORMAL_HIT';
     const stretchBonus = contactClass === 'EMERGENCY_REACH' ? 0.040 : contactClass === 'CHASE' ? 0.028 : 0.0;
-    const duration = clamp(0.12 + currSpeed * 0.013 + stretchBonus, 0.12, 0.22);
-    const carry = clamp(0.40 + currSpeed * 0.032 + stretchBonus * 0.7, 0.40, 0.62);
+    const recoverySkill = clamp(
+      ((player?.attrs?.explosividade ?? 60) * 0.55
+        + (player?.attrs?.velocidade ?? 60) * 0.25
+        + (player?.attrs?.leitura ?? 60) * 0.20) / 100,
+      0,
+      1,
+    );
+    const recoveryFactor = clamp(1.11 - recoverySkill * 0.20, 0.90, 1.04);
+    const duration = clamp((0.12 + currSpeed * 0.013 + stretchBonus) * recoveryFactor, 0.105, 0.22);
+    const carry = clamp((0.40 + currSpeed * 0.032 + stretchBonus * 0.7) * (1.08 - recoverySkill * 0.16), 0.34, 0.62);
     player._tm.recoverInertiaTimer = duration;
     player._tm.recoverInertiaDuration = duration;
     player._tm.recoverInertiaCarry = carry;
   }
 
   if (oppJustHit) {
-    // Helper PT-BR:
-    // Detecta retorno de saque: rally=0 significa que o saque acabou de acontecer.
-    // No retorno, o split timer deve ser muito mais curto (18–38ms vs 55–110ms do rally),
-    // simulando a reação explosiva de um tenista profissional que já leu o serviço.
     const isServeReturn = (gs.rally ?? 0) === 0 && player.id === gs.receiver;
-    if (isServeReturn) {
-      player._tm.splitTimer = clamp(0.045 + (1 - getNetAffinity(player)) * 0.040, 0.045, 0.085);
-      player._tm.firstStepBoostTimer = 0.14;
-      player._tm.firstStepBoostDuration = 0.14;
-    } else {
-      player._tm.splitTimer = clamp(0.090 + (1 - getNetAffinity(player)) * 0.070, 0.090, 0.16);
-      player._tm.firstStepBoostTimer = clamp(0.08 + getNetAffinity(player) * 0.04, 0.08, 0.12);
-      player._tm.firstStepBoostDuration = player._tm.firstStepBoostTimer;
-    }
+    beginSplitStep(player, gs, isServeReturn);
   }
-  if (player._tm.splitTimer > 0) {
-    player._tm.splitTimer = Math.max(0, player._tm.splitTimer - dt);
-    player.vel.x *= 0.42;
-    player.vel.y *= 0.42;
-  }
+  updateSplitStep(player, dt);
 
   const defendNow = ball.lastHitBy !== player.id && (ballIsComingToPlayer(player, ball) || ballOnPlayerHalf(player, ball));
   let target = baseTarget;
   let targetTime = 0.24;
   let phase = 'RECOVER';
+  let contactPlan = null;
 
   if (defendNow) {
-    const plan = computeContactPlan(player, gs, baseTarget);
-    const prevCommit = player._tm.commit;
-    const killRunbackAfterBounce = (ball.bounceCount ?? 0) >= 1
-      && ball.lastBounceSide === player.side
-      && ball.lastHitBy !== player.id;
-
-    if (killRunbackAfterBounce && prevCommit?.phase === 'RUNBACK') {
-      player._tm.commit = null;
-      player._tm.runbackScore = 0;
-      player.vel.y *= 0.65;
+    const proposedPlan = planInterception({
+      player,
+      gs,
+      beliefBall: perceivedBall,
+      baseTarget,
+      profile: buildInterceptProfile(player),
+    });
+    if (!proposedPlan) return;
+    const shotKey = player?._tm?.perception?.shotKey ?? `${ball.lastHitBy}:${gs.rally ?? 0}`;
+    const plan = stabilizeMovementPlan(player, proposedPlan, {
+      shotKey,
+      confidence: player?._perceptionState?.confidence ?? 0.5,
+      bounceCount: ball.bounceCount ?? 0,
+      dt,
+    });
+    contactPlan = plan;
+    player._tm.commit = { ...plan };
+    if (plan.phase === 'LOB_RETREAT') {
+      player.atNet = false;
+      player.ctx.courtMode = 'BASE';
+      player.ctx.netPhase = 'BASE';
     }
-
-    // RUNBACK sempre força replan imediato — sem blend suave
-    // Caso contrário o jogador leva 3+ frames para chegar ao runbackY
-    const phaseChanged = prevCommit?.phase !== plan.phase;
-    const replan = !prevCommit
-      || prevCommit.bounceCount !== (ball.bounceCount ?? 0)
-      || dist2(prevCommit, plan) > 0.55
-      || Math.abs((prevCommit.t ?? 0.2) - plan.t) > 0.16
-      || phaseChanged;  // mudança de fase (ex: TRAVEL→RUNBACK) = replan imediato
-
-    if (replan) {
-      player._tm.commit = {
-        x: plan.x,
-        y: plan.y,
-        t: plan.t,
-        z: plan.z,
-        phase: plan.phase,
-        bounceCount: ball.bounceCount ?? 0,
-      };
-      // Frear inércia quando entra em RUNBACK para não carregar momentum errado
-      if (plan.phase === 'RUNBACK' && (prevCommit?.phase ?? '') !== 'RUNBACK') {
-        player.vel.x *= 0.40;
-        player.vel.y *= 0.40;
-      }
-    } else {
-      // Blend suave apenas para ajustes finos dentro da mesma fase
-      const blendRate = plan.phase === 'RUNBACK' ? 0.60 : 0.34;
-      player._tm.commit.x = player._tm.commit.x + (plan.x - player._tm.commit.x) * blendRate;
-      player._tm.commit.y = player._tm.commit.y + (plan.y - player._tm.commit.y) * blendRate;
-      player._tm.commit.t = plan.t;
-      player._tm.commit.z = plan.z;
-      player._tm.commit.phase = plan.phase;
-    }
-
-    target = player._tm.commit;
+    // Durante READ o jogador faz o split e conserva a posição de cobertura;
+    // a rota prevista existe como hipótese, mas ainda não comanda suas pernas.
+    target = plan.movementState === 'READ' ? baseTarget : player._tm.commit;
     targetTime = clamp(target.t ?? 0.24, 0.04, 1.10);
-    phase = plan.phase;
+    phase = plan.movementState ?? plan.phase;
     const staminaFrac = clamp(player.stamina ?? 1.0, 0, 1);
     const arrivalFamily = chooseMoveFamily(player, target);
-    const caps = movementCaps(player, arrivalFamily);
+    const caps = movementCaps(player, arrivalFamily, gs);
     const nominalSpeed = player.playerSpeed ?? PLAYER_CFG.speed;
     const effSpeed = Math.max(
       2.05,
       Math.max(nominalSpeed * 0.94, caps.speed) * (STAMINA.speedMinFactor + staminaFrac * (1 - STAMINA.speedMinFactor)),
     );
     const distance = Math.sqrt(dist2(player.pos, target));
-    const anticipationLift = clamp(player._tm.splitTimer > 0 ? 0.02 : 0, 0, 0.10);
-    player._arrivalMargin = targetTime - (distance / effSpeed) + anticipationLift;
+    const read = clamp((player?.attrs?.leitura ?? 60) / 100, 0, 1);
+    const perceptionConfidence = clamp(player?._perceptionState?.confidence ?? read, 0, 1);
+    const anticipationLift = clamp((perceptionConfidence - 0.50) * 0.050, -0.020, 0.024);
+    const commitment = updateBodyCommitment(player, target, dt, {
+      shotKey: player?._tm?.perception?.shotKey ?? `${ball.lastHitBy}:${gs.rally ?? 0}`,
+      perceptionConfidence,
+      perceptionSkill: player?._tm?.perception?.skill ?? read,
+      targetTime,
+      // Contrapé nasce da inversão observada entre compromisso e nova rota;
+      // o defensor não recebe mais o rótulo secreto criado pelo atacante.
+      designedWrongFoot: false,
+    });
+    const wrongFootPenalty = getBodyCommitmentPenalty(player);
+    const movingIntoTrap = commitment?.reversalTimer > 0
+      && commitment?.source === 'RECOVERY_MOMENTUM';
+    player._wrongFootPenalty = commitment?.reversalTimer > 0
+      ? {
+          strength: +(commitment.reversalSeverity ?? 0).toFixed(3),
+          penalty: +wrongFootPenalty.toFixed(3),
+          timer: +(commitment.reversalTimer ?? 0).toFixed(3),
+          duration: +(commitment.reversalDuration ?? 0).toFixed(3),
+          targetSign: Math.sign(commitment.pendingDirection?.x ?? target.x ?? 0),
+          movingIntoTrap: !!movingIntoTrap,
+          designed: false,
+          source: commitment.source,
+        }
+      : null;
+    const travelTime = estimateArrivalTime(player, target, caps, effSpeed);
+    player._arrivalMargin = targetTime - travelTime + anticipationLift - wrongFootPenalty;
     const closeToContact = clamp(1 - distance / Math.max((player.reach ?? PLAYER_CFG.reach) * 2.0, 0.2), 0, 1);
     const predWeight = clamp(0.70 - closeToContact * 0.52, 0.18, 0.72);
-    player._predCrossX = target.x * predWeight + (ball.pos.x ?? target.x) * (1 - predWeight);
-    player._predCrossConfidence = predWeight;
-    player._hitTarget = { x: target.x, y: target.y, t: targetTime };
+    player._predCrossX = target.x * predWeight + (perceivedBall?.pos?.x ?? target.x) * (1 - predWeight);
+    player._predCrossConfidence = predWeight * (0.32 + perceptionConfidence * 0.68);
+    player._hitTarget = { x: target.x, y: target.y, z: target.z, t: targetTime };
     player._stableTarget = { x: target.x, y: target.y };
-    refreshContactFlags(player, gs, plan);
-    updateContactReadiness(player, target, dt, true);
   } else {
     player._tm.commit = null;
     player._arrivalMargin = 0.30;
     player._predCrossX = baseTarget.x;
     player._predCrossConfidence = 0.65;
     player._hitTarget = null;
+    player._tm.bodyCommitment = null;
     player._stableTarget = { x: baseTarget.x, y: baseTarget.y };
     player._holdForRiseActive = false;
     player._movementCanContactBall = false;
@@ -886,27 +1320,28 @@ export function updatePlayerMovement(player, gs, dt) {
   }
 
   const family = chooseMoveFamily(player, target);
-  applySteering(player, target, dt, family);
-  if (defendNow) updateContactReadiness(player, target, dt, true);
+  applySteering(player, target, dt, family, gs);
+  if (defendNow) {
+    // Sensores precisam observar a posição DEPOIS do deslocamento do frame.
+    // Antes eram capturados antes do steering e reutilizados depois, produzindo
+    // distância/readiness atrasadas exatamente no instante do contato.
+    refreshContactFlags(player, gs, contactPlan);
+    updateContactReadiness(player, target, dt, true);
+  }
+  player._movementCoherence = evaluateMovementCoherence({ player, gs, contactPlan, defendNow });
   if (player._tm.recoverInertiaTimer > 0) {
     player._tm.recoverInertiaTimer = Math.max(0, player._tm.recoverInertiaTimer - dt);
   }
 
-  // Helper PT-BR:
-  // Arrancada explosiva pós-split no retorno de saque.
-  // Aplica impulso extra na direção do alvo enquanto o boost timer estiver ativo,
-  // simulando o primeiro passo explosivo do receptor após a leitura do saque.
-  if (player._tm.firstStepBoostTimer > 0 && player._tm.splitTimer === 0) {
-    player._tm.firstStepBoostTimer = Math.max(0, player._tm.firstStepBoostTimer - dt);
-    if (defendNow) {
+  // A primeira passada nasce da qualidade/timing do split, não de um boost fixo.
+  const splitImpulse = getSplitStepImpulse(player);
+  if (splitImpulse > 0) {
+    if (defendNow && (player._tm.bodyCommitment?.reversalTimer ?? 0) <= 0) {
       const bdx = target.x - player.pos.x;
       const bdy = target.y - player.pos.y;
       const bdist = Math.sqrt(bdx * bdx + bdy * bdy);
       if (bdist > 0.18) {
-        // Boost fades out ao longo dos 0.15s para transição suave
-        const baseDuration = Math.max(0.08, player._tm.firstStepBoostDuration ?? 0.12);
-        const boostFrac = clamp(player._tm.firstStepBoostTimer / baseDuration, 0, 1);
-        const boostAccel = (player.playerAccel ?? PLAYER_CFG.maxAccel) * 0.65 * boostFrac;
+        const boostAccel = (player.playerAccel ?? PLAYER_CFG.maxAccel) * splitImpulse;
         player.vel.x += (bdx / bdist) * boostAccel * dt;
         player.vel.y += (bdy / bdist) * boostAccel * dt;
       }
@@ -930,16 +1365,81 @@ export function updatePlayerMovement(player, gs, dt) {
     arrivalMargin: +(player._arrivalMargin ?? 0).toFixed(3),
     splitTimer: +(player._tm.splitTimer ?? 0).toFixed(3),
     firstStepBoost: +(player._tm.firstStepBoostTimer ?? 0).toFixed(3),
+    splitPhase: player._tm.splitStep?.phase ?? null,
+    splitTiming: player._tm.splitStep?.timing ?? null,
+    splitQuality: +(player._tm.splitStep?.quality ?? 0).toFixed(3),
+    splitLandingOffset: +(player._tm.splitStep?.landingOffset ?? 0).toFixed(3),
+    splitImpulse: +getSplitStepImpulse(player).toFixed(3),
     recoverInertia: +(player._tm.recoverInertiaTimer ?? 0).toFixed(3),
     runbackScore: +(player._tm.runbackScore ?? 0).toFixed(3),
     predCrossConfidence: +(player._predCrossConfidence ?? 0).toFixed(3),
     returnBiasX: +((player._returnAdaptiveBias?.x ?? 0)).toFixed(3),
     returnBiasY: +((player._returnAdaptiveBias?.y ?? 0)).toFixed(3),
     returnBiasConf: +((player._returnAdaptiveBias?.confidence ?? 0)).toFixed(3),
+    perceptionConfidence: +(player._perceptionState?.confidence ?? 1).toFixed(3),
+    perceptionUncertainty: +(player._perceptionState?.uncertainty ?? 0).toFixed(3),
+    perceptionDelay: +(player._perceptionState?.reactionDelay ?? 0).toFixed(3),
+    perceptionAge: +(player._perceptionState?.age ?? 0).toFixed(3),
+    perceptionLaneError: +(player._perceptionState?.laneError ?? 0).toFixed(3),
+    beliefVersion: player._perceptionState?.version ?? null,
+    beliefPositionError: +(player._perceptionState?.positionError ?? 0).toFixed(3),
+    inferredShape: player._perceptionState?.inferredShape ?? 'UNKNOWN',
+    movementPlanVersion: contactPlan?.planVersion ?? contactPlan?.version ?? null,
+    movementState: contactPlan?.movementState ?? phase,
+    planRevisionBudget: +(contactPlan?.revisionBudget ?? 0).toFixed(3),
+    planRevisions: contactPlan?.revisions ?? 0,
+    planCorrectionCost: +(contactPlan?.correctionCost ?? 0).toFixed(3),
+    interceptionKind: contactPlan?.selectedKind ?? null,
+    interceptionUncertainty: +(contactPlan?.uncertainty ?? 0).toFixed(3),
+    courtMovementStateVersion: player?._courtMovementState?.version ?? null,
+    courtMovementMode: player?._courtMovementState?.mode ?? getCourtMode(player),
+    courtMovementEvent: player?._courtMovementState?.event ?? null,
     contactScore: +(player._movementContactScore ?? 0).toFixed(3),
     contactReadiness: +(player._contactReadiness ?? 0).toFixed(3),
     contactSettleTime: +(player._contactSettleTime ?? 0).toFixed(3),
+    distanceToBall: player._movementDistanceToBall != null ? +player._movementDistanceToBall.toFixed(3) : null,
+    baseReach: player._movementBaseReach != null ? +player._movementBaseReach.toFixed(3) : null,
+    normalContactReach: player._movementNormalContactReach != null ? +player._movementNormalContactReach.toFixed(3) : null,
+    contactReach: player._movementContactReach != null ? +player._movementContactReach.toFixed(3) : null,
+    contactClass: player._movementContactClass ?? null,
     commitDistance: player._commitDistance != null ? +player._commitDistance.toFixed(3) : null,
+    commitDistanceRaw: player._commitDistanceRaw != null ? +player._commitDistanceRaw.toFixed(3) : null,
+    contactPositionError: player._contactPositionError != null ? +player._contactPositionError.toFixed(3) : null,
+    contactTiming: contactPlan?.contactTiming ?? null,
+    contactTimingReason: contactPlan?.contactTimingReason ?? null,
+    contactCandidateCount: contactPlan?.contactCandidateCount ?? 0,
+    waitedForBetterContact: !!contactPlan?.waitedForBetterContact,
+    appliedContactWait: !!contactPlan?.appliedContactWait,
+    footworkStance: contactPlan?.footworkStance ?? null,
+    footworkWing: contactPlan?.footworkWing ?? null,
+    footworkPreparation: contactPlan?.footworkPreparation ?? null,
+    footworkSpacingQuality: player?._footworkSpacingQuality ?? null,
+    runAroundForehand: !!contactPlan?.runAroundForehand,
+    footingSurface: player?._surfaceFooting?.surface ?? null,
+    footingStability: player?._surfaceFooting?.stability ?? null,
+    footingTraction: player?._surfaceFooting?.traction ?? null,
+    surfaceSlide: !!player?._surfaceFooting?.slideActive,
+    surfaceSlideControl: player?._surfaceFooting?.slideControl ?? 0,
+    surfaceSlipRisk: player?._surfaceFooting?.slipRisk ?? 0,
+    surfaceBrakingDistance: player?._surfaceFooting?.brakingDistance ?? null,
+    movementEngineVersion: player?._movementCoherence?.version ?? null,
+    movementCoherence: player?._movementCoherence?.score ?? 1,
+    movementCoherenceSeverity: player?._movementCoherence?.severity ?? 0,
+    movementCoherenceFlags: player?._movementCoherence?.flags ?? [],
+    movementCoherenceReason: player?._movementCoherence?.reason ?? null,
+    recoveryAnchorX: player?._recoveryPositioning?.x ?? null,
+    recoveryAnchorY: player?._recoveryPositioning?.y ?? null,
+    recoveryIdealX: player?._recoveryPositioning?.idealX ?? null,
+    recoveryConfidence: player?._recoveryPositioning?.confidence ?? null,
+    recoveryReason: player?._recoveryPositioning?.reason ?? null,
+    wrongFootPenalty: player._wrongFootPenalty ?? null,
+    wrongFootRecovery: +(player._tm.bodyCommitment?.reversalTimer ?? 0).toFixed(3),
+    bodyCommitmentPhase: player._tm.bodyCommitment?.phase ?? null,
+    bodyCommitmentStrength: +(player._tm.bodyCommitment?.strength ?? 0).toFixed(3),
+    bodyReversalSeverity: +(player._tm.bodyCommitment?.reversalSeverity ?? 0).toFixed(3),
+    bodyCorrectionCount: player._tm.bodyCommitment?.correctionCount ?? 0,
+    bodyFooled: !!player._tm.bodyCommitment?.fooled,
+    bodyCommitmentSource: player._tm.bodyCommitment?.source ?? null,
   };
 }
 

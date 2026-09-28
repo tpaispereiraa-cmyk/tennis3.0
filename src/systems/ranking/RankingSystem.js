@@ -4,9 +4,10 @@
  * Sistema de ranking inspirado no ATP real.
  *
  * TOUR PRINCIPAL
- *   • Contagem: 18 melhores resultados dos últimos 12 meses (4 GS + 9 M1000
- *     são OBRIGATÓRIOS na contagem — entram mesmo com 0 pts se o jogador
- *     participou do tour naquele período)
+ *   • Contagem: 18 resultados nos últimos 12 meses, calibrados para o
+ *     calendário do jogo: 6 Grand Slams entram sempre, os 8 melhores Masters
+ *     entram em seguida e os 4 melhores resultados restantes fecham a conta.
+ *     Assim, Finals, Slam Clash e ATP 500 podem realmente valer uma temporada.
  *   • Defesa de pontos: na semana do mesmo torneio no ano seguinte,
  *     os pontos do ano anterior expiram automaticamente
  *   • Pontos de qualifying CONTAM para o ranking, com valores reduzidos.
@@ -85,15 +86,20 @@ export const TOURNAMENT_POINTS = {
     W: 25, F: 15, SF: 8, QF: 4, R16: 2, R32: 1,
   },
   FINALS: {
-    W: 1500, F: 1000, SF: 500, RR_WIN: 200,
+    // O modo Universo usa chave eliminatória de 8 (não round robin).
+    // QF evita que quatro classificados para o torneio de elite saiam zerados.
+    W: 1500, F: 1000, SF: 500, QF: 250,
   },
   ATP_PROSPECTS: {
     // Draw 16: 8 diretos + 8 do qualify
     // R16 = perder na 1ª rodada
     W: 100, F: 60, SF: 36, QF: 18, R16: 8, R32: 3, R64: 1,
   },
+  JUNIOR_50: { W: 50, F: 30, SF: 18, QF: 9, R16: 4, R32: 1 },
+  JUNIOR_100: { W: 100, F: 60, SF: 36, QF: 18, R16: 8, R32: 3, R64: 1 },
+  JUNIOR_SLAM: { W: 500, F: 300, SF: 180, QF: 90, R16: 45, R32: 20, R64: 8 },
   PROSPECTS_FINALS: {
-    W: 200, F: 120, SF: 60, RR_WIN: 30,
+    W: 200, F: 120, SF: 60, QF: 30,
   },
 };
 
@@ -105,8 +111,10 @@ export function getPoints(category, round) {
 // CATEGORIAS OBRIGATÓRIAS NA CONTAGEM
 // ═══════════════════════════════════════════════════════════════════
 
-const MANDATORY_CATEGORIES = new Set(['GRAND_SLAM', 'MASTERS_1000']);
-const RANKING_COUNT = 18; // Melhores X resultados contam
+const GRAND_SLAM_CATEGORY = 'GRAND_SLAM';
+const MASTERS_CATEGORY = 'MASTERS_1000';
+export const RANKING_COUNT = 18;
+export const RANKING_MASTERS_SLOTS = 8;
 
 // ═══════════════════════════════════════════════════════════════════
 // RANKING STORE
@@ -122,6 +130,10 @@ export function createRankingStore() {
     playerResults: {},
     // Cache ordenado — recalculado em computeRanking()
     ranked: [],
+    // Ordem de seed usada somente para desempatar jogadores com a mesma
+    // pontuação. Assim, uma temporada que começa em 0 mantém a ordem de
+    // entrada até que os resultados em quadra passem a separá-los.
+    seedOrder: {},
     // Prospects
     prospectResults: {},
     prospectRanked: [],
@@ -149,7 +161,9 @@ export function registerResult(store, playerId, tournamentInfo, round, isProspec
     round,
     season,
     weekIndex,
-    mandatory:      MANDATORY_CATEGORIES.has(category),
+    // Mantido no save/export para leitura; a seleção real é feita em
+    // computePlayerPoints, onde Masters têm 8 vagas e não 12 vagas forçadas.
+    mandatory:      category === GRAND_SLAM_CATEGORY,
   };
 
   if (isProspect) {
@@ -209,9 +223,11 @@ export function applyPointsDefense(store, currentSeason, currentWeekIndex) {
 }
 
 /**
- * Calcula o total de pontos de um jogador seguindo as regras ATP:
- * - Obrigatórios (GS + M1000) entram todos
- * - Opcionais: melhor N resultados para completar RANKING_COUNT
+ * Calcula o total de pontos do ranking do Universo:
+ * - Os Grand Slams ativos entram todos (o calendário tem 6)
+ * - Os 8 melhores Masters entram em seguida (há 12 no calendário)
+ * - As vagas restantes são os melhores resultados de qualquer outra categoria
+ *   — inclusive Finals, Slam Clash, ATP 500 e Masters que sobraram.
  * - Total nunca usa mais de RANKING_COUNT entradas
  *
  * @param {ResultEntry[]} results
@@ -220,30 +236,31 @@ export function applyPointsDefense(store, currentSeason, currentWeekIndex) {
 export function computePlayerPoints(results) {
   if (!results || results.length === 0) return { total: 0, used: [] };
 
-  // Separa obrigatórios e opcionais (sem duplicar o mesmo torneio)
-  const mandatoryByTournament = {};
-  const optionalResults = [];
+  // Mantém só a melhor entrada de cada torneio. É uma proteção extra contra
+  // replays/importações de saves além da proteção já feita em registerResult.
+  const bestByTournament = {};
 
   for (const r of results) {
-    if (r.mandatory) {
-      // Mantém o melhor resultado obrigatório por torneio
-      const prev = mandatoryByTournament[r.tournamentId];
-      if (!prev || r.points > prev.points) {
-        mandatoryByTournament[r.tournamentId] = r;
-      }
-    } else {
-      optionalResults.push(r);
-    }
+    const key = `${r.tournamentId}|${r.season}`;
+    const prev = bestByTournament[key];
+    if (!prev || (r.points ?? 0) > (prev.points ?? 0)) bestByTournament[key] = r;
   }
 
-  const mandatory = Object.values(mandatoryByTournament);
-  // Ordena opcionais por pontos desc para pegar os melhores
-  const sortedOptionals = [...optionalResults].sort((a, b) => b.points - a.points);
+  const unique = Object.values(bestByTournament);
+  const slams = unique.filter(r => r.category === GRAND_SLAM_CATEGORY);
+  const masters = unique
+    .filter(r => r.category === MASTERS_CATEGORY)
+    .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
+  const selectedMasters = masters.slice(0, RANKING_MASTERS_SLOTS);
+  const selectedKeys = new Set([...slams, ...selectedMasters].map(r => `${r.tournamentId}|${r.season}`));
+  const optionalResults = unique
+    .filter(r => !selectedKeys.has(`${r.tournamentId}|${r.season}`))
+    .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
 
-  const slotsLeft = Math.max(0, RANKING_COUNT - mandatory.length);
-  const usedOptionals = sortedOptionals.slice(0, slotsLeft);
+  const slotsLeft = Math.max(0, RANKING_COUNT - slams.length - selectedMasters.length);
+  const usedOptionals = optionalResults.slice(0, slotsLeft);
 
-  const used = [...mandatory, ...usedOptionals];
+  const used = [...slams, ...selectedMasters, ...usedOptionals];
   const total = used.reduce((s, r) => s + r.points, 0);
 
   return { total, used };
@@ -264,7 +281,12 @@ export function computeRanking(store, allPlayerIds) {
     return { playerId, points: total, used };
   });
 
-  entries.sort((a, b) => b.points - a.points || a.playerId.localeCompare(b.playerId));
+  entries.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    const seedA = store.seedOrder?.[a.playerId] ?? Number.MAX_SAFE_INTEGER;
+    const seedB = store.seedOrder?.[b.playerId] ?? Number.MAX_SAFE_INTEGER;
+    return seedA - seedB || a.playerId.localeCompare(b.playerId);
+  });
 
   const ranked = entries.map((e, i) => ({
     ...e,

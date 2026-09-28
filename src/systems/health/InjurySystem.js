@@ -185,13 +185,23 @@ function pickGrade() {
   return 1;
 }
 
-function pickInjuryType(player, tournament) {
+function pickInjuryType(player, tournament, grade = 1) {
   const style = player.styleId ?? '';
   const surface = tournament?.surface ?? 'HARD';
 
   // Peso base para cada tipo
   const weights = Object.entries(INJURY_TYPES).map(([key, def]) => {
     let w = 1.0;
+
+    // Condicoes cronicas/sistemicas nao sao "lesoes comuns".
+    // Elas precisam existir no universo, mas como eventos raros de saude,
+    // principalmente quando a gravidade ja veio alta.
+    if (key === 'CHRONIC_CONDITION') {
+      w = grade >= 4 ? 0.10 : 0.015;
+    } else if (key === 'SYSTEMIC_ILLNESS') {
+      w = grade >= 4 ? 0.06 : 0.008;
+    }
+
     w *= (def.styleRisk?.[style] ?? 1.0);
     w *= (def.surfaceRisk?.[surface] ?? 1.0);
     return { key, w };
@@ -362,6 +372,11 @@ export function rollPreTournamentInjury(player, tournament, recentTournaments = 
   // Grade-1 ativa (jogou lesionado) → agravamento
   if (p.injury && p.injury.grade === 1 && p.injury.isPlayingThrough) chance *= 1.6;
 
+  // Situações de vida não criam lesão do nada, mas alteram a margem do corpo:
+  // burnout e crise elevam risco; recuperação bem sustentada o reduz.
+  const lifeInjuryRisk = Number(p.lifeSimulation?.currentEffects?.injuryRisk ?? 0);
+  if (lifeInjuryRisk !== 0) chance *= Math.max(0.72, Math.min(1.48, 1 + lifeInjuryRisk * 0.04));
+
   // ── Recidiva — mesmo tipo de lesão no histórico ───────────────
   // Cada ocorrência prévia do mesmo tipo aumenta o risco progressivamente.
   // Acessado depois de pickInjuryType para retroalimentar o risco da parte afetada.
@@ -397,7 +412,7 @@ export function rollPreTournamentInjury(player, tournament, recentTournaments = 
 
   // ── Gerou lesão ──────────────────────────────────────────────
   const grade = pickGrade();
-  const type  = pickInjuryType(p, tournament);
+  const type  = pickInjuryType(p, tournament, grade);
   const slots = Math.max(
     1,
     Math.round((slotsForGrade(grade) / (bodyFx.injuryRecoveryMult ?? 1)) - ((bodyFx.injuryRecoveryFlat ?? 0) / 2))

@@ -65,6 +65,18 @@ export const SUPERFICIE = {
     friccao_chao: 0.77,
     humidade_friccao: 0,
   },
+  // Asfalto: dureza máxima, bounce firme e alto, bola acelera após o quique
+  ASFALTO: {
+    restituicao: 0.88,   // bounce altíssimo — concreto armado
+    friccao_chao: 0.68,  // bola desliza mais que na dura (asfalto liso)
+    humidade_friccao: 0.04,
+  },
+  // Veludo (carpete): bounce quase nulo, bola rasteira, superfície ultra-rápida
+  VELUDO: {
+    restituicao: 0.52,   // bounce mínimo — bola fica rasteira
+    friccao_chao: 0.62,  // pouca aderência — bola corre muito
+    humidade_friccao: 0,
+  },
 };
 
 // ── Quique / spin no solo ──────────────────────────────────────────────────
@@ -73,18 +85,18 @@ export const QUIQUE = {
   // Helper: subir faz topspin levantar mais e kick ganhar ombro; descer achata
   // a influência do spin no quique.
 
-  skid_damp_min: 0.42,
-  skid_damp_max: 0.82,
+  skid_damp_min: 0.48,
+  skid_damp_max: 0.86,
   // Helper: estes dois valores controlam o quanto um backspin forte "mata" o
   // quique vertical. Subir deixa slice menos rasteiro; descer faz ele morrer.
 
-  friccao_slice_serve: 0.78,
+  friccao_slice_serve: 0.86,
   // Helper: subir deixa o 1º quique do slice serve menos escorregadio; descer
   // gera mais skid lateral e mais carry horizontal.
   friccao_topspin: 0.92,
   // Helper: subir dá mais retenção de velocidade ao topspin pós-quique; descer
   // faz a bola travar mais.
-  friccao_backspin: 0.65,
+  friccao_backspin: 0.73,
   // Helper: descer este valor faz slice/drop agarrar mais no chão; subir deixa
   // o backspin menos "morto".
 
@@ -94,9 +106,9 @@ export const QUIQUE = {
   // Helper: este bloco controla o freio extra em bolas muito rápidas. Subir
   // `pacebrake_inicio` adia o freio; subir `pacebrake_coef` intensifica a perda.
 
-  backspin_forte_min: -0.75,
-  backspin_forte_vel_mult: 0.93,
-  backspin_forte_vz_mult: 0.74,
+  backspin_forte_min: -0.95,
+  backspin_forte_vel_mult: 0.97,
+  backspin_forte_vz_mult: 0.82,
   // Helper: quando o slice entra na zona de backspin forte, esses multiplicadores
   // definem o quanto ele perde de pace e de altura de quique.
 
@@ -218,7 +230,7 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
   }),
   SAIBRO: Object.freeze({
     altura_contato_ideal: 0.92,
-    altura_contato_min: 0.58,   // era 0.50
+    altura_contato_min: 0.58,
     altura_contato_max: 1.34,
     faixa_contato: 0.36,
     tolerancia_y: 1.50,
@@ -226,6 +238,30 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
     bonus_subida: 0.10,
     penalidade_descida: 0.10,
     bonus_bola_baixa: -0.04,
+  }),
+  // Asfalto: bounce altíssimo obriga o jogador a esperar a bola cair
+  ASFALTO: Object.freeze({
+    altura_contato_ideal: 1.10,  // bola sobe muito — contato no ombro
+    altura_contato_min: 0.72,
+    altura_contato_max: 1.55,
+    faixa_contato: 0.28,         // janela menor — timing crítico
+    tolerancia_y: 1.20,
+    janela_atraso: 0.52,
+    bonus_subida: 0.12,
+    penalidade_descida: 0.30,    // tarde demais = bola já passou alto demais
+    bonus_bola_baixa: -0.12,     // bola baixa é incomum aqui
+  }),
+  // Veludo: bounce rasteiro, bola chega cedo e rápido
+  VELUDO: Object.freeze({
+    altura_contato_ideal: 0.46,  // contato baixíssimo — quase ao nível da cintura
+    altura_contato_min: 0.32,
+    altura_contato_max: 0.78,
+    faixa_contato: 0.32,
+    tolerancia_y: 1.30,
+    janela_atraso: 0.38,         // janela curta — bola corre muito
+    bonus_subida: 0.34,          // pegar na subida é o correto aqui
+    penalidade_descida: 0.14,
+    bonus_bola_baixa: 0.22,      // bola baixa é o padrão no veludo
   }),
 });
 
@@ -242,6 +278,12 @@ export function normalizarSuperficie(nome) {
       return 'SAIBRO';
     case 'INDOOR':
       return 'INDOOR';
+    case 'STREET':
+    case 'ASFALTO':
+      return 'ASFALTO';
+    case 'CARPET':
+    case 'VELUDO':
+      return 'VELUDO';
     default:
       return 'DURA';
   }
@@ -254,4 +296,3 @@ export function getConfigSuperficie(nome) {
 export function getPerfilInterceptacao(nome) {
   return INTERCEPTACAO_SUPERFICIE[normalizarSuperficie(nome)] ?? INTERCEPTACAO_SUPERFICIE.DURA;
 }
-

@@ -14,6 +14,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { MatchRatingBadge } from './IndividualRating.jsx';
+import { MATCH_RULES } from '../../core/constants.js';
 import { GameState, TIMING } from '../../core/constants.js';
 import { VFX_TYPES } from '../../systems/vfx/vfx.js';
 import { traceServeDump } from '../../core/trace.js';
@@ -21,13 +22,8 @@ import { NAMED_PLAYERS, getPlayerPhoto } from '../../domain/players/players.js';
 import { getAppearance } from '../pixel/appearances.js';
 import { toggleSound, isSoundOn } from '../../systems/audio/sound.js';
 import SoundSettings from './SoundSettings.jsx';
-import { INSTRUCTION_ICONS, PHILOSOPHY_LABELS } from '../../systems/coaches/CoachAdvisor.js';
-import { generateExecutionReport, calcTrustDelta, applyTrustDelta } from '../../systems/coaches/CoachTacticTracker.js';
-import { analyzeMatch } from '../../systems/coaches/CoachAnalyzer.js';
-import { generateInstructions } from '../../systems/coaches/CoachAdvisor.js';
-import { runChangeover } from '../../systems/coaches/CoachInfluencer.js';
 import { readHeat } from '../../systems/analytics/MatchHeat.js';
-import { getBuildStyleMeta, getNetGameMeta, getRallyCadenceMeta, getRiskProfileMeta, generatePrefs } from '../../domain/players/playerPrefs.js';
+import { getBuildStyleMeta, getNetGameMeta, getRallyIntentMeta, generatePrefs } from '../../domain/players/playerPrefs.js';
 import { SIGNATURE_SHOTS_OFFLINE as NEW_SIG_SHOTS } from '../../systems/shotlab/ShotEngineOffline.js';
 import { ovrTier } from '../../systems/scouting/ScoutProfile.js';
 import { getWindHUDInfo } from '../../systems/environment/EnvironmentSystem.js';
@@ -58,10 +54,9 @@ function _visualCanPlayerWinGameNow(gs, playerId) {
   if (!player || !opp) return false;
   if (gs.inTiebreak) {
     const tb = gs.tbScore || [0, 0];
-    return tb[playerId] >= 6 && (tb[playerId] - tb[1 - playerId]) >= 1;
+    return tb[playerId] >= MATCH_RULES.tiebreakPoints - 1 && (tb[playerId] - tb[1 - playerId]) >= 0;
   }
-  if (player.score === 4) return true;
-  return player.score === 3 && opp.score <= 2;
+  return player.score === MATCH_RULES.pointsPerGame - 1;
 }
 
 function _visualCanPlayerWinSetNow(gs, playerId) {
@@ -71,7 +66,7 @@ function _visualCanPlayerWinSetNow(gs, playerId) {
   if (!_visualCanPlayerWinGameNow(gs, playerId)) return false;
   if (gs.inTiebreak) return true;
   const nextGames = (player.games || 0) + 1;
-  return nextGames >= 6 && (nextGames - (opp.games || 0)) >= 2;
+  return nextGames >= MATCH_RULES.gamesPerSet && (nextGames - (opp.games || 0)) >= 2;
 }
 
 function _visualCanPlayerWinMatchNow(gs, playerId) {
@@ -114,8 +109,8 @@ function getVisualPressureState(gs) {
 
   const rally = gs.rally ?? 0;
   const deuceLike = !gs.inTiebreak && players[0] && players[1] &&
-    ((players[0].score === 3 && players[1].score === 3) || players[0].score === 4 || players[1].score === 4);
-  const tbClutch = !!gs.inTiebreak && Math.max(gs.tbScore?.[0] || 0, gs.tbScore?.[1] || 0) >= 5;
+    players[0].score === MATCH_RULES.pointsPerGame - 1 && players[1].score === MATCH_RULES.pointsPerGame - 1;
+  const tbClutch = !!gs.inTiebreak && Math.max(gs.tbScore?.[0] || 0, gs.tbScore?.[1] || 0) >= MATCH_RULES.tiebreakPoints - 1;
   const isClutch = deuceLike || tbClutch || rally >= 10;
 
   let momentType = null;
@@ -251,8 +246,7 @@ function buildPlayerIdentitySignature(player) {
   if (!player) return null;
   const prefs = player.prefs || (player.attrs ? generatePrefs(player.attrs) : null);
   const build = prefs ? getBuildStyleMeta(prefs.buildStyle) : null;
-  const cadence = prefs ? getRallyCadenceMeta(prefs.rallyCadence) : null;
-  const risk = prefs ? getRiskProfileMeta(prefs.riskProfile) : null;
+  const rallyIntent = prefs ? getRallyIntentMeta(prefs) : null;
   const net = prefs ? getNetGameMeta(prefs.netGame) : null;
   const attrs = player.attrs || {};
   const aggression = attrs.agressividade ?? 60;
@@ -293,8 +287,8 @@ function buildPlayerIdentitySignature(player) {
     color: palette.color,
     accent: palette.accent,
     build: build?.abbr || buildKey,
-    cadence: cadence?.abbr || cadenceKey,
-    risk: risk?.abbr || riskKey,
+    intent: rallyIntent?.abbr || cadenceKey,
+    risk: rallyIntent?.abbr || riskKey,
     net: net?.abbr || netKey,
     serveProfile: prefs?.serveProfile || null,
     aggression,
@@ -336,7 +330,7 @@ function getPlayerFeelSnapshot(player, idx, gs) {
   };
 }
 
-function buildMatchFeelTelemetry(gs, snap, coachEntry = null) {
+function buildMatchFeelTelemetry(gs, snap, pointEntry = null) {
   const players = gs?.players || [];
   const winnerIdx = gs?.pointWinnerIdx ?? null;
   const loserIdx = winnerIdx === 0 ? 1 : winnerIdx === 1 ? 0 : null;
@@ -344,7 +338,7 @@ function buildMatchFeelTelemetry(gs, snap, coachEntry = null) {
   const lastShot = shots[shots.length - 1] || null;
   const reason = String(gs?.lastPointReason ?? '');
   const upperReason = reason.toUpperCase();
-  const rallyLen = gs?.rally ?? coachEntry?.rallyLen ?? 0;
+  const rallyLen = gs?.rally ?? pointEntry?.rallyLen ?? 0;
   const pressure = getVisualPressureState(gs || {});
   const isAce = upperReason.includes('ACE');
   const isWinner = upperReason.includes('WINNER');
@@ -352,7 +346,7 @@ function buildMatchFeelTelemetry(gs, snap, coachEntry = null) {
   const isNetError = upperReason.includes('[REDE]') || upperReason.includes('NET');
   const isLongError = upperReason.includes('[FORA]') || upperReason.includes('OUT');
   const isError = isDoubleFault || isNetError || isLongError;
-  const lowQuality = (lastShot?.quality ?? lastShot?.executionQuality ?? 1) < 0.38;
+  const lowQuality = (lastShot?.executionQuality ?? lastShot?.quality ?? 1) < 0.38;
   const lateArrival = players.some(p => p?._arrivalMargin != null && p._arrivalMargin < -0.12);
   const winnerIdentity = winnerIdx != null ? buildPlayerIdentitySignature(players[winnerIdx]) : null;
   const lastShotOwnerIdentity = lastShot?.playerId != null ? buildPlayerIdentitySignature(players[lastShot.playerId]) : null;
@@ -433,7 +427,7 @@ function buildMatchFeelTelemetry(gs, snap, coachEntry = null) {
       shotType: lastShot.shotType ?? null,
       spin: lastShot.spin ?? null,
       powerKmh: lastShot.power ?? null,
-      quality: lastShot.quality ?? lastShot.executionQuality ?? null,
+      quality: lastShot.executionQuality ?? lastShot.quality ?? null,
       executionState: lastShot.executionState ?? null,
       tacticalState: lastShot.tacticalState ?? null,
       direction: lastShot.dirLabel ?? null,
@@ -449,7 +443,7 @@ function buildMatchFeelTelemetry(gs, snap, coachEntry = null) {
     tags,
     qualityScore,
     diagnosis,
-    coachEntry,
+    pointEntry,
   };
 }
 
@@ -826,6 +820,8 @@ const SURF = {
   CLAY:   { label:'Saibro', venue:'Roland Garros', color:'#b03a0e', dark:'#8a2e08', line:'rgba(235,215,195,0.88)', dust:'rgba(200,100,50,0.65)',  bg:'#0f0500', rgb:'70,20,5'   },
   GRASS:  { label:'Grama',  venue:'Wimbledon',     color:'#155c2e', dark:'#0e4020', line:'rgba(255,255,255,0.88)', dust:'rgba(60,140,80,0.55)',    bg:'#010a02', rgb:'8,40,12'   },
   INDOOR: { label:'Indoor', venue:'Paris',         color:'#12124a', dark:'#0a0a32', line:'rgba(180,200,255,0.85)', dust:'rgba(80,100,200,0.45)',   bg:'#010108', rgb:'8,8,50'    },
+  STREET: { label:'Asfalto', venue:'Street Court', color:'#232323', dark:'#171717', line:'rgba(232,232,232,0.88)', dust:'rgba(170,170,170,0.34)', bg:'#030303', rgb:'32,32,32'  },
+  CARPET: { label:'Veludo',  venue:'Velvet Court', color:'#D8C49A', dark:'#B89D69', line:'rgba(55,42,28,0.82)', dust:'rgba(210,185,135,0.36)', bg:'#1a130b', rgb:'190,160,105' },
 };
 
 import { getVenueOverride } from '../../domain/courts/courtConfigs.js';
@@ -912,167 +908,6 @@ function getShotDrawType(shotType){
   if(s==='DROP'||s==='SLICE'||s==='LOB_DEF'||s==='LOB_ATK') return 'backhand';
   if(s.startsWith('KICK')||s.startsWith('FLAT-')||s.startsWith('SLICE-')) return 'serve';
   return 'forehand';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FASE 6: Coach Changeover Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-const PHIL_COLOR = {
-  OFFENSIVE: '#F06428', DEFENSIVE: '#2860A8',
-  COMPLETE: '#22c55e', SPECIALIST: '#E8C84A', MENTAL: '#AA44FF',
-};
-
-// Ícone e cor por diagKey
-const DIAG_META = {
-  executed_worked:  { icon: '✓', color: '#22c55e' },
-  executed_neutral: { icon: '→', color: '#E8C84A' },
-  executed_failed:  { icon: '↺', color: '#F06428' },
-  ignored_worked:   { icon: '?', color: '#E8C84A' },
-  ignored_failed:   { icon: '✗', color: '#ef4444' },
-  partial:          { icon: '~', color: '#94a3b8' },
-};
-
-function CoachChangeoverCard({ instructions, coachName, philosophy, executionReport, trust, onDismiss }) {
-  if (!instructions?.length) return null;
-  const philColor = PHIL_COLOR[philosophy] ?? '#F2EDE4';
-  const philLabel = PHILOSOPHY_LABELS[philosophy] ?? philosophy;
-  const hasReport = !!executionReport;
-  const report    = executionReport;
-  const diagMeta  = report ? (DIAG_META[report.diagKey] ?? DIAG_META.partial) : null;
-  const trustPct  = trust != null ? Math.round(trust * 100) : null;
-  const trustColor = trustPct >= 70 ? '#22c55e' : trustPct >= 40 ? '#E8C84A' : '#ef4444';
-
-  return (
-    <div style={{
-      position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-      zIndex: 9500,
-      background: 'rgba(6,8,12,0.97)',
-      border: `1px solid ${philColor}44`,
-      boxShadow: `0 0 40px ${philColor}18, 0 8px 32px rgba(0,0,0,.7)`,
-      minWidth: 300, maxWidth: 400,
-      fontFamily: "'Space Mono', monospace",
-      pointerEvents: 'auto',
-      animation: 'coachCardIn .35s cubic-bezier(.16,1,.3,1)',
-      overflow: 'hidden',
-    }}>
-
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 14px 8px',
-        borderBottom: '1px solid rgba(255,255,255,.06)',
-        background: `${philColor}0A`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13 }}>🎌</span>
-          <div>
-            <div style={{ fontSize: 9, letterSpacing: 2, color: philColor, textTransform: 'uppercase' }}>
-              {coachName}
-            </div>
-            <div style={{ fontSize: 7, letterSpacing: 1.5, color: 'rgba(242,237,228,.3)', textTransform: 'uppercase', marginTop: 1 }}>
-              {philLabel}
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {trustPct !== null && (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 7, color: 'rgba(242,237,228,.3)', letterSpacing: 1, textTransform: 'uppercase' }}>Confiança</div>
-              <div style={{ fontSize: 10, color: trustColor, fontWeight: 700 }}>{trustPct}%</div>
-            </div>
-          )}
-          <button
-            onClick={onDismiss}
-            style={{ background: 'none', border: 'none', color: 'rgba(242,237,228,.25)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
-          >×</button>
-        </div>
-      </div>
-
-      {/* Bloco 1: Relatório de execução anterior */}
-      {hasReport && (
-        <div style={{
-          padding: '10px 14px',
-          borderBottom: '1px solid rgba(255,255,255,.05)',
-          background: 'rgba(0,0,0,.3)',
-        }}>
-          <div style={{ fontSize: 7, letterSpacing: 2, color: 'rgba(242,237,228,.3)', textTransform: 'uppercase', marginBottom: 6 }}>
-            Instrução anterior · {INSTRUCTION_ICONS[report.instruction?.type] ?? '🎯'} {report.instruction?.label ?? '—'}
-          </div>
-          {report.complianceLabel && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 5 }}>
-                <span style={{ fontSize: 10, color: diagMeta.color, flexShrink: 0, marginTop: 1 }}>{safeEmoji(diagMeta.icon, '•')}</span>
-              <div>
-                <div style={{ fontSize: 9, color: 'rgba(242,237,228,.75)', lineHeight: 1.3 }}>
-                  {report.complianceLabel}
-                </div>
-                {report.complianceDetail && (
-                  <div style={{ fontSize: 7, color: 'rgba(242,237,228,.35)', marginTop: 1 }}>
-                    {report.complianceDetail}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {report.winRate?.delta !== null && report.winRate?.priorWR !== null && (
-            <div style={{ fontSize: 7, color: report.winRate.delta >= 0.1 ? '#22c55e' : report.winRate.delta <= -0.1 ? '#ef4444' : '#E8C84A', marginBottom: 6, letterSpacing: .5 }}>
-              PONTOS: {report.winRate.recentWR}%
-              <span style={{ color: 'rgba(242,237,228,.3)' }}>
-                {' '}(era {report.winRate.priorWR}% — {report.winRate.delta >= 0 ? '+' : ''}{Math.round(report.winRate.delta * 100)}pp)
-              </span>
-            </div>
-          )}
-          <div style={{
-            padding: '6px 8px',
-            background: `${diagMeta.color}0D`,
-            border: `1px solid ${diagMeta.color}28`,
-            fontSize: 8,
-            color: diagMeta.color,
-            fontStyle: 'italic',
-            lineHeight: 1.4,
-          }}>
-            "{report.diagText}"
-          </div>
-        </div>
-      )}
-
-      {/* Bloco 2: Nova instrução */}
-      <div style={{ padding: '10px 14px 12px' }}>
-        <div style={{ fontSize: 7, letterSpacing: 2, color: 'rgba(242,237,228,.3)', textTransform: 'uppercase', marginBottom: 7 }}>
-          Nova instrução
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {instructions.map((inst, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 10,
-              padding: '7px 10px',
-              background: inst.priority === 'HIGH' ? `${philColor}12` : 'rgba(242,237,228,.03)',
-              border: `1px solid ${inst.priority === 'HIGH' ? philColor + '40' : 'rgba(242,237,228,.07)'}`,
-            }}>
-              <span style={{ fontSize: 13, flexShrink: 0 }}>
-                {INSTRUCTION_ICONS[inst.type] ?? '🎯'}
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 9, color: inst.priority === 'HIGH' ? '#F2EDE4' : 'rgba(242,237,228,.6)', letterSpacing: .3, lineHeight: 1.35 }}>
-                  {inst.label}
-                </div>
-                <div style={{ fontSize: 7, color: 'rgba(242,237,228,.25)', letterSpacing: 1, marginTop: 2 }}>
-                  {inst.durationGames}g · {inst.priority}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes coachCardIn {
-          from { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.95); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0)     scale(1);    }
-        }
-      `}</style>
-    </div>
-  );
 }
 
 // ── ShotLogPanel — log compacto de golpes para análise de Q% e velocidade ───
@@ -1379,9 +1214,49 @@ function LiveAuditPanel({ snap }) {
   );
 }
 
+function CoachChangeoverCard({ insight, onDone }) {
+  if (!insight?.players?.length) return null;
+  const leadingName = insight.leaderName ? insight.leaderName.split(' ').pop() : null;
+  return (
+    <div style={{
+      position:'fixed', top:74, left:'50%', transform:'translateX(-50%)', zIndex:8300,
+      width:'min(620px, calc(100vw - 32px))', pointerEvents:'auto',
+      border:'1px solid rgba(96,255,144,.42)', background:'linear-gradient(135deg, rgba(7,20,14,.97), rgba(10,14,18,.97))',
+      boxShadow:'0 18px 55px rgba(0,0,0,.46), 0 0 36px rgba(96,255,144,.10)', overflow:'hidden',
+      animation:'coachBriefIn .32s cubic-bezier(.16,1,.3,1)',
+    }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, padding:'9px 13px', borderBottom:'1px solid rgba(96,255,144,.16)', background:'rgba(96,255,144,.055)' }}>
+        <div style={{ fontFamily:RG.mono, fontSize:8, letterSpacing:'.22em', color:RG.lime, textTransform:'uppercase' }}>Banco vivo · intervalo de set</div>
+        <div style={{ fontFamily:RG.mono, fontSize:7, letterSpacing:'.14em', color:RG.textFaint, textTransform:'uppercase' }}>{leadingName ? `${leadingName} leva o set` : 'Leitura de quadra'}</div>
+        <button type="button" onClick={onDone} style={{ border:0, background:'transparent', color:RG.textFaint, cursor:'pointer', fontFamily:RG.mono, fontSize:12, padding:0 }}>×</button>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${Math.min(2, insight.players.length)}, minmax(0, 1fr))` }}>
+        {insight.players.map(({ player, briefing }, idx) => {
+          const coaching = player?.coaching ?? {};
+          const tense = (coaching.friction ?? 0) >= 64;
+          const color = tense ? '#FF8A63' : RG.lime;
+          return (
+            <div key={player.id ?? idx} style={{ padding:'13px 14px 15px', borderLeft:idx ? '1px solid rgba(255,255,255,.08)' : 'none' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'baseline', marginBottom:6 }}>
+                <div style={{ fontFamily:RG.display, color:RG.white, fontSize:22, lineHeight:1, textTransform:'uppercase' }}>{player.name}</div>
+                <div style={{ fontFamily:RG.mono, color, fontSize:7, letterSpacing:'.13em', textTransform:'uppercase' }}>{briefing.tone}</div>
+              </div>
+              <div style={{ fontFamily:RG.mono, color:'rgba(242,237,232,.45)', fontSize:7, letterSpacing:'.12em', textTransform:'uppercase', marginBottom:6 }}>
+                {coaching.activeCoachName ?? 'Técnico'} · {briefing.influence}% de influência no plano
+              </div>
+              <div style={{ fontFamily:RG.display, color, fontSize:17, lineHeight:1, textTransform:'uppercase' }}>{briefing.headline}</div>
+              <div style={{ fontFamily:RG.body, color:RG.textDim, fontSize:12, lineHeight:1.45, marginTop:5 }}>{briefing.instruction}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, setSimSpeed, speedRef,
                                        frameHistoryRef, bugMode, setBugMode, bugSpeedSaveRef,
-                                       coachPool = [], tournamentId = null,
+                                       tournamentId = null,
                                        universePlayerA = null, universePlayerB = null,
                                        disableCameraMotion = false,
                                        liteMode = false,
@@ -1452,11 +1327,10 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
   const [soundOn, setSoundOn]                     = useState(() => isSoundOn());
   const [showSoundSettings, setShowSoundSettings] = useState(false);
+  const [broadcastClean, setBroadcastClean]       = useState(false);
+  const [showDevControls, setShowDevControls]     = useState(false);
 
-  // FASE 6: Changeover card de técnico
-  const [coachCard, setCoachCard] = useState(null); // { instructions, coachName, philosophy, executionReport, trust } | null
-  const prevInstructionsRef = useRef([]); // instruções do changeover anterior para gerar relatório
-  const matchLogRef = useRef([]); // log de pontos para CoachAnalyzer
+  const matchLogRef = useRef([]);
   const matchFeelTelemetryRef = useRef([]); // memoria tecnica/emocional de cada ponto
   const matchDirectorCueRef = useRef(null); // decisao audiovisual do ultimo ponto
   const matchArcRef = useRef(null); // leitura narrativa dos ultimos pontos
@@ -1467,6 +1341,9 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
   // ── Medical Time Out overlay ───────────────────────────────────────────────
   const [mtoOverlay, setMtoOverlay] = useState(null); // { playerName, injuryLabel, severity, canContinue } | null
   const prevMtoStateRef = useRef(false); // detecta transição MEDICAL_TIMEOUT
+  const [coachChangeover, setCoachChangeover] = useState(null);
+  const completedSetsRef = useRef(null);
+  const coachChangeoverTimerRef = useRef(null);
 
   // ── Modo Caça Bug ─────────────────────────────────────────────────────────
   const [bugOverlay, setBugOverlay]   = useState(false);
@@ -1609,6 +1486,8 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       const CL = CLRef.current;
       if (!CL.y) return [];
       const rand = mulberry32(0xF00DC0FF);
+      const venue = getVenueOverride(tournamentId);
+      const arena = venue.arena ?? {};
       const RB_H = CL.rbH || 50;
       const RB_W = CL.rbW || 50;
       const WALL = 18;
@@ -1621,6 +1500,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
       // Vibrant fan gear — real stadium colors
       const BODY_COLORS = [
+        ...(arena.standPalette ?? []),
         '#1A3A8F','#0D2E78','#2244AA','#0F2060', // blues (majority)
         '#8B0000','#A01010','#CC1111','#7A0808', // reds
         '#FFFFFF','#F0F0F0','#E8E8E8',           // whites
@@ -1643,7 +1523,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       ];
 
       const people = [];
-      const TOTAL  = 420; // NEWME: 260 → 420
+      const TOTAL  = Math.round(420 * (arena.density ?? 0.80));
 
       const topArea   = topMax > 10 ? W * Math.max(0, topMax - 8)    : 0;
       const botArea   = H - botMin > 10 ? W * Math.max(0, H - botMin - 8) : 0;
@@ -1766,6 +1646,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
     function drawStaticBG(bgCtx, W, H) {
       const CL = CLRef.current;
+      const venue = getVenueOverride(tournamentId);
       bgCtx.clearRect(0,0,W,H);
       // NEWME1.0: Pure black arena background
       bgCtx.fillStyle = '#000000';
@@ -1785,27 +1666,29 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       const sideStandH   = botStandTop - topStandBot;
 
       // ── STAND ZONES ───────────────────────────────────────────────────────
-      if (topStandBot > 0)   drawStands(bgCtx, 0, 0, W, topStandBot, 'top');
-      if (H - botStandTop > 0) drawStands(bgCtx, 0, botStandTop, W, H - botStandTop, 'bot');
-      if (leftStandW > 0)    drawStands(bgCtx, 0, topStandBot, leftStandW, sideStandH, 'left');
-      if (rightStandW > 0)   drawStands(bgCtx, rightStandX, topStandBot, rightStandW, sideStandH, 'right');
+      if (topStandBot > 0)   drawStands(bgCtx, 0, 0, W, topStandBot, 'top', venue);
+      if (H - botStandTop > 0) drawStands(bgCtx, 0, botStandTop, W, H - botStandTop, 'bot', venue);
+      if (leftStandW > 0)    drawStands(bgCtx, 0, topStandBot, leftStandW, sideStandH, 'left', venue);
+      if (rightStandW > 0)   drawStands(bgCtx, rightStandX, topStandBot, rightStandW, sideStandH, 'right', venue);
 
       // ── ADVERTISING WALLS (top/bot baseline + side walls) ─────────────────
-      const _advVenue = getVenueOverride(tournamentId);
-      const _advTheme = _advVenue?.advertisingTheme ?? null;
+      const _advTheme = venue?.advertisingTheme ?? null;
       drawAdvertisingWall(bgCtx, 0,                   CL.y - RB_H - WALL, W,    WALL, 'h', _advTheme);
       drawAdvertisingWall(bgCtx, 0,                   CL.y + CL.h + RB_H, W,    WALL, 'h', _advTheme);
       drawAdvertisingWall(bgCtx, CL.x - RB_W - WALL, CL.y - RB_H,        WALL, CL.h + RB_H*2, 'v', _advTheme);
       drawAdvertisingWall(bgCtx, CL.x + CL.w + RB_W, CL.y - RB_H,        WALL, CL.h + RB_H*2, 'v', _advTheme);
+
+      drawArenaSignature(bgCtx, W, H, CL, venue);
 
       // ── FLOODLIGHT GLOW (static soft cones from towers) ──────────────────
       drawFloodlightTowers(bgCtx, W, H);
     }
 
     // ── NEWME1.0: Dark concrete arena stands ────────────────────────────────
-    function drawStands(bgCtx, sx, sy, sw, sh, zone) {
+    function drawStands(bgCtx, sx, sy, sw, sh, zone, venue) {
       if (sh <= 0 || sw <= 0) return;
       const rand = mulberry32(0xBBCCDD11 + (zone === 'top' ? 1 : zone === 'bot' ? 2 : zone === 'left' ? 3 : 4));
+      const arena = venue?.arena ?? {};
 
       // Pure black base
       bgCtx.fillStyle = '#000000';
@@ -1814,13 +1697,13 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       const isSide = zone === 'left' || zone === 'right';
 
       // 3 tiers: each separated by a dark concrete aisle
-      const TIER_COUNT = 3;
+      const TIER_COUNT = Math.max(1, Math.min(5, arena.tiers ?? 3));
       const tierH = sh / TIER_COUNT;
       const AISLE_H = Math.max(3, tierH * 0.10);
       const ROW_H   = Math.max(6, Math.min(10, (tierH - AISLE_H) / 7));
 
       // Section seat-block colors — real stadium palette (navy, red, gray, silver)
-      const SECTION_PALETTE = [
+      const SECTION_PALETTE = arena.standPalette?.length ? arena.standPalette : [
         '#0D1F55', '#112268', '#0A1840',  // navy sections
         '#6B0000', '#7A0A0A', '#550000',  // red sections
         '#1A1A1A', '#222222', '#151515',  // dark gray sections
@@ -1837,7 +1720,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         const aisleY = zone === 'top'
           ? tierTop + tierH - AISLE_H
           : tierTop;
-        bgCtx.fillStyle = '#0a0a0a';
+        bgCtx.fillStyle = arena.aisleColor ?? '#0a0a0a';
         bgCtx.fillRect(sx, aisleY, sw, AISLE_H);
         bgCtx.fillStyle = 'rgba(255,255,255,0.05)';
         bgCtx.fillRect(sx, aisleY, sw, 1);
@@ -1909,12 +1792,77 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       const vipY = zone === 'top' ? sy + sh - ROW_H - AISLE_H : sy + AISLE_H;
       bgCtx.save();
       bgCtx.globalAlpha = 0.35;
-      bgCtx.fillStyle = '#2A1800';
+      bgCtx.fillStyle = arena.vipColor ?? '#2A1800';
       bgCtx.fillRect(sx, vipY, sw, ROW_H);
       bgCtx.globalAlpha = 0.18;
-      bgCtx.fillStyle = '#FFD700';
+      bgCtx.fillStyle = arena.trim ?? '#FFD700';
       bgCtx.fillRect(sx, vipY, sw, 2);
       bgCtx.restore();
+    }
+
+    // Arquitetura e assinatura permanecem fora da física da quadra. O perfil
+    // permite que dois torneios no mesmo piso tenham silhuetas reconhecíveis.
+    function drawArenaSignature(ctx, W, H, CL, venue) {
+      const arena = venue?.arena ?? {};
+      const accent = arena.trim ?? venue?.accentColor ?? '#8aa0ad';
+      const label = venue?.advertisingTheme?.slamName ?? venue?.venueLabel ?? '';
+      const sig = arena.signature ?? arena.style ?? 'tour';
+      const topLimit = Math.max(18, CL.y - (CL.rbH || 50) - 22);
+      const bottomStart = Math.min(H - 18, CL.y + CL.h + (CL.rbH || 50) + 22);
+
+      ctx.save();
+      ctx.strokeStyle = accent;
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = venue?.grandSlam ? 0.48 : 0.22;
+      ctx.lineWidth = venue?.grandSlam ? 2 : 1;
+
+      // Estrutura de cobertura: uma linha arquitetônica simples, mas própria.
+      if (arena.roof && arena.roof !== 'open') {
+        ctx.beginPath();
+        ctx.moveTo(W * 0.08, Math.max(8, topLimit * 0.34));
+        ctx.quadraticCurveTo(W * 0.50, sig === 'crystal-crown' ? 2 : topLimit * 0.02, W * 0.92, Math.max(8, topLimit * 0.34));
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(W * 0.08, H - Math.max(8, (H-bottomStart) * 0.34));
+        ctx.quadraticCurveTo(W * 0.50, H - (sig === 'crystal-crown' ? 2 : (H-bottomStart) * 0.02), W * 0.92, H - Math.max(8, (H-bottomStart) * 0.34));
+        ctx.stroke();
+      }
+
+      // Placar/wordmark central. Nos clubes ele é compacto; nos Slams vira marco.
+      if (label) {
+        const boxW = Math.min(W * 0.34, Math.max(150, label.length * 10));
+        const boxH = venue?.grandSlam ? 24 : 17;
+        const boxY = Math.max(4, topLimit * 0.48 - boxH / 2);
+        ctx.globalAlpha = 0.88;
+        ctx.fillStyle = 'rgba(2,5,8,0.90)';
+        ctx.fillRect(W/2-boxW/2, boxY, boxW, boxH);
+        ctx.strokeStyle = accent; ctx.strokeRect(W/2-boxW/2, boxY, boxW, boxH);
+        ctx.fillStyle = accent;
+        ctx.font = `800 ${venue?.grandSlam ? 10 : 8}px 'Space Mono', monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, W/2, boxY + boxH/2);
+      }
+
+      ctx.globalAlpha = 0.25;
+      if (sig === 'sun-disc') {
+        [W*0.12,W*0.88].forEach(x => { ctx.beginPath();ctx.arc(x,topLimit*0.48,18,0,Math.PI*2);ctx.stroke(); for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(x+Math.cos(a)*22,topLimit*.48+Math.sin(a)*22);ctx.lineTo(x+Math.cos(a)*31,topLimit*.48+Math.sin(a)*31);ctx.stroke();} });
+      } else if (sig === 'clay-arches') {
+        for(let i=0;i<7;i++){const x=W*(.16+i*.113);ctx.beginPath();ctx.arc(x,topLimit*.78,14,Math.PI,0);ctx.stroke();}
+      } else if (sig === 'ivy-crown') {
+        for(let x=W*.08;x<W*.92;x+=14){ctx.beginPath();ctx.arc(x,topLimit*.64+Math.sin(x*.05)*3,3.2,0,Math.PI*2);ctx.fill();}
+      } else if (sig === 'neon-grid') {
+        ctx.setLineDash([5,8]); for(let x=W*.08;x<W*.92;x+=35){ctx.beginPath();ctx.moveTo(x,3);ctx.lineTo(x+18,topLimit*.80);ctx.stroke();} ctx.setLineDash([]);
+      } else if (sig === 'deco-fans') {
+        [W*.13,W*.87].forEach(x=>{for(let r=9;r<34;r+=8){ctx.beginPath();ctx.arc(x,topLimit*.70,r,Math.PI,Math.PI*2);ctx.stroke();}});
+      } else if (sig === 'crystal-crown') {
+        for(let i=0;i<9;i++){const x=W*(.20+i*.075), y=topLimit*.64-(i%2)*10;ctx.beginPath();ctx.moveTo(x,y-10);ctx.lineTo(x+7,y);ctx.lineTo(x,y+10);ctx.lineTo(x-7,y);ctx.closePath();ctx.stroke();}
+      }
+
+      if (arena.flowerBeds) {
+        ctx.globalAlpha = 0.40;
+        for(let i=0;i<24;i++){const x=W*.18+i*(W*.64/23);ctx.fillStyle=i%3===0?'#e7d49a':i%2===0?'#704686':'#dfead7';ctx.beginPath();ctx.arc(x,bottomStart+4+(i%2)*2,2.1,0,Math.PI*2);ctx.fill();}
+      }
+      ctx.restore();
     }
 
     // ── NEWME1.0: Advertising boards on walls ──────────────────────────────────
@@ -2320,12 +2268,19 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       if (!CL.x) return;
 
       const WALL = 18;
-      const surfKey = surf===SURF.CLAY?'CLAY':surf===SURF.GRASS?'GRASS':surf===SURF.INDOOR?'INDOOR':'HARD';
+      const surfKey = surf===SURF.CLAY?'CLAY'
+                    : surf===SURF.GRASS?'GRASS'
+                    : surf===SURF.INDOOR?'INDOOR'
+                    : surf===SURF.STREET?'STREET'
+                    : surf===SURF.CARPET?'CARPET'
+                    : 'HARD';
       const VC = {
         CLAY:   { outer:'#AA3310', outerDark:'#882A0A', accent:'#C4572A' },
         GRASS:  { outer:'#1A5C20', outerDark:'#114018', accent:'#2A8830' },
         HARD:   { outer:'#0E3E84', outerDark:'#092E6A', accent:'#1855A8' },
         INDOOR: { outer:'#18188A', outerDark:'#101068', accent:'#2828AA' },
+        STREET: { outer:'#0D0D0D', outerDark:'#050505', accent:'#4A4A4A' },
+        CARPET: { outer:'#8A7047', outerDark:'#5F4A2C', accent:'#D8C49A' },
       }[surfKey];
 
       // Venue override on outer court / bloom
@@ -2455,10 +2410,10 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
       // ── SERVICE BOX DIFFERENTIATION (slightly lighter) ─────────────────
       // In USO / AO, service boxes are noticeably lighter than the outer court
-      const svcBrighter = surf === SURF.HARD   ? 0.12
+      const svcBrighter = venue.surfaceFx?.serviceContrast ?? (surf === SURF.HARD   ? 0.12
                         : surf === SURF.INDOOR ? 0.08
                         : surf === SURF.CLAY   ? 0.05
-                        :                        0.04;  // grass minimal
+                        :                        0.04);  // grass minimal
       if (svcBrighter > 0) {
         ctx.save();
         ctx.fillStyle = `rgba(255,255,255,${svcBrighter})`;
@@ -2517,24 +2472,35 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         ctx.restore();
       }
 
-      if (surf === SURF.HARD || surf === SURF.INDOOR) {
+      if (surf === SURF.HARD || surf === SURF.INDOOR || surf === SURF.STREET || surf === SURF.CARPET) {
         ctx.save();
+        const brightGrain = surf === SURF.STREET ? '185,185,185'
+                          : surf === SURF.CARPET ? '248,232,190'
+                          : '255,255,255';
+        const coolGrain = surf === SURF.STREET ? '82,82,82'
+                        : surf === SURF.CARPET ? '120,92,48'
+                        : '100,140,255';
         for (let gx = x; gx < x+w; gx += 5) {
           for (let gy = y; gy < y+h; gy += 5) {
             if (lcg() < 0.10) {
-              ctx.fillStyle = `rgba(${lcg()>0.5?'255,255,255':'100,140,255'},${0.02+lcg()*0.035})`;
+              ctx.fillStyle = `rgba(${lcg()>0.5?brightGrain:coolGrain},${0.02+lcg()*0.035})`;
               ctx.fillRect(gx + lcg()*5, gy + lcg()*5, 1+lcg()*1.2, 1+lcg()*1.2);
             }
           }
         }
         // Subtle horizontal texture lines
-        ctx.globalAlpha = 0.020; ctx.strokeStyle = '#aabbff'; ctx.lineWidth = 0.7;
+        ctx.globalAlpha = 0.020;
+        ctx.strokeStyle = surf === SURF.STREET ? '#a0a0a0'
+                        : surf === SURF.CARPET ? '#6f5632'
+                        : '#aabbff';
+        ctx.lineWidth = 0.7;
         for (let yi = y; yi < y+h; yi += 8) { ctx.beginPath();ctx.moveTo(x,yi);ctx.lineTo(x+w,yi);ctx.stroke(); }
         ctx.restore();
       }
 
       // ── WORN TRAFFIC PATHS ────────────────────────────────────────────────
-      const wornA = surf === SURF.CLAY ? 0.10 : surf === SURF.GRASS ? 0.08 : 0.045;
+      const wearMult = venue.surfaceFx?.wear ?? 1;
+      const wornA = (surf === SURF.CLAY ? 0.10 : surf === SURF.GRASS ? 0.08 : 0.045) * wearMult;
       // Baseline worn zones
       const bw = ctx.createRadialGradient(cx, y + h*0.08, 0, cx, y + h*0.08, w*0.30);
       bw.addColorStop(0, `rgba(255,255,255,${wornA*1.3})`);
@@ -2667,7 +2633,8 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       // ── INNER COURT LIGHTING GRADIENT ─────────────────────────────────────
       // Subtle center-bright, edge-slightly-darker (overhead lights effect)
       const lmap = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.62);
-      lmap.addColorStop(0,    'rgba(255,255,255,0.06)');
+      const venueSheen = venue.surfaceFx?.sheen ?? 0;
+      lmap.addColorStop(0,    `rgba(255,255,255,${0.06 + venueSheen * 0.25})`);
       lmap.addColorStop(0.45, 'rgba(255,255,255,0.02)');
       lmap.addColorStop(1,    'rgba(0,0,0,0.08)');
       ctx.fillStyle = lmap;
@@ -2867,116 +2834,70 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       ctx.restore();
     }
 
-    // ── Umpire chair + ball kids — NEWME1.0 ────────────────────────────────────
+    // Equipe de quadra na mesma linguagem circular dos jogadores. O aro e o
+    // miolo comunicam função sem introduzir bonecos detalhados no top-down.
     function drawVenuePersonnel(ctx, CL, surf) {
-      const accent    = surf===SURF.CLAY ? '#C4572A' : surf===SURF.GRASS ? '#2A7A30' : surf===SURF.INDOOR ? '#3A2AA0' : '#1A5AA8';
-      const chairJerseyColor = surf===SURF.CLAY ? '#C4572A' : surf===SURF.GRASS ? '#225E22' : '#1A2A6E';
+      const venue = getVenueOverride(tournamentId);
+      const kit = venue.personnel ?? {};
+      const primary = kit.primary ?? '#173c59';
+      const secondary = kit.secondary ?? '#eef4f6';
+      const roleRing = kit.roleRing ?? venue.accentColor ?? '#71b9dc';
+      const lineColor = kit.lineJudge ?? primary;
+      const t = performance.now() * 0.001;
+      const rbW = Math.max(24, CL.rbW || 45);
+      const rbH = Math.max(24, CL.rbH || 45);
 
-      // ── UMPIRE CHAIR ─────────────────────────────────────────────────────
-      // Positioned right of net on right sideline (CL.srvR is the singles sideline)
-      // Elevated chair — visible from top-down: base platform + legs + person + umbrella
-      const chairX = CL.srvR + (CL.x + CL.w - CL.srvR) * 0.38;
-      const chairY = CL.cy;          // at net height
-
-      // Shadow
-      ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.ellipse(chairX, chairY + 14, 14, 4, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-
-      // Chair legs (4 posts, top-down view shows as two rectangles)
-      ctx.fillStyle = '#555';
-      ctx.fillRect(chairX - 8, chairY - 2, 3, 14);
-      ctx.fillRect(chairX + 5, chairY - 2, 3, 14);
-
-      // Seat platform
-      ctx.fillStyle = chairJerseyColor;
-      ctx.beginPath();
-      ctx.roundRect(chairX - 10, chairY - 8, 20, 10, 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
-
-      // Person torso
-      ctx.fillStyle = accent;
-      ctx.beginPath(); ctx.ellipse(chairX, chairY - 16, 6, 5, 0, 0, Math.PI*2); ctx.fill();
-
-      // Head
-      ctx.fillStyle = '#d4a870';
-      ctx.beginPath(); ctx.arc(chairX, chairY - 23, 4.5, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.20)'; ctx.lineWidth = 0.6;
-      ctx.stroke();
-
-      // Umbrella / parasol (viewed from top: rounded cap)
-      ctx.save();
-      ctx.globalAlpha = 0.72;
-      ctx.fillStyle = accent;
-      ctx.beginPath();
-      ctx.arc(chairX, chairY - 32, 10, Math.PI, Math.PI*2);
-      ctx.closePath(); ctx.fill();
-      // Umbrella stripe
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(chairX, chairY - 32); ctx.lineTo(chairX, chairY - 22); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(chairX - 8, chairY - 28); ctx.lineTo(chairX, chairY - 22); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(chairX + 8, chairY - 28); ctx.lineTo(chairX, chairY - 22); ctx.stroke();
-      ctx.restore();
-
-      // Label
-      ctx.save();
-      ctx.globalAlpha = 0.55;
-      ctx.fillStyle = 'rgba(255,255,255,0.80)';
-      ctx.font = `bold 7px 'Space Mono', monospace`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('JUIZ', chairX, chairY - 42);
-      ctx.restore();
-
-      // ── BALL KIDS — 4 corners of the runback zone ────────────────────────
-      // They crouch near the back corners, holding a ball
-      const RB = Math.max(20, CL.rbH * 0.55);
-      const kidPositions = [
-        { x: CL.x + CL.w * 0.20, y: CL.y - RB * 0.55 },            // top-left area
-        { x: CL.x + CL.w * 0.80, y: CL.y - RB * 0.55 },            // top-right area
-        { x: CL.x + CL.w * 0.20, y: CL.y + CL.h + RB * 0.55 },     // bot-left
-        { x: CL.x + CL.w * 0.80, y: CL.y + CL.h + RB * 0.55 },     // bot-right
-      ];
-
-      // Jersey color per tournament (matches accent)
-      const kidJersey = surf===SURF.CLAY ? '#C85A2A' : surf===SURF.GRASS ? '#2A7A30' : '#1A2A8E';
-
-      kidPositions.forEach(({ x, y }) => {
+      function token(x, y, radius, fill, ring, glyph, phase=0, ball=false) {
+        const bob = Math.sin(t * 1.7 + phase) * 0.8;
         ctx.save();
-
-        // Shadow
-        ctx.globalAlpha = 0.20;
+        ctx.globalAlpha = 0.24;
         ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.ellipse(x, y + 7, 7, 2.5, 0, 0, Math.PI*2); ctx.fill();
-
-        // Body
-        ctx.globalAlpha = 0.90;
-        ctx.fillStyle = kidJersey;
-        ctx.beginPath(); ctx.arc(x, y + 2, 6, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 0.7; ctx.stroke();
-
-        // Head
+        ctx.beginPath(); ctx.ellipse(x + 2, y + radius * .62, radius * 1.05, radius * .34, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#d0a070';
-        ctx.beginPath(); ctx.arc(x, y - 5, 4, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.5; ctx.stroke();
-
-        // Ball (held in front — small yellow circle)
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#CCDD00';
-        ctx.beginPath(); ctx.arc(x + 9, y, 3.5, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 0.6; ctx.stroke();
-        // Ball seam
-        ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 0.5;
-        ctx.beginPath(); ctx.arc(x + 9, y, 2.2, 0.2, Math.PI - 0.2); ctx.stroke();
-
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = ring;
+        ctx.lineWidth = Math.max(1.2, radius * .22);
+        ctx.beginPath(); ctx.arc(x, y + bob, radius, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = secondary;
+        ctx.globalAlpha = .92;
+        ctx.beginPath(); ctx.arc(x, y - radius*.28 + bob, radius*.34, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = .84;
+        ctx.fillStyle = secondary;
+        ctx.font = `900 ${Math.max(5, radius*.72)}px 'Space Mono', monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(glyph, x, y + radius*.34 + bob);
+        if (ball) {
+          ctx.globalAlpha = 1; ctx.fillStyle = '#d6e51a'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth=.7;
+          ctx.beginPath(); ctx.arc(x + radius*1.22, y + bob, Math.max(2.3,radius*.34), 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        }
         ctx.restore();
-      });
+      }
+
+      // Cadeira na continuação da rede: plataforma legível e árbitro elevado.
+      const chairX = CL.cx;
+      const chairY = CL.y + CL.h + rbH * .48;
+      ctx.save();
+      ctx.fillStyle = 'rgba(6,8,10,.72)';
+      ctx.strokeStyle = roleRing; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.roundRect(chairX-12, chairY-8, 24, 17, 4); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(230,240,245,.35)';
+      ctx.beginPath();ctx.moveTo(chairX-9,chairY+8);ctx.lineTo(chairX-12,chairY+15);ctx.moveTo(chairX+9,chairY+8);ctx.lineTo(chairX+12,chairY+15);ctx.stroke();
+      ctx.restore();
+      token(chairX, chairY-7, 8.2, primary, roleRing, 'U', .2);
+
+      // Juízes de linha ocupam as duas linhas de fundo; quatro pontos discretos.
+      const lineOfficials = [
+        [CL.x-rbW*.42, CL.y+CL.h*.32], [CL.x-rbW*.42, CL.y+CL.h*.68],
+        [CL.x+CL.w+rbW*.42, CL.y+CL.h*.32], [CL.x+CL.w+rbW*.42, CL.y+CL.h*.68],
+      ];
+      lineOfficials.forEach(([x,y],i)=>token(x,y,5.7,lineColor,roleRing,'L',i*1.3));
+
+      // Boleiros ficam nos quatro cantos de fundo, menores e com bola visível.
+      const ballKids = [
+        [CL.x-rbW*.50, CL.y+CL.h*.13], [CL.x-rbW*.50, CL.y+CL.h*.87],
+        [CL.x+CL.w+rbW*.50, CL.y+CL.h*.13], [CL.x+CL.w+rbW*.50, CL.y+CL.h*.87],
+      ];
+      ballKids.forEach(([x,y],i)=>token(x,y,5.2,primary,secondary,'B',i*.9+.6,true));
     }
 
 
@@ -4888,7 +4809,6 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       // ── FASE 6: bandeiras + crowd roar overlay ───────────────────────
       drawFlags(ctx, W, H, crowdWaveRef.current, crowdWaveIntRef.current);
       drawCrowdRoarOverlay(ctx, W, H);
-      drawVenuePersonnel(ctx,CL,surf);
 
       // Court layer (cached per surface)
       if(courtLayerRef.current&&courtLayerCtxRef.current){
@@ -4905,6 +4825,10 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         }
         drawServeBox(ctx,CL,gs);
       } else { drawCourt(ctx,CL,surf,gs); }
+
+      // Pessoal fica acima da quadra e do runback; antes era parcialmente
+      // encoberto pelo cache do piso.
+      drawVenuePersonnel(ctx,CL,surf);
 
       // Footstep marks
       gs.players.forEach(p=>{
@@ -5228,7 +5152,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
     return () => clearTimeout(directorCueTimerRef.current);
   }, [directorCue]);
 
-  // FASE 6: Popula matchLogRef a cada ponto — alimenta o CoachAnalyzer
+  // Popula matchLogRef a cada ponto para a leitura visual da partida.
   useEffect(() => {
     if (!snap) return;
     if (snap.gameState !== GameState.POINT_END) return;
@@ -5394,62 +5318,6 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
     }
   }, [snap?.players?.[0]?.name]); // eslint-disable-line
 
-  // FASE 6: Changeover card — detecta gs._pendingCoachChangeover
-  useEffect(() => {
-    if (!snap) return;
-    const gs = gsRef.current;
-    if (!gs || !gs._pendingCoachChangeover) return;
-    gs._pendingCoachChangeover = false; // consumir o sinal
-
-    // Coleta log de ponto atual (simplificado: extrai de resolvePoint events)
-    // O matchLogRef é atualizado a cada ponto via resolvePoint via gs.log
-    const players = gs.players ?? [];
-    const player0 = players[0];
-    if (!player0?.coach?.coachId) return; // sem técnico, sem card
-
-    const coach = coachPool.find(c => c.id === player0.coach.coachId);
-    if (!coach) return;
-
-    try {
-      const opp   = players[1];
-
-      // Gerar relatório de execução das instruções anteriores
-      const execReport = generateExecutionReport(
-        matchLogRef.current,
-        prevInstructionsRef.current,
-        coach,
-      );
-
-      const result = runChangeover(
-        player0, opp, matchLogRef.current, coach,
-        analyzeMatch, generateInstructions,
-      );
-
-      if (result?.instructions?.length > 0) {
-        // Calcular delta de trust e atualizar no player0.coach
-        if (execReport && player0.coach) {
-          const delta = calcTrustDelta(execReport);
-          player0.coach = applyTrustDelta(player0.coach, delta);
-        }
-
-        // Salvar instruções atuais como "anteriores" para o próximo changeover
-        prevInstructionsRef.current = result.instructions;
-
-        setCoachCard({
-          instructions: result.instructions,
-          coachName: coach.fullName ?? coach.name,
-          philosophy: coach.philosophy,
-          executionReport: execReport,
-          trust: player0.coach?.trust ?? null,
-        });
-        // Auto-dismiss após 10s (ligeiramente maior para o usuário ler o relatório)
-        setTimeout(() => setCoachCard(null), 10000);
-      }
-    } catch (e) {
-      console.warn('[Fase6] Changeover coach error:', e);
-    }
-  }, [snap?.players?.[0]?.games, snap?.players?.[1]?.games]); // dispara a cada mudança de game
-
   // ── MTO overlay — detecta MEDICAL_TIMEOUT ────────────────────────────────
   useEffect(() => {
     if (!snap) return;
@@ -5487,6 +5355,32 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
     }
   }, [snap?.gameState]); // eslint-disable-line
 
+  // O técnico deixa de ser só uma variável invisível: a cada set há uma leitura
+  // curta do banco, baseada no plano que já está influenciando a partida.
+  useEffect(() => {
+    const players = snap?.players ?? [];
+    if (players.length < 2) return;
+    const completedSets = (players[0]?.sets ?? 0) + (players[1]?.sets ?? 0);
+    if (completedSetsRef.current == null) {
+      completedSetsRef.current = completedSets;
+      return;
+    }
+    if (completedSets <= completedSetsRef.current) return;
+    completedSetsRef.current = completedSets;
+    if (snap?.gameState === GameState.GAME_OVER) return;
+    const livePlayers = players.map((player, index) => gsRef.current?.players?.[index] ?? player);
+    const withBriefing = livePlayers
+      .map(player => ({ player, briefing: player?._matchPlan?.coaching?.briefing }))
+      .filter(entry => entry.briefing && entry.player?.coaching?.activeCoachId)
+      .slice(0, 2);
+    if (!withBriefing.length) return;
+    const leaderIndex = players[0]?.sets === players[1]?.sets ? null : (players[0]?.sets ?? 0) > (players[1]?.sets ?? 0) ? 0 : 1;
+    const leader = leaderIndex == null ? null : (livePlayers[leaderIndex] ?? players[leaderIndex]);
+    setCoachChangeover({ players: withBriefing, leaderName: leader?.name ?? null });
+    if (coachChangeoverTimerRef.current) clearTimeout(coachChangeoverTimerRef.current);
+    coachChangeoverTimerRef.current = setTimeout(() => setCoachChangeover(null), 7000);
+  }, [snap?.players?.[0]?.sets, snap?.players?.[1]?.sets, snap?.gameState]);
+
   // ── Derived snap values ───────────────────────────────────────────────────
   const p0=snap?.players?.[0], p1=snap?.players?.[1];
   const gs=gsRef.current;
@@ -5506,6 +5400,20 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
   const courtName=gs?.courtMeta?.name||surf2.venue;
   const lastShot0=lastShotRef.current[0], lastShot1=lastShotRef.current[1];
   const lastSpeed=lastSpeedRef.current;
+  const cleanHud = broadcastClean && !liteMode;
+  const showRichPanels = !liteMode && !cleanHud;
+  const showTechnicalControls = !cleanHud || showDevControls;
+  const serveStatus = (() => {
+    if (!gs || (gs.gameState !== GameState.PRE_SERVE && gs.gameState !== GameState.SERVING)) return null;
+    const server = gs.players?.[gs.server];
+    const faultCount = server?.faults ?? 0;
+    const serveLabel = faultCount >= 1 ? '2o saque' : '1o saque';
+    if (gs.gameState === GameState.SERVING) return `${serveLabel} em movimento`;
+    const remaining = Math.max(0, 0.75 - (gs.stateTimer ?? 0));
+    return remaining > 0.12
+      ? `Preparando ${serveLabel} ${remaining.toFixed(1)}s`
+      : `Preparando ${serveLabel}`;
+  })();
 
   return (
     <div style={{ position:'relative', width:'100%', height:'100%', background:'#020804', overflow:'hidden', fontFamily:RG.body }}>
@@ -5518,7 +5426,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       <canvas ref={canvasRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%' }} />
 
       {/* Hit label pills — v2: modern pill redesign */}
-      {!liteMode && hitLabels.map(hl => {
+      {!liteMode && !cleanHud && hitLabels.map(hl => {
         const q    = hl.quality ?? 0.5;
         const qPct = Math.round(q * 100);
 
@@ -5541,14 +5449,6 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
           ...(Array.isArray(hl.engineTags) ? hl.engineTags.map(t => String(t).toUpperCase()) : []),
           ...(Array.isArray(hl.feelTags) ? hl.feelTags.map(t => String(t).toUpperCase()) : []),
         ].filter((v, idx, arr) => !!v && arr.indexOf(v) === idx).slice(0, 4);
-        const engineBand = hl.shotEngine?.quality?.band ?? tier.label;
-        const engineRiskLine = [
-          `Q ${qPct}`,
-          engineBand,
-          Number.isFinite(hl.engineRisk) ? `RISK ${hl.engineRisk}` : null,
-          Number.isFinite(hl.engineDispersion) ? `DSP ${hl.engineDispersion}` : null,
-        ].filter(Boolean).join(' · ');
-
         const wingBg    = wing === 'FH' ? 'rgba(100,180,255,0.18)' : 'rgba(255,160,80,0.15)';
         const wingColor = wing === 'FH' ? '#82C4FF' : '#FFB060';
 
@@ -5717,78 +5617,63 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         return (
           <div key={hl.id} style={{
             position:'absolute', left:`${hl.px}%`, top:`${hl.py}%`,
-            transform:'translate(-50%, calc(-100% - 18px))',
+            transform:'translate(-50%, calc(-100% - 12px))',
             zIndex:30, pointerEvents:'none', animation: baseAnim,
           }}>
             <div style={{
               position:'relative',
-              background:'rgba(6,10,7,0.90)',
-              border:`1px solid ${ac}30`,
-              borderRadius:20,
-              boxShadow:`0 6px 24px rgba(0,0,0,0.80), 0 0 18px ${tier.glow}`,
-              backdropFilter:'blur(16px)',
+              background:'rgba(5,10,7,0.84)',
+              border:`1px solid ${ac}26`,
+              borderRadius:12,
+              boxShadow:`0 4px 14px rgba(0,0,0,0.58), 0 0 10px ${tier.glow}`,
+              backdropFilter:'blur(10px)',
               overflow:'hidden',
-              minWidth:132,
+              minWidth:116,
+              maxWidth:176,
             }}>
               {/* Quality glow strip at top */}
               <div style={{
-                height:2.5,
+                height:1.5,
                 background:`linear-gradient(90deg,transparent,${tier.color}${Math.round(q*200).toString(16).padStart(2,'0')},transparent)`,
               }} />
-              <div style={{ padding:'8px 14px 10px' }}>
+              <div style={{ padding:'5px 9px 6px' }}>
                 {/* Row 1: wing pill  +  tier label  +  speed */}
-                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
                   {wing && (
                     <span style={{
-                      fontFamily:RG.mono, fontSize:8, letterSpacing:2, fontWeight:700,
+                      fontFamily:RG.mono, fontSize:7, letterSpacing:1.3, fontWeight:700,
                       color: wingColor, background: wingBg,
-                      borderRadius:20, padding:'2px 7px', flexShrink:0,
+                      borderRadius:20, padding:'1px 5px', flexShrink:0,
                     }}>{wing}</span>
                   )}
                   <span style={{
-                    fontFamily:RG.mono, fontSize:8, letterSpacing:3,
+                    fontFamily:RG.mono, fontSize:7, letterSpacing:1.8,
                     color: tier.color, fontWeight:700,
                     textTransform:'uppercase', flexGrow:1,
                   }}>{tier.label}</span>
                   {hl.speed > 10 && (
                     <span style={{
-                      fontFamily:RG.mono, fontSize:9, color:'rgba(255,255,255,0.35)',
+                      fontFamily:RG.mono, fontSize:7, color:'rgba(255,255,255,0.40)',
                       letterSpacing:.5, flexShrink:0,
-                    }}>{hl.speed}<span style={{ fontSize:7 }}> km/h</span></span>
+                    }}>{hl.speed}<span style={{ fontSize:6 }}> km/h</span></span>
                   )}
                 </div>
                 {/* Row 2: emoji + shot name */}
-                <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
-                  <span style={{ fontSize:13 }}>{hl.emoji}</span>
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ fontSize:10, lineHeight:1 }}>{hl.emoji}</span>
                   <span style={{
-                    fontFamily:RG.display, fontSize:15, fontWeight:800,
-                    color: ac, letterSpacing:1.5, textTransform:'uppercase',
-                    textShadow:`0 0 10px ${ac}50`,
+                    fontFamily:RG.display, fontSize:12, fontWeight:800,
+                    color: ac, letterSpacing:1.1, textTransform:'uppercase',
+                    textShadow:`0 0 7px ${ac}45`, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
                   }}>{hl.label}</span>
                 </div>
-                  <div style={{
-                    fontFamily:RG.mono, fontSize:8, letterSpacing:1.2,
-                    color:'rgba(255,255,255,0.58)', margin:'-3px 0 6px',
-                    textTransform:'uppercase',
-                  }}>{engineRiskLine}</div>
-                  {/* Row 3: quality bar */}
-                  <div style={{ height:3, borderRadius:99, background:'rgba(255,255,255,0.07)', overflow:'hidden' }}>
-                  <div style={{
-                    height:'100%', width:`${qPct}%`, borderRadius:99,
-                    background:`linear-gradient(90deg,${tier.color}77,${tier.color})`,
-                    boxShadow: q >= 0.70 ? `0 0 5px ${tier.color}90` : 'none',
-                  }} />
-                </div>
                 {microTags.length > 0 && (
-                  <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginTop:8 }}>
-                    {microTags.map(tag => (
-                      <span key={tag} style={{
-                        fontFamily:RG.mono, fontSize:8, letterSpacing:1.1, fontWeight:700,
-                        color:'rgba(255,255,255,0.82)', background:'rgba(255,255,255,0.06)',
-                        border:'1px solid rgba(255,255,255,0.10)', borderRadius:999,
-                        padding:'2px 6px',
-                      }}>{tag}</span>
-                    ))}
+                  <div style={{
+                    fontFamily:RG.mono, fontSize:6.5, letterSpacing:.8, fontWeight:700,
+                    color:'rgba(255,255,255,0.48)', marginTop:4, textTransform:'uppercase',
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                  }}>
+                    {microTags.slice(0, 2).join(' · ')}
                   </div>
                 )}
               </div>
@@ -5798,7 +5683,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       })}
 
       {/* ── Outcome pills — ACE / WINNER / OUT / NET / DOUBLE FAULT ── */}
-      {!liteMode && outcomeLabels.map(ol => {
+      {!liteMode && !cleanHud && outcomeLabels.map(ol => {
         const cfg = {
           ACE:          { label:'ACE',          emoji:'⚡', color:'#FFD700', glow:'rgba(255,215,0,0.45)',   sub:'rgba(255,215,0,0.12)',  border:'rgba(255,215,0,0.30)',  positive:true  },
           WINNER:       { label:'WINNER',       emoji:'✦', color:'#00FF88', glow:'rgba(0,255,136,0.40)',  sub:'rgba(0,255,136,0.10)',  border:'rgba(0,255,136,0.28)', positive:true  },
@@ -5902,7 +5787,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         );
       })}
 
-      {!liteMode && directorCue && (
+      {!liteMode && !cleanHud && directorCue && (
         <div style={{
           position:'absolute',
           left:'50%',
@@ -6124,17 +6009,50 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
         {gs && <SituationPill gs={gs} />}
         {snap?.heat && <HeatPill heat={snap.heat} />}
+        {serveStatus && (
+          <div style={{
+            marginLeft:12,display:'flex',alignItems:'center',gap:7,flexShrink:0,
+            padding:'3px 10px',border:`1px solid ${surf2.color}44`,
+            background:`${surf2.color}10`,fontFamily:RG.mono,
+            fontSize:7,fontWeight:700,letterSpacing:2,
+            color:surf2.color,textTransform:'uppercase',
+          }}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:surf2.color,boxShadow:`0 0 8px ${surf2.color}`}}/>
+            {serveStatus}
+          </div>
+        )}
 
         {/* Speed controls */}
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ fontFamily:RG.mono, fontSize:8, letterSpacing:2, color:RG.textFaint, marginRight:2 }}>VEL</span>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4 }}>
+          <span style={{ fontFamily:RG.mono, fontSize:7, letterSpacing:2, color:RG.textFaint, marginRight:2 }}>VELOCIDADE</span>
           {[0.5,1,2,4,8,16,32].map(v=>(
             <button key={v} onClick={()=>{ if(setSimSpeed) setSimSpeed(v); if(speedRef) speedRef.current=v; }}
-              style={{ fontFamily:RG.mono, fontSize:8, fontWeight:700, letterSpacing:2,
+              style={{ fontFamily:RG.mono, fontSize:8, fontWeight:700, letterSpacing:1,
                 color:simSpeed===v?RG.white:RG.textFaint,
-                padding:'2px 8px', border:`1px solid ${simSpeed===v?RG.borderBright:RG.border}`,
+                minWidth:34,height:26,padding:'0 7px', border:`1px solid ${simSpeed===v?RG.borderBright:RG.border}`,
                 background:simSpeed===v?`${RG.bgLight}`:'none', cursor:'pointer' }}>{v}x</button>
           ))}
+          <div style={{ width:1, height:20, background:RG.border, margin:'0 4px' }} />
+          <button
+            onClick={() => setBroadcastClean(v => !v)}
+            title="Alternar transmissão limpa"
+            style={{ display:'flex', alignItems:'center', gap:4, fontFamily:RG.mono, fontSize:8, fontWeight:700,
+              letterSpacing:2, color:cleanHud?RG.lime:RG.textFaint,
+              padding:'4px 10px', border:`1px solid ${cleanHud?RG.lime+'55':RG.border}`,
+              background:cleanHud?`${RG.lime}12`:'none', cursor:'pointer',
+              textTransform:'uppercase', transition:'all 0.2s' }}
+          >LIMPO</button>
+          {cleanHud && (
+            <button
+              onClick={() => setShowDevControls(v => !v)}
+              title="Mostrar controles tecnicos"
+              style={{ display:'flex', alignItems:'center', gap:4, fontFamily:RG.mono, fontSize:8, fontWeight:700,
+                letterSpacing:2, color:showDevControls?RG.clay:RG.textFaint,
+                padding:'4px 9px', border:`1px solid ${showDevControls?RG.clay+'55':RG.border}`,
+                background:showDevControls?`${RG.clay}14`:'none', cursor:'pointer',
+                textTransform:'uppercase', transition:'all 0.2s' }}
+            >DEV</button>
+          )}
           <div style={{ width:1, height:20, background:RG.border, margin:'0 4px' }} />
           {/* Sound toggle */}
           <button
@@ -6156,6 +6074,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
               background:showSoundSettings?`${RG.clay}14`:'none', cursor:'pointer',
               transition:'all 0.2s' }}
           >AUDIO</button>
+          {showTechnicalControls && <>
           <div style={{ width:1, height:20, background:RG.border, margin:'0 4px' }} />
           <button
             onClick={() => {
@@ -6244,11 +6163,12 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
               background:showShotLog?`${RG.lime}0d`:'none', cursor:'pointer',
               textTransform:'uppercase', transition:'all 0.2s' }}
           >SHOTS</button>
+          </>}
         </div>
       </div>
 
       {/* ── LEFT PANEL — p1 ── */}
-      {!liteMode && p1 && (
+      {showRichPanels && p1 && (
         <div style={{ position:'fixed', top:64, left:0, bottom:16, width:218, zIndex:145,
           borderRight:`1px solid ${RG.border}`, overflow:'hidden', pointerEvents:'none',
           opacity:0.88,
@@ -6260,7 +6180,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       )}
 
       {/* ── RIGHT PANEL — p0 ── */}
-      {!liteMode && p0 && (
+      {showRichPanels && p0 && (
         <div style={{ position:'fixed', top:64, right:0, bottom:16, width:218, zIndex:145,
           borderLeft:`1px solid ${RG.border}`, overflow:'hidden', pointerEvents:'none',
           opacity:0.88,
@@ -6273,7 +6193,8 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
       {/* ── FLOATING SCORE BUG ── */}
       {p0 && p1 && (
-        <div style={{ position:'fixed', bottom:18, left:'50%', transform:'translateX(-50%)',
+        <div style={{ position:'fixed', bottom:cleanHud ? 10 : 18, left:'50%', transform:'translateX(-50%) scale(' + (cleanHud ? 0.86 : 1) + ')',
+          transformOrigin:'bottom center',
           zIndex:200, pointerEvents:'none' }}>
           <ScoreBug p0={p0} p1={p1} pts0={pts0} pts1={pts1} srv={srv} surfColor={surf2.color} curSet={curSet} heat={snap?.heat} pointHistory={snap?.pointHistory ?? []} snap={snap} />
         </div>
@@ -6283,7 +6204,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
 
       {/* ── MODO CAÇA BUG OVERLAY ── */}
       {/* ── GHOST REPLAY OVERLAY ── */}
-      {!liteMode && ghostReplay && (
+      {showRichPanels && ghostReplay && (
         <GhostReplayOverlay
           frames={ghostFrames}
           onClose={() => {
@@ -6294,7 +6215,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
         />
       )}
 
-      {!liteMode && bugOverlay && (
+      {showRichPanels && bugOverlay && (
         <BugModeOverlay
           frameHistory={bugFrames}
           rewindIdx={rewindIdx}
@@ -6336,12 +6257,12 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       )}
 
       {/* ── SHOT LOG PANEL ──────────────────────────────────────────────────── */}
-      {!liteMode && showShotLog && (
+      {showRichPanels && showShotLog && (
         <ShotLogPanel gsRef={gsRef} snap={snap} onClose={() => setShowShotLog(false)} />
       )}
 
       {/* ── POST-MATCH SERVE ANALYSIS ────────────────────────────────────── */}
-      {!liteMode && snap?.gameState === GameState.GAME_OVER && (
+      {showRichPanels && snap?.gameState === GameState.GAME_OVER && (
         <ServeAnalysisPanel snap={snap} onMenu={onMenu} />
       )}
 
@@ -6357,19 +6278,14 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       )}
 
       {/* ── FASE 6: COACH CHANGEOVER CARD ────────────────────────────────── */}
-      {!liteMode && coachCard && (
+      {showRichPanels && coachChangeover && (
         <CoachChangeoverCard
-          instructions={coachCard.instructions}
-          coachName={coachCard.coachName}
-          philosophy={coachCard.philosophy}
-          executionReport={coachCard.executionReport ?? null}
-          trust={coachCard.trust ?? null}
-          onDismiss={() => setCoachCard(null)}
+          insight={coachChangeover}
+          onDone={() => setCoachChangeover(null)}
         />
       )}
-
       {/* ── MEDICAL TIME OUT OVERLAY ───────────────────────────────────────── */}
-      {!liteMode && mtoOverlay && snap?.gameState === GameState.MEDICAL_TIMEOUT && (
+      {showRichPanels && mtoOverlay && snap?.gameState === GameState.MEDICAL_TIMEOUT && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9100,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -6468,6 +6384,7 @@ export default function DefinitiveME({ gsRef, trailRef, snap, onMenu, simSpeed, 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,300;0,400;0,600;0,700;0,800;0,900;1,400;1,700&family=Barlow:wght@300;400;600&family=Space+Mono:wght@400;700&display=swap');
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes coachBriefIn { from { opacity:0; transform:translateX(-50%) translateY(-12px) scale(.98) } to { opacity:1; transform:translateX(-50%) translateY(0) scale(1) } }
         @keyframes matchPointPulse {
           0%   { opacity:1; box-shadow:0 0 18px rgba(255,215,0,0.6); letter-spacing:3px }
           50%  { opacity:0.75; box-shadow:0 0 28px rgba(255,215,0,0.85); letter-spacing:3.5px }
@@ -8219,15 +8136,15 @@ function SituationPill({ gs }) {
   if(!p0||!p1) return null;
   const sv=gs.server, rec=1-sv;
   const srvS=gs.players[sv]?.score??0, recS=gs.players[rec]?.score??0;
-  const isBP = recS >= 3 && recS >= srvS;
-  const setsNeeded = 2;
+  const isBP = recS >= MATCH_RULES.pointsPerGame - 1;
+  const setsNeeded = gs.setsToWin ?? 2;
   const isMP = (p0.sets === setsNeeded - 1 || p1.sets === setsNeeded - 1) &&
-               (p0.games >= 5 || p1.games >= 5) &&
+               (p0.games >= MATCH_RULES.gamesPerSet - 1 || p1.games >= MATCH_RULES.gamesPerSet - 1) &&
                Math.abs(p0.games - p1.games) >= 1;
   const leader = p0.games > p1.games ? p0 : p1;
   const trailer = p0.games > p1.games ? p1 : p0;
-  const isSP = !isMP && leader.games >= 5 && (leader.games - trailer.games) >= 1 &&
-               !(leader.games >= 6 && trailer.games >= 6);
+  const isSP = !isMP && leader.games >= MATCH_RULES.gamesPerSet - 1 && (leader.games - trailer.games) >= 1 &&
+               !(leader.games >= MATCH_RULES.tiebreakAt && trailer.games >= MATCH_RULES.tiebreakAt);
   const rally = gs.rally ?? 0;
   const isLong = rally >= 10;
 
@@ -8615,8 +8532,7 @@ function SidePanel({ p, isServer, playerImages, surfColor, lastShot, side }) {
   // Prefs — usa campo baked ou gera do zero
   const prefs = p.prefs ?? (p.attrs ? generatePrefs(p.attrs) : null);
   const bs = prefs ? getBuildStyleMeta(prefs.buildStyle)   : null;
-  const rc = prefs ? getRallyCadenceMeta(prefs.rallyCadence) : null;
-  const rp = prefs ? getRiskProfileMeta(prefs.riskProfile) : null;
+  const ri = prefs ? getRallyIntentMeta(prefs) : null;
   const ng = prefs ? getNetGameMeta(prefs.netGame)         : null;
 
   // Signature shots
@@ -8814,8 +8730,7 @@ function SidePanel({ p, isServer, playerImages, surfColor, lastShot, side }) {
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             {[
               { meta:bs, color:sc,        label:'CONSTRUÇÃO' },
-              { meta:rc, color:'#FFB74D', label:'CADÊNCIA' },
-              { meta:rp, color:'#FF7043', label:'RISCO' },
+              { meta:ri, color:'#FFB74D', label:'INTENÇÃO' },
               { meta:ng, color:'#26C6DA', label:'REDE' },
             ].filter(r => r.meta).map(({ meta, color, label }) => (
               <div key={label} style={{ display:'flex', alignItems:'center', gap:6 }}>

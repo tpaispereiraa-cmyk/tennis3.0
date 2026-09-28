@@ -238,7 +238,7 @@ const CAREER_CATALOG = {
     family: TRAIT_FAMILIES.CAREER,
     name: 'Surface Reign',
     short: 'Quando pisa no proprio terreno, o historico pesa junto.',
-    contexts: ['surface:CLAY', 'surface:GRASS', 'surface:HARD', 'surface:INDOOR'],
+    contexts: ['surface:CLAY', 'surface:GRASS', 'surface:HARD', 'surface:STREET', 'surface:CARPET', 'surface:INDOOR'],
     effects: { precision: 0.45, composure: 0.5, adaptation: 0.45 },
   },
   COMEBACK_SEASON: {
@@ -677,21 +677,12 @@ function buildCareerCandidates(player) {
 function buildSignatureSlots(player) {
   const slots = [];
   const naturalSig = player?.naturalSignature ? `SIG_${player.naturalSignature}` : null;
-  const coachSig = player?.coach?.signature ? `SIG_${player.coach.signature}` : null;
   if (naturalSig && TRAIT_CATALOG[naturalSig]) {
     slots.push({
       traitId: naturalSig,
       family: TRAIT_FAMILIES.SIGNATURE,
       origin: TRAIT_ORIGINS.INNATE,
       unlockedAt: 'naturalSignature',
-    });
-  }
-  if (coachSig && coachSig !== naturalSig && TRAIT_CATALOG[coachSig]) {
-    slots.push({
-      traitId: coachSig,
-      family: TRAIT_FAMILIES.SIGNATURE,
-      origin: TRAIT_ORIGINS.DEVELOPED,
-      unlockedAt: 'coachSignature',
     });
   }
   const fhPow = getAttr(player, 'fhPotencia');
@@ -882,19 +873,11 @@ export function dnaScoreFromPotential() {
   return 0;
 }
 
-export function buildCoachWeightedPool(pool = []) {
-  return pool;
-}
-
 export function checkMilestones() {
   return [];
 }
 
 export function progressSombra() {
-  return [];
-}
-
-export function progressSombraWithCoach() {
   return [];
 }
 
@@ -1023,12 +1006,6 @@ export function progressPlayerTraits(player, env = {}) {
     if (ev) events.push(ev);
     return true;
   };
-
-  const signatureCount = countFamilyTraits(player, TRAIT_FAMILIES.SIGNATURE);
-  const coachSig = player?.coach?.signature ? `SIG_${player.coach.signature}` : null;
-  if (coachSig && signatureCount < caps.signature && TRAIT_CATALOG[coachSig] && !hasTrait(player, coachSig)) {
-    addTrait(coachSig, TRAIT_FAMILIES.SIGNATURE, TRAIT_ORIGINS.DEVELOPED, `season:${year}`, 'conexão com o técnico');
-  }
 
   for (const entry of pickTop(buildCareerCandidates(player), caps.career)) {
     if (countFamilyTraits(player, TRAIT_FAMILIES.CAREER) >= caps.career) break;
@@ -1235,3 +1212,4 @@ export function describePlayerTraits(player) {
   if (!traits.length) return `${player?.name || player?.id || 'Jogador'}: sem traits ativas`;
   return `${player?.name || player?.id || 'Jogador'}: ${traits.map((slot) => slot.name).join(', ')}`;
 }
+

@@ -9,6 +9,11 @@ export function describeShotContext(context, quality = null) {
   const parts = [];
   parts.push(`fase ${context?.phase ?? 'UNKNOWN'}`);
   parts.push(`asa ${context?.wing ?? 'UNKNOWN'}`);
+  const preparation = context?.body?.strokePreparation;
+  if (preparation?.active) {
+    parts.push(`corpo ${preparation.mode}/${Math.round((preparation.mechanicalIntegrity ?? 0) * 100)}%`);
+    if (preparation.lateSwitch) parts.push(`troca tardia ${preparation.intendedWing}->${preparation.actualWing}`);
+  }
   if (quality) parts.push(`contato ${quality.bodyState}/${qualityBand(quality.quality)} (${pct(quality.quality)})`);
   if (context?.body?.contactClass) parts.push(`sensor ${context.body.contactClass}`);
   return parts.join(' | ');
@@ -48,6 +53,7 @@ export function buildShotDebugPayload({ context, quality, decision = null, notes
             pressureFaced: context.memory.pressureFaced,
             sliceLoop: context.memory.sliceLoop,
             softLoop: context.memory.softLoop,
+            pointPlan: context.memory.pointPlan ?? null,
           }
         : null,
       body: context?.body ?? {},
@@ -55,6 +61,7 @@ export function buildShotDebugPayload({ context, quality, decision = null, notes
     }),
     quality: quality ?? null,
     decision: decision ?? null,
+    wrongFoot: decision?.wrongFoot ?? decision?.target?.wrongFoot ?? null,
     notes: Object.freeze([...notes]),
   });
 }

@@ -84,6 +84,7 @@ import {
   recordSponsorSigning,
   recordSponsorTermination,
 } from './SponsorMemorySystem.js';
+import { ensureSponsorPoolFoundation } from './SponsorCompanySystem.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -111,11 +112,42 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+function currentContractDate(state) {
+  const raw = state?.worldDate ?? { year: state?.year ?? 2025, month: 1 };
+  return {
+    year: Number(raw.year ?? state?.year ?? 2025),
+    month: Math.max(1, Math.min(12, Number(raw.month ?? 1))),
+  };
+}
+
+function contractExpiryDate(contract) {
+  if (contract?.expiresDate?.year) return contract.expiresDate;
+  return {
+    year: Number(contract?.seasonSigned ?? 2025) + Math.max(1, Number(contract?.duration ?? 1)),
+    month: Math.max(1, Math.min(12, Number(contract?.signedMonth ?? 1))),
+  };
+}
+
+function isContractExpiredAt(contract, date) {
+  const expiry = contractExpiryDate(contract);
+  return expiry.year < date.year || (expiry.year === date.year && expiry.month <= date.month);
+}
+
+function stampContractDates(contract, state) {
+  const signedDate = currentContractDate(state);
+  return {
+    ...contract,
+    signedMonth: signedDate.month,
+    signedDate,
+    expiresDate: { year: signedDate.year + Math.max(1, Number(contract.duration ?? 1)), month: signedDate.month },
+  };
+}
+
 function _ensurePool(state) {
   if (!state.sponsorPool) {
     return { ...state, sponsorPool: initSponsorPool() };
   }
-  return state;
+  return { ...state, sponsorPool: ensureSponsorPoolFoundation(state.sponsorPool, state.year ?? 2025) };
 }
 
 function _findPlayer(state, playerId) {
@@ -213,6 +245,9 @@ export function applySigningEffects(state, player, contract) {
       contractType: contract.contractType,
       duration:     contract.duration,
       seasonSigned: contract.seasonSigned,
+      signedMonth:  contract.signedMonth ?? 1,
+      signedDate:   contract.signedDate ?? { year: contract.seasonSigned, month: contract.signedMonth ?? 1 },
+      expiresDate:  contract.expiresDate ?? { year: (contract.seasonSigned ?? state.year ?? 0) + (contract.duration ?? 1), month: contract.signedMonth ?? 1 },
       campaignConcept: contract.campaignConcept ?? null,
       fitSummary:   contract.fitSummary ?? null,
       clauses:      contract.clauses ?? null,
@@ -285,7 +320,7 @@ export function executeContractSigning(state, offer) {
   const sponsor = getSponsorById(offer.sponsorId);
 
   // Criar contrato a partir da oferta
-  const contract = {
+  const contract = stampContractDates({
     id:           `contract_${uid()}`,
     sponsorId:    offer.sponsorId,
     sponsorName:  offer.sponsorName,
@@ -313,7 +348,7 @@ export function executeContractSigning(state, offer) {
     }),
     clauseSummary: offer.clauseSummary ?? null,
     bonuses:      null,
-  };
+  }, state);
   contract.clauseSummary = contract.clauseSummary ?? summarizeContractClauses(contract.clauses);
   contract.bonuses = flattenBonusAmounts(contract.clauses, CONTRACT_TYPES[offer.contractType]?.bonusTriggers ?? null);
 
@@ -600,7 +635,7 @@ export function processContractRenewals(state, expiringContracts) {
       const finalFee     = accepted ? Math.max(renewFee, counterOffer) : renewFee;
 
       if (accepted) {
-        const newContract = {
+        const newContract = stampContractDates({
           ...contract,
           id:           `contract_${uid()}`,
           annualFee:    finalFee,
@@ -609,7 +644,7 @@ export function processContractRenewals(state, expiringContracts) {
           seasonSigned: year,
           renewedFrom:  contract.id,
           negotiated:   true,
-        };
+        }, state);
         const { updatedPool } = terminateContract(
           state.sponsorPool, contract.id, TERMINATION_REASONS.EXPIRED, year
         );
@@ -635,7 +670,7 @@ export function processContractRenewals(state, expiringContracts) {
         ? Math.min(CONTRACT_TYPES[contract.contractType]?.durationRange?.[1] ?? 3, contract.duration + 1)
         : contract.duration;
 
-      const newContract = {
+      const newContract = stampContractDates({
         ...contract,
         id:           `contract_${uid()}`,
         annualFee:    renewFee,
@@ -643,7 +678,7 @@ export function processContractRenewals(state, expiringContracts) {
         duration:     newDuration,
         seasonSigned: year,
         renewedFrom:  contract.id,
-      };
+      }, state);
       const { updatedPool } = terminateContract(
         state.sponsorPool, contract.id, TERMINATION_REASONS.EXPIRED, year
       );
@@ -845,6 +880,7 @@ export function runSponsorshipWindow(state, opts = {}) {
   state = _ensurePool(state);
 
   const year       = state.year ?? 0;
+  const contractDate = currentContractDate(state);
   const allPlayers = state.players ?? [];
   const includeTransferWindow = opts.includeTransferWindow ?? false;
 
@@ -863,8 +899,7 @@ export function runSponsorshipWindow(state, opts = {}) {
   const expiringContracts = [];
   for (const sponsorState of Object.values(state.sponsorPool.states)) {
     for (const contract of sponsorState.contracts) {
-      const seasonsElapsed = year - contract.seasonSigned;
-      if (seasonsElapsed >= contract.duration) {
+      if (isContractExpiredAt(contract, contractDate)) {
         expiringContracts.push(contract);
       }
     }
@@ -963,9 +998,23 @@ export function runSponsorshipPulse(state, pulseResult = {}) {
   if (!hasMonthlyPulse) return { state, news: [], chronicleEvents: [], signedContracts: [] };
 
   const year = state.year ?? 0;
+  const monthlyPulse = pulses.find(p => p.type === 'MONTHLY');
+  state = {
+    ...state,
+    worldDate: monthlyPulse?.date ?? { year, month: monthlyPulse?.monthIndex ?? 1 },
+  };
   const allPlayers = state.players ?? [];
   const news = [];
   const chronicleEvents = [];
+
+  const expiringContracts = Object.values(state.sponsorPool.states ?? {})
+    .flatMap(sponsorState => sponsorState.contracts ?? [])
+    .filter(contract => isContractExpiredAt(contract, state.worldDate));
+  if (expiringContracts.length > 0) {
+    const renewals = processContractRenewals(state, expiringContracts);
+    state = renewals.state;
+    news.push(...renewals.news);
+  }
 
   for (const [sponsorId, sState] of Object.entries(state.sponsorPool.states ?? {})) {
     if ((sState.contracts?.length ?? 0) === 0 && sState.urgency < 0.75) {

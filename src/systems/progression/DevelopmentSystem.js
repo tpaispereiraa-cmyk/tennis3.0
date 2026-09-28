@@ -32,9 +32,19 @@ import {
 import { overallRating, ATTR_CATEGORIES } from '../../domain/players/players.js';
 import { generatePrefs, getDevelopmentIdentity } from '../../domain/players/playerPrefs.js';
 import { ensurePhysicalCondition, INJURY_TYPES } from '../health/InjurySystem.js';
-import { initPlayerDNA, assignTraits, checkMilestones, recordMetric, migratePlayerDNA, sanitizeTraitSlots, progressSombraWithCoach, collectTraitContexts, getPlayerTraits, captureTraitSnapshot, diffTraitSnapshots, summarizeTraitDelta } from '../traits/TraitSystem.js';
-import { PHILOSOPHY_ATTRS, SURFACE_SPECIALTY_ATTRS, getReputationFactor } from '../coaches/CoachingSystem.js';
-import { getTrainingMult, getPotentialMult, getStabilizeMult } from '../coaches/CoachProfiles.js';
+import { initPlayerDNA, assignTraits, checkMilestones, recordMetric, migratePlayerDNA, sanitizeTraitSlots, collectTraitContexts, getPlayerTraits, captureTraitSnapshot, diffTraitSnapshots, summarizeTraitDelta } from '../traits/TraitSystem.js';
+import { advanceTalentIdentity, getTalentDevelopmentMultiplier } from '../talents/TalentIdentitySystem.js';
+import {
+  ensureCareerTrajectory,
+  normalizeCareerPeakAge,
+  getCareerTrajectoryEffectiveCeiling,
+  getCareerTrajectoryGrowthMultiplier,
+  advanceCareerTrajectory,
+} from '../career/CareerTrajectorySystem.js';
+import { ensurePlayerBirthDate, getAgeAtDate, normalizeUniverseDate, addMonths, dateToSeasonFraction } from '../season/UniverseTimeSystem.js';
+import { applyYouthAgeCaps, exposeYouthPotentialForDevelopment } from '../youth/YouthDevelopmentGuardrails.js';
+import { getYouthFormationGrowthMultiplier } from '../youth/YouthAcademySystem.js';
+import { ensureSurfaceProfile, recordSurfaceMatch } from '../surfaces/SurfaceIdentitySystem.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS INTERNOS
@@ -44,19 +54,40 @@ import { getTrainingMult, getPotentialMult, getStabilizeMult } from '../coaches/
 const ALL_ATTR_KEYS = ATTR_CATEGORIES.flatMap(cat => cat.attrs.map(a => a.key));
 
 /**
- * Extrai os dados de técnico relevantes diretamente do player.coach
- * (salvo na contratação). Evita precisar do pool completo na hora do cálculo.
- * Retorna null se o jogador não tem técnico.
+ * Compatibilidade: a camada antiga de treinadores foi desligada.
  */
 function _extractCoachData(player) {
-  if (!player.coach) return null;
-  return {
-    philosophy:       player.coach.philosophy,
-    specialty:        player.coach.specialty        ?? [],
-    specialtySurface: player.coach.specialtySurface ?? null,
-    reputation:       player.coach.reputationSnapshot ?? player.coach.reputation ?? 50,
-    coachAttrs:       player.coach.coachAttrs        ?? null,
-  };
+  return null;
+}
+
+function getBancoVivoGrowthMultiplier(player, attrKey, seasonYear) {
+  const coaching = player?.coaching;
+  if (!coaching?.activeCoachId) return 1;
+  const confidence = (coaching.confidence ?? 50) / 100;
+  const trust = (coaching.trust ?? 50) / 100;
+  const friction = (coaching.friction ?? 25) / 100;
+  const alignment = (coaching.alignment ?? 50) / 100;
+  const focus = new Set(coaching.developmentFocus ?? []);
+  const playerAge = currentAge(player, seasonYear);
+  let mult = 1;
+  if (focus.has(attrKey)) mult += 0.035 + confidence * 0.032 + alignment * 0.022;
+  if (coaching.tacticalFocus === 'CLUTCH' && ['mentalidade', 'regularidade', 'adaptacao'].includes(attrKey)) mult += 0.038 * trust;
+  if (coaching.tacticalFocus === 'BUILD' && playerAge <= 22 && ['controle', 'regularidade', 'leitura'].includes(attrKey)) mult += 0.03;
+  if (coaching.tacticalFocus === 'PRESSURE' && ['potencia', 'saque', 'explosividade'].includes(attrKey)) mult += 0.03;
+  if (friction >= 0.66) mult -= Math.min(0.07, (friction - 0.66) * 0.16);
+  if (trust < 0.38) mult -= 0.035;
+  return Math.max(0.93, Math.min(1.12, mult));
+}
+
+function getBancoVivoDeclineStability(player) {
+  const coaching = player?.coaching;
+  if (!coaching?.activeCoachId) return 1;
+  const focus = new Set(coaching.developmentFocus ?? []);
+  const trust = (coaching.trust ?? 50) / 100;
+  const friction = (coaching.friction ?? 25) / 100;
+  const stabilizes = coaching.tacticalFocus === 'RESET' || coaching.tacticalFocus === 'CLUTCH' || focus.has('mentalidade') || focus.has('controle');
+  if (!stabilizes) return friction > 0.70 ? 1.04 : 1;
+  return Math.max(0.90, Math.min(1.04, 1 - trust * 0.07 + friction * 0.04));
 }
 
 /** Sorteia um inteiro entre min e max (inclusive) */
@@ -237,8 +268,8 @@ function clonePlayer(player) {
  * @param {number} [seasonYear=2025]
  * @returns {number}
  */
-export function currentAge(player, seasonYear = 2025) {
-  return seasonYear - player.birthYear;
+export function currentAge(player, seasonDate = 2025) {
+  return getAgeAtDate(player, normalizeUniverseDate(seasonDate, 2025));
 }
 
 
@@ -255,7 +286,7 @@ export function currentAge(player, seasonYear = 2025) {
 export function isInDecline(player, seasonYear = 2025) {
   const age = currentAge(player, seasonYear);
   const graceYears = DEVELOPMENT_CONFIG.DECLINE_GRACE_MONTHS / 12;
-  return age > player.peakAge + graceYears;
+  return age > normalizeCareerPeakAge(player) + graceYears;
 }
 
 
@@ -279,7 +310,8 @@ export function growthMultiplierForAttr(player, attrKey, currentOvr, seasonYear,
 
   // Teto efetivo: usa ovrTarget individual se disponível, senão o ovrCeiling da categoria.
   // ovrTarget é sorteado na criação/migração — representa o máximo que ESTE jogador específico atinge.
-  const effectiveCeiling = player._devState?.ovrTarget ?? cat.ovrCeiling;
+  const personalCeiling = player._devState?.ovrTarget ?? cat.ovrCeiling;
+  const effectiveCeiling = getCareerTrajectoryEffectiveCeiling(player, personalCeiling, seasonYear);
 
   // Acima do teto: crescimento praticamente zero
   if (currentOvr >= effectiveCeiling) {
@@ -309,9 +341,7 @@ export function growthMultiplierForAttr(player, attrKey, currentOvr, seasonYear,
   // Reescalado: desacelera mais progressivamente antes do pico.
   // Antes: yearsToPeak=1 → 0.85 (quase máximo). Agora → 0.65.
   // Após o pico: cai mais rápido (0.12 em vez de 0.15 — cresce pouquíssimo).
-  const yearsToPeak = player.peakAge
-    ? player.peakAge - currentAge(player, seasonYear ?? 2025)
-    : 3;
+  const yearsToPeak = normalizeCareerPeakAge(player) - currentAge(player, seasonYear ?? 2025);
   const ageFactor =
     yearsToPeak >= 5 ? 1.00 :
     yearsToPeak >= 3 ? 0.85 :
@@ -320,10 +350,12 @@ export function growthMultiplierForAttr(player, attrKey, currentOvr, seasonYear,
                        0.15;
 
   let mult = arc.growthRate * headroomMult * ageFactor + noise;
+  mult *= getCareerTrajectoryGrowthMultiplier(player, seasonYear);
+  mult *= getBancoVivoGrowthMultiplier(player, attrKey, seasonYear);
 
   // ── Modificador de técnico ────────────────────────────────────
   // Só aplica durante a fase de crescimento (não em declínio).
-  // Coach resolve pelo player.coach.philosophy salvo na contratação —
+  // Banco Vivo resolve influencia pela parceria atual em player.coaching.
   // não precisamos do objeto coach completo, só da filosofia e specialty.
   const coachData = coach ?? _extractCoachData(player);
 
@@ -416,7 +448,7 @@ export function growthMultiplierForAttr(player, attrKey, currentOvr, seasonYear,
     // RENOVADOR_CARREIRA: +10% em attrs de núcleo se jogador em declínio suave
     // (declínio < 2 anos após peakAge — janela de recuperação)
     if (coachTraits.includes('RENOVADOR_CARREIRA') && isInDecline(player, seasonYear)) {
-      const yearsPastPeak = playerAge - (player.peakAge ?? playerAge);
+      const yearsPastPeak = playerAge - normalizeCareerPeakAge(player, playerAge);
       if (yearsPastPeak <= 2) traitBonus += 0.10;
     }
 
@@ -447,7 +479,7 @@ export function growthMultiplierForAttr(player, attrKey, currentOvr, seasonYear,
   // over30, decline, nearPeak — derivados da idade e do peakAge.
   if (player.dna?.slots?.length) {
     const pAge     = currentAge(player, seasonYear);
-    const peakA    = player.peakAge ?? 26;
+    const peakA    = normalizeCareerPeakAge(player);
     const _inDecl  = isInDecline(player, seasonYear);
     const yearsPro = Math.max(0, pAge - 17);
     const devCtx = new Set(collectTraitContexts(player, {
@@ -504,7 +536,7 @@ export function applyMonthlyGrowth(player, seasonYear = 2025) {
     return applyMonthlyDecline(player, seasonYear);
   }
 
-  const p = clonePlayer(player);
+  const p = exposeYouthPotentialForDevelopment(clonePlayer(player), currentAge(player, seasonYear));
   p._devState.attrGrowthAccum = p._devState.attrGrowthAccum || {};
 
   const currentOvr = overallRating(p.attrs);
@@ -525,7 +557,7 @@ export function applyMonthlyGrowth(player, seasonYear = 2025) {
   // Isso cria identidade real: um BIG_SERVER desenvolve velocidade de saque
   // muito mais rápido que topspin — que quase nunca entra no treino.
   const { focusAttrs, opposeAttrs } = getDevelopmentTrainingBias(p);
-  const focusWeight  = DEVELOPMENT_CONFIG.STYLE_FOCUS_WEIGHT  ?? 6;
+  const focusWeight  = DEVELOPMENT_CONFIG.STYLE_FOCUS_WEIGHT  ?? 5;
   const opposeWeight = DEVELOPMENT_CONFIG.STYLE_OPPOSE_WEIGHT ?? 0.5;
 
   // Pool fracionário: usamos Math.round para evitar float no push
@@ -533,9 +565,11 @@ export function applyMonthlyGrowth(player, seasonYear = 2025) {
   const weightedPool = [];
   for (const key of ALL_ATTR_KEYS) {
     let w;
-    if      (focusAttrs.has(key))  w = focusWeight;
-    else if (opposeAttrs.has(key)) w = Math.max(1, Math.round(opposeWeight * 10)); // 3 → arredondado
-    else                           w = 1;
+    // Todos usam a mesma escala inteira: foco 5x, neutro 1x, oposto 0.5x.
+    // Antes apenas o oposto era multiplicado por dez e acabava empatado com o foco.
+    if      (focusAttrs.has(key))  w = Math.max(1, Math.round(focusWeight * 10));
+    else if (opposeAttrs.has(key)) w = Math.max(1, Math.round(opposeWeight * 10));
+    else                           w = 10;
     for (let i = 0; i < w; i++) weightedPool.push(key);
   }
 
@@ -550,7 +584,9 @@ export function applyMonthlyGrowth(player, seasonYear = 2025) {
   for (const key of attrsToGrow) {
     if (p.attrs[key] === undefined) continue;
 
-    const mult = growthMultiplierForAttr(p, key, currentOvr, seasonYear);
+    const mult = growthMultiplierForAttr(p, key, currentOvr, seasonYear)
+      * getTalentDevelopmentMultiplier(p, key, seasonYear)
+      * getYouthFormationGrowthMultiplier(p, key, currentAge(p, seasonYear));
 
     // ── Custo progressivo para atributos de elite ─────────────────
     // Independente do OVR geral, cada atributo individual fica mais
@@ -578,6 +614,7 @@ export function applyMonthlyGrowth(player, seasonYear = 2025) {
     }
   }
 
+  advanceTalentIdentity(p, { seasonYear });
   return { player: p, changes };
 }
 
@@ -681,7 +718,7 @@ export function applyMonthlyDecline(player, seasonYear = 2025) {
 
   // ── Fator de estabilização do técnico ─────────────────────────
   const coachData   = _extractCoachData(p);
-  const stabilizer  = getStabilizeMult(coachData?.coachAttrs ?? null);
+  const stabilizer  = getBancoVivoDeclineStability(p);
 
   // ── Fator de idade no declínio ────────────────────────────────
   const age = currentAge(p, seasonYear);
@@ -909,10 +946,9 @@ export function applyCareerAlcunhas(players, hofStats) {
 export function migrateLegacyPlayer(playerObj, baseYear = 2025) {
   const p = clonePlayer(playerObj);
 
-  // 1. birthYear
-  if (!p.birthYear) {
-    p.birthYear = baseYear - (p.age ?? 25);
-  }
+  // 1. nascimento/idade: save legado recebe mês determinístico sem mudar a
+  // idade que já mostrava. A partir daqui toda idade vem da data do universo.
+  Object.assign(p, ensurePlayerBirthDate(p, { year: baseYear, month: 1 }, baseYear));
 
   // 2. potential por OVR atual
   if (!p.potential) {
@@ -947,7 +983,9 @@ export function migrateLegacyPlayer(playerObj, baseYear = 2025) {
   // 4. peakAge
   if (!p.peakAge) {
     const arc = getCareerArc(p.developmentStyle);
-    p.peakAge = p.birthYear + randInt(arc.peakAgeRange[0], arc.peakAgeRange[1]);
+    p.peakAge = randInt(arc.peakAgeRange[0], arc.peakAgeRange[1]);
+  } else {
+    p.peakAge = normalizeCareerPeakAge(p);
   }
 
   // 5. _devState
@@ -963,12 +1001,21 @@ export function migrateLegacyPlayer(playerObj, baseYear = 2025) {
     p._devState.ovrTarget = rollOvrTarget(p.potential);
   }
 
+  // Alguns atletas autorais podem ter um teto individual definido pelo
+  // elenco. Continua sendo só o teto bruto: a trajetória decide o quanto
+  // dele será realizado em quadra ao longo dos anos.
+  const authoredCeiling = Number(p.careerCeilingOverride);
+  if (Number.isFinite(authoredCeiling)) {
+    const categoryCeiling = getPotentialCategory(p.potential).ovrCeiling;
+    p._devState.ovrTarget = Math.max(1, Math.min(categoryCeiling, Math.round(authoredCeiling)));
+  }
+
   // 6. alcunha
   if (p.alcunha === undefined) {
     p.alcunha = evaluateAlcunha(p);
   }
 
-  return p;
+  return ensureCareerTrajectory(p, baseYear);
 }
 
 
@@ -991,39 +1038,15 @@ export function migrateLegacyPlayer(playerObj, baseYear = 2025) {
 // FASE 4 — SUPERFÍCIES COMO FORÇA IDENTITÁRIA
 // ═══════════════════════════════════════════════════════════════════
 
-/** Labels narrativos para especialistas de superfície */
-const SURFACE_SPECIALIST_LABELS = {
-  CLAY:   'Rei do Saibro',
-  GRASS:  'Mago da Grama',
-  HARD:   'Máquina do Hard',
-  INDOOR: 'Senhor das Arenas',
-};
-
 /**
- * Calcula a identidade de superfície de um jogador a partir do histórico de carreira.
- * Critérios: winRate ≥ 62%, ≥ 20 partidas, ≥ 2 títulos nessa superfície.
+ * Compatibilidade publica. A identidade exibida agora vem exclusivamente do
+ * legado comprovado; afinidade e dominio aprendido vivem em surfaceProfile.
  *
  * @param {object} player
  * @returns {{ surface: string, winRate: number, label: string } | null}
  */
 export function computeSurfaceIdentity(player) {
-  const stats = player.surfaceStats ?? {};
-  const entries = Object.entries(stats)
-    .map(([surface, d]) => {
-      const total = (d.wins ?? 0) + (d.losses ?? 0);
-      const winRate = total > 0 ? d.wins / total : 0;
-      return { surface, winRate, titles: d.titlesWon ?? 0, total };
-    })
-    .filter(e => e.total >= 20 && e.winRate >= 0.62 && e.titles >= 2)
-    .sort((a, b) => b.winRate - a.winRate);
-
-  if (!entries.length) return null;
-  const best = entries[0];
-  return {
-    surface: best.surface,
-    winRate: best.winRate,
-    label:   SURFACE_SPECIALIST_LABELS[best.surface] ?? best.surface,
-  };
+  return ensureSurfaceProfile(player, { source: 'SAVE_MIGRATION' }).surfaceIdentity ?? null;
 }
 
 /**
@@ -1035,34 +1058,7 @@ export function computeSurfaceIdentity(player) {
  * @returns {object} player atualizado (novo objeto)
  */
 export function updateSurfaceStats(player, result) {
-  const surface = (result.surface ?? 'HARD').toUpperCase();
-  const ss = player.surfaceStats ?? {
-    CLAY:   { wins: 0, losses: 0, titlesWon: 0 },
-    GRASS:  { wins: 0, losses: 0, titlesWon: 0 },
-    HARD:   { wins: 0, losses: 0, titlesWon: 0 },
-    INDOOR: { wins: 0, losses: 0, titlesWon: 0 },
-  };
-
-  const newSS = {
-    CLAY:   { ...ss.CLAY },
-    GRASS:  { ...ss.GRASS },
-    HARD:   { ...ss.HARD },
-    INDOOR: { ...ss.INDOOR },
-  };
-
-  if (!newSS[surface]) newSS[surface] = { wins: 0, losses: 0, titlesWon: 0 };
-
-  if (result.won) {
-    newSS[surface].wins += 1;
-  } else {
-    newSS[surface].losses += 1;
-  }
-
-  if (result.isTournamentTitle) {
-    newSS[surface].titlesWon = (newSS[surface].titlesWon ?? 0) + 1;
-  }
-
-  return { ...player, surfaceStats: newSS };
+  return recordSurfaceMatch(player, result);
 }
 
 
@@ -1327,28 +1323,31 @@ export function computeStyleEvolution(player, seasonYear = 2025) {
   return { evolved: profile.label_old, age };
 }
 
-export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners = {}, seasonMetrics = {}, coachPool = []) {
+export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners = {}, seasonMetrics = {}, options = {}) {
   const updatedPlayers = [];
   const events = [];
 
   for (const original of allPlayers) {
     let p = clonePlayer(original);
+    const seasonDate = normalizeUniverseDate(seasonYear, 2025);
+    const year = seasonDate.year;
+    const isSeasonClose = months === 0 || months >= 12;
+    const endDate = addMonths(seasonDate, isSeasonClose ? 12 : Math.max(0, months - 1));
+    const recordSeasonLedger = options?.recordSeasonLedger ?? isSeasonClose;
+
+    p = ensurePlayerBirthDate(p, seasonDate, seasonDate.year);
+    p = ensureCareerTrajectory(p, seasonDate.year);
+    p.peakAge = normalizeCareerPeakAge(p);
 
     // Garantir que _devState existe (segurança para jogadores legados)
     p._devState = p._devState || { monthsAtPeak: 0, lastBreakthrough: null, attrGrowthAccum: {} };
 
-    // Garantir que coach e coachHistory existem (migração de jogadores legados e newgens)
-    if (!('coach' in p))        p.coach        = null;
-    if (!('coachHistory' in p)) p.coachHistory = [];
-
     // Garantir que physicalCondition e injuryHistory existem
     p = ensurePhysicalCondition(p);
 
-    // Dados do técnico deste jogador — usado no growthMultiplierForAttr e sombras
-    // Lido de player.coach (salvo na contratação) para não precisar do pool completo
     const coachData = _extractCoachData(p);
 
-    const wasInDecline = isInDecline(p, seasonYear);
+    const wasInDecline = isInDecline(p, seasonDate);
 
     // Snapshot dos atributos ANTES do crescimento (para histórico)
     const ovrBefore = overallRating(p.attrs);
@@ -1358,10 +1357,14 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     // Passa a fração do ano para que jogadores que cruzam o peakAge
     // durante a temporada transicionem suavemente (m/12 = fração do ano)
     for (let m = 0; m < months; m++) {
-      const fractionalYear = seasonYear + (m / months);
+      const fractionalYear = dateToSeasonFraction(addMonths(seasonDate, m));
       const result = applyMonthlyGrowth(p, fractionalYear);
       p = result.player;
     }
+
+    // Jovens podem crescer normalmente, mas só expressam atributos adultos
+    // depois dos 17. A trava é reaplicada após cada pulso e breakthrough.
+    p = applyYouthAgeCaps(p, { age: currentAge(p, endDate) });
 
     // ── 2. Breakthrough por título ────────────────────────────────
     const titleType = titleWinners[p.id];
@@ -1378,12 +1381,37 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
         });
       }
     }
+    p = applyYouthAgeCaps(p, { age: currentAge(p, endDate) });
 
     // ── 3. Avançar cooldown do breakthrough ───────────────────────
     p = tickBreakthroughCooldown(p, months);
 
+    // ── 3a. Fechar a janela de trajetória ─────────────────────────
+    // Neste patch, só a conquista objetiva de títulos altera realização.
+    // Lesões, calendário, personalidade e técnico entram nas próximas fases.
+    // Só fechamos a trajetória no encerramento anual (months=0) ou em
+    // chamadas explícitas de uma temporada completa. Pulsos mensais só
+    // desenvolvem atributos; não podem repetir títulos ou envelhecer janelas.
+    if (months === 0 || months >= 12) {
+      // A previsão de trajetória deve enxergar o desgaste consolidado desta
+      // temporada, não o burden defasado do fechamento anterior.
+      p = updateInjuryBurden(p, seasonDate.year);
+      const trajectoryResult = advanceCareerTrajectory(p, seasonDate.year, {
+        titleType,
+        seasonMetrics: seasonMetrics[p.id] ?? {},
+      });
+      p = trajectoryResult.player;
+      for (const trajectoryEvent of trajectoryResult.events) {
+        events.push({
+          ...trajectoryEvent,
+          playerId: p.id,
+          player: p.name ?? p.id,
+        });
+      }
+    }
+
     // ── 3b. FASE 5 — Evolução de estilo por idade ─────────────────
-    const styleAgeResult = applyStyleAgeModifiers(p, seasonYear + 1);
+    const styleAgeResult = applyStyleAgeModifiers(p, endDate);
     if (styleAgeResult.applied) {
       p = styleAgeResult.player;
       if (styleAgeResult.event) events.push(styleAgeResult.event);
@@ -1402,7 +1430,7 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     }
 
     // ── 5. Detectar início de declínio ────────────────────────────
-    const nowInDecline = isInDecline(p, seasonYear + 1);
+    const nowInDecline = isInDecline(p, endDate);
     if (!wasInDecline && nowInDecline) {
       events.push({
         type: 'DECLINE_START',
@@ -1435,11 +1463,14 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     const sm = seasonMetrics[p.id] ?? {};
     if (sm.wins   > 0) p._careerWins   = (p._careerWins   ?? 0) + (sm.wins   ?? 0);
     if (sm.finals > 0) p._careerFinals = (p._careerFinals ?? 0) + (sm.finals ?? 0);
-    if (titleType) {
-      p._careerTitles   = (p._careerTitles   ?? 0) + 1;
-      if (titleType === 'SLAM' || titleType === 'GRAND_SLAM')
-        p._careerGrandSlams = (p._careerGrandSlams ?? 0) + 1;
-    }
+    const titleLedgerCount = recordSeasonLedger
+      ? Number(seasonMetrics[p.id]?.titles ?? (titleType ? 1 : 0))
+      : 0;
+    const slamLedgerCount = recordSeasonLedger
+      ? Number(seasonMetrics[p.id]?.titlesByCategory?.gs ?? ((titleType === 'SLAM' || titleType === 'GRAND_SLAM') ? 1 : 0))
+      : 0;
+    if (titleLedgerCount > 0) p._careerTitles = (p._careerTitles ?? 0) + titleLedgerCount;
+    if (slamLedgerCount > 0) p._careerGrandSlams = (p._careerGrandSlams ?? 0) + slamLedgerCount;
 
     // ── careerTitles (objeto por categoria) — usa contagem real do ano ──
     // titlesByCategory acumula TODOS os títulos do ano por categoria,
@@ -1475,19 +1506,9 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     // ── FASE 4 — Atualizar surfaceStats com os resultados da temporada ──
     // seasonMetrics.surfaceResults = [{ surface, won, isTournamentTitle }]
     if (Array.isArray(sm.surfaceResults)) {
-      p.surfaceStats = p.surfaceStats ?? {
-        CLAY:   { wins: 0, losses: 0, titlesWon: 0 },
-        GRASS:  { wins: 0, losses: 0, titlesWon: 0 },
-        HARD:   { wins: 0, losses: 0, titlesWon: 0 },
-        INDOOR: { wins: 0, losses: 0, titlesWon: 0 },
-      };
-      for (const res of sm.surfaceResults) {
-        const surf = (res.surface ?? 'HARD').toUpperCase();
-        if (!p.surfaceStats[surf]) p.surfaceStats[surf] = { wins: 0, losses: 0, titlesWon: 0 };
-        if (res.won) { p.surfaceStats[surf].wins   += 1; }
-        else         { p.surfaceStats[surf].losses += 1; }
-        if (res.isTournamentTitle) p.surfaceStats[surf].titlesWon += 1;
-      }
+      for (const res of sm.surfaceResults) p = recordSurfaceMatch(p, { ...res, year });
+    } else {
+      p = ensureSurfaceProfile(p, { year, source: 'SAVE_MIGRATION' });
     }
 
     // Recalcular identidade de superfície após cada temporada
@@ -1534,12 +1555,12 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
       }
     }
     // Registra título nas métricas de sombra
-    if (titleType) {
-      if (titleType === 'SLAM' || titleType === 'GRAND_SLAM') {
-        recordMetric(p, 'grandSlamTitles', 1);
+    if (recordSeasonLedger && titleLedgerCount > 0) {
+      if (slamLedgerCount > 0) {
+        recordMetric(p, 'grandSlamTitles', slamLedgerCount);
         if (coachData) progressSombraWithCoach(p, 'grandSlamTitles', p.dna?.metrics?.grandSlamTitles ?? 0, coachData);
       }
-      recordMetric(p, 'titles', 1);
+      recordMetric(p, 'titles', titleLedgerCount);
     }
 
     const traitSnapshotAfter = captureTraitSnapshot(p);
@@ -1556,9 +1577,9 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     }
 
     // ── 8. Checar aposentadoria ───────────────────────────────────
-    const ageNext = currentAge(p, seasonYear + 1);
+    const ageNext = currentAge(p, endDate);
     const ovrNext = overallRating(p.attrs);
-    if (ageNext > 38 && ovrNext < 50) {
+    if (isSeasonClose && ageNext > 38 && ovrNext < 50) {
       events.push({
         type: 'RETIREMENT',
         playerId: p.id,
@@ -1578,14 +1599,14 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
     }
     p._seasonHistory = Array.isArray(p._seasonHistory) ? p._seasonHistory : [];
     // Evita duplicatas (se chamado mais de uma vez no mesmo ano)
-    if (!p._seasonHistory.some(h => h.year === seasonYear + 1)) {
+    if (isSeasonClose && !p._seasonHistory.some(h => h.year === seasonDate.year + 1)) {
       // Cruzar lesões desta temporada com o título (para detectar "ganhou lesionado")
       const seasonInjuries = (p.injuryHistory ?? []).filter(h => h.season === seasonYear);
       const hadGradeInjury = seasonInjuries.some(h => h.grade >= 2);
       const playedThrough  = seasonInjuries.some(h => h.playedThrough === true);
 
       p._seasonHistory.push({
-        year:         seasonYear + 1,
+        year:         seasonDate.year + 1,
         age:          ageNext,
         ovr:          ovrAfter,
         ovrBefore,
@@ -1608,11 +1629,12 @@ export function advanceSeason(allPlayers, seasonYear, months = 12, titleWinners 
       });
     }
 
-    // ── Sincronizar p.age com o ano seguinte ─────────────────────
+    // A idade é uma função da data: no pulso mensal só muda quem fez
+    // aniversário; no fechamento anual a mesma regra continua válida.
     p.age = ageNext;
 
     // ── Atualizar injuryBurden com as lesões desta temporada ─────
-    p = updateInjuryBurden(p, seasonYear);
+    p = updateInjuryBurden(p, seasonDate.year);
 
     updatedPlayers.push(p);
   }

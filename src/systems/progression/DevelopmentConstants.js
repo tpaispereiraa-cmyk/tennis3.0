@@ -20,7 +20,7 @@ export const POTENTIAL_CATEGORIES = {
     id:          'GERACIONAL',
     label:       'Geracional',
     shortLabel:  'GER',
-    description: 'Destinado a ser o GOAT da era. Um por geração. Risco de não cumprir.',
+    description: 'Teto para disputar o posto de GOAT da era. Raríssimo, sem garantia de realização.',
     ovrCeiling:  99,
     slamPotential: '20+',
     color:       '#FFD700',     // ouro
@@ -32,7 +32,7 @@ export const POTENTIAL_CATEGORIES = {
     id:          'LENDA',
     label:       'Lenda',
     shortLabel:  'LND',
-    description: 'Múltiplos Slams. Hall of Fame certo. Dominância por anos.',
+    description: 'Teto de múltiplos Slams e Hall da Fama, caso a trajetória converta o talento.',
     ovrCeiling:  94,
     slamPotential: '5–15',
     color:       '#E8E8E8',     // prata
@@ -44,7 +44,7 @@ export const POTENTIAL_CATEGORIES = {
     id:          'ELITE',
     label:       'Elite',
     shortLabel:  'ELT',
-    description: 'Ganhador de Slam. Top 5 consistente. Carreira sólida.',
+    description: 'Janela real para Slam e top 5; contexto e desenvolvimento definem até onde chega.',
     ovrCeiling:  88,
     slamPotential: '1–4',
     color:       '#E8A838',     // bronze dourado
@@ -56,7 +56,7 @@ export const POTENTIAL_CATEGORIES = {
     id:          'CAMPEAO',
     label:       'Campeão',
     shortLabel:  'CAM',
-    description: 'Masters e menores títulos. Chegou em finais de Slam.',
+    description: 'Talento para títulos importantes e campanhas profundas, sem destino pré-escrito.',
     ovrCeiling:  78,
     slamPotential: '0–1',
     color:       '#6CB4E4',     // azul claro

@@ -105,6 +105,7 @@ export function resetCtx(p) {
   p.ctx.intentBoostTimer = 0;
   p.ctx.currentIntent = 'BUILD';
   p.ctx._pointPatternPlan = null;
+  p.ctx.rallyDirector = null;
   p.ctx.netPhase = 'BASE';
   p.ctx.courtMode = 'BASE';
   p.ctx.transitionCooldown = 0;  // zera entre pontos — cooldown só existe dentro do ponto
@@ -282,31 +283,34 @@ export function updateMomentum(gs, winnerIdx, scoreCtx) {
   const wResetPower = clamp(wProf.recup * 0.55 + wProf.adapt * 0.45, 0.20, 1.0);
   const lResetPower = clamp(lProf.recup * 0.55 + lProf.adapt * 0.45, 0.20, 1.0);
 
-  let eventSwing = 0.018;
-  if (wasDeuce)            eventSwing += 0.010;
-  if (rally >= 8)          eventSwing += Math.min(0.020, (rally - 7) * 0.0025);
-  if (breakSaved)          eventSwing += 0.070;
-  if (breakConverted)      eventSwing += 0.130;
-  if (setPointSaved)       eventSwing += 0.055;
-  if (setPointConverted)   eventSwing += 0.095;
-  if (matchPointSaved)     eventSwing += 0.100;
-  if (matchPointConverted) eventSwing += 0.140;
+  let eventSwing = 0.012;
+  if (wasDeuce)            eventSwing += 0.006;
+  if (rally >= 8)          eventSwing += Math.min(0.012, (rally - 7) * 0.0018);
+  if (breakSaved)          eventSwing += 0.046;
+  if (breakConverted)      eventSwing += 0.082;
+  if (setPointSaved)       eventSwing += 0.038;
+  if (setPointConverted)   eventSwing += 0.066;
+  if (matchPointSaved)     eventSwing += 0.076;
+  if (matchPointConverted) eventSwing += 0.102;
 
-  const streakBonus = Math.min(0.050, Math.max(0, (w.ctx.seriesWon - 1)) * 0.010);
+  const earlyPointCount = (gs._matchPointCounter ?? gs._currentPointId ?? 0) < 12;
+  const earlyThrottle = earlyPointCount && !breakConverted && !setPointConverted && !matchPointConverted ? 0.68 : 1;
+  const streakBonus = Math.min(0.030, Math.max(0, (w.ctx.seriesWon - 2)) * 0.006);
   const winnerGain = (eventSwing + streakBonus)
     * wImpMult
     * wProf.clutchMult
-    * clamp(wProf.stabilityMult * 0.90 + wProf.adaptMult * 0.06 + wResetPower * 0.04, 0.86, 1.24);
+    * clamp(wProf.stabilityMult * 0.90 + wProf.adaptMult * 0.06 + wResetPower * 0.04, 0.86, 1.18)
+    * earlyThrottle;
 
   let loserPainMult = lImpMult * lProf.volatility;
-  loserPainMult *= clamp(1.14 - (lProf.resilienceMult - 1.0) * 0.58 - (lResetPower - 0.5) * 0.12, 0.72, 1.24);
+  loserPainMult *= clamp(1.06 - (lProf.resilienceMult - 1.0) * 0.64 - (lResetPower - 0.5) * 0.18, 0.62, 1.14);
   if (breakConverted || setPointConverted || matchPointConverted) {
-    loserPainMult *= clamp(1.04 + (1 - lResetPower) * 0.22, 0.96, 1.24);
+    loserPainMult *= clamp(1.02 + (1 - lResetPower) * 0.16, 0.94, 1.16);
   }
-  const loserLoss = (eventSwing + streakBonus * 0.75) * loserPainMult;
+  const loserLoss = (eventSwing + streakBonus * 0.65) * loserPainMult * earlyThrottle;
 
-  w.ctx.momentum = clamp(w.ctx.momentum + winnerGain, 0, 1);
-  l.ctx.momentum = clamp(l.ctx.momentum - loserLoss, 0, 1);
+  w.ctx.momentum = clamp(w.ctx.momentum + winnerGain, 0.08, 0.94);
+  l.ctx.momentum = clamp(l.ctx.momentum - loserLoss, 0.08, 0.94);
 
   if (l.atNet) l.ctx.netFailed++;
   if (w.ctx.seriesWon >= 4) {
@@ -328,14 +332,14 @@ export function updateMomentum(gs, winnerIdx, scoreCtx) {
     0, 1
   );
 
-  const wMoodGain = eventSwing * 0.55 * clamp(wProf.clutchMult * 0.90 + wProf.adaptMult * 0.10, 0.78, 1.20);
-  const lMoodLoss = eventSwing * 0.48 * clamp(1.16 - (lProf.resilienceMult - 1.0) * 0.65, 0.72, 1.26);
+  const wMoodGain = eventSwing * 0.36 * clamp(wProf.clutchMult * 0.90 + wProf.adaptMult * 0.10, 0.78, 1.14);
+  const lMoodLoss = eventSwing * 0.32 * clamp(1.10 - (lProf.resilienceMult - 1.0) * 0.70, 0.62, 1.16);
   w.ctx._moodFactor = clamp((w.ctx._moodFactor ?? 0.5) + wMoodGain, 0.05, 0.95);
   l.ctx._moodFactor = clamp((l.ctx._moodFactor ?? 0.5) - lMoodLoss, 0.05, 0.95);
 
   if (lResetPower > 0.58) {
-    const moodFloor = clamp(0.16 + (lResetPower - 0.58) * 0.30, 0.16, 0.26);
-    const ewmaFloor = clamp(0.18 + (lResetPower - 0.58) * 0.22, 0.18, 0.28);
+    const moodFloor = clamp(0.22 + (lResetPower - 0.58) * 0.36, 0.22, 0.34);
+    const ewmaFloor = clamp(0.24 + (lResetPower - 0.58) * 0.28, 0.24, 0.36);
     l.ctx._moodFactor = Math.max(l.ctx._moodFactor, moodFloor);
     l.ctx._momentumEWMA = Math.max(l.ctx._momentumEWMA, ewmaFloor);
   }
@@ -671,16 +675,36 @@ export function classifyZone(targetX, targetY, oppPos) {
 //   zone            — COURT_ZONES key from classifyZone()
 //   targetX         — aimed X, used for lateral component
 //
-export function updateRallyPressure(gs, targetPlayerIdx, zone, targetX) {
+const RALLY_ZONE_PRESSURE = Object.freeze({
+  DROP_ZONE: 0.42,
+  SHORT_ANGLE: 0.72,
+  BODY: 0.34,
+  WIDE: 0.78,
+  DEEP: 0.54,
+  T: 0.40,
+  NEUTRAL: 0.16,
+});
+
+export function updateRallyPressure(gs, targetPlayerIdx, zone, targetX, shot = null) {
   const player   = gs.players[targetPlayerIdx];
   const hitter   = gs.players[1 - targetPlayerIdx];  // quem bateu a bola
-  const zoneDef = { pressMod: 0 };
+  if (!player?.ctx || !hitter?.ctx) return;
+  const zonePressure = RALLY_ZONE_PRESSURE[zone] ?? RALLY_ZONE_PRESSURE.NEUTRAL;
 
   // Lateral component: how far from centre the shot forces the receiver
   const lateralFrac = Math.min(1, Math.abs(targetX) / (COURT.singlesW / 2));
+  const depthFrac = Math.min(1, Math.abs(shot?.targetY ?? 0) / COURT.halfL);
+  const intent = shot?.intent ?? shot?.shotEngine?.intent ?? null;
+  const intentMod = intent === 'FINISH' ? 0.18
+    : intent === 'PRESSURE' || intent === 'REDIRECT' ? 0.12
+      : intent === 'BUILD' ? 0.05
+        : intent === 'RESET' || intent === 'DEFEND' ? -0.05
+          : 0;
+  const paceKmh = shot?.shotEngine?.execution?.power ?? shot?.power ?? 0;
+  const paceMod = Math.min(0.12, Math.max(0, paceKmh - 24) * 0.006);
 
   // Combined pressure delta: zone base + lateral stretch
-  let delta = zoneDef.pressMod * 0.62 + lateralFrac * 0.38;
+  let delta = zonePressure * 0.48 + lateralFrac * 0.24 + depthFrac * 0.16 + intentMod + paceMod;
 
   // -- DEFESA COMO ATAQUE — grind pressure --------------------------
   // Grinders com defesa > 90 geram pressão acumulada extra:
@@ -697,9 +721,16 @@ export function updateRallyPressure(gs, targetPlayerIdx, zone, targetX) {
 
   // Accumulate with exponential decay — sustained attack builds faster than recovery
   player.ctx.rallyPressure = clamp(
-    (player.ctx.rallyPressure ?? 0) * 0.72 + delta * 0.30,
+    (player.ctx.rallyPressure ?? 0) * 0.72 + delta * 0.34,
     0, 1.0
   );
+  // O batedor alivia parte da pressão quando consegue colocar uma bola com intenção.
+  const relief = intent === 'FINISH' || intent === 'PRESSURE' || intent === 'REDIRECT'
+    ? 0.60
+    : intent === 'BUILD' || intent === 'CONTROL'
+      ? 0.72
+      : 0.82;
+  hitter.ctx.rallyPressure = clamp((hitter.ctx.rallyPressure ?? 0) * relief, 0, 1);
 }
 
 // -- Player movement update ----------------------------------------

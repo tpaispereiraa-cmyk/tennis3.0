@@ -9,6 +9,7 @@
 
 import { readHeat } from '../systems/analytics/MatchHeat.js';
 import { computeRating } from '../ui/game/IndividualRating.jsx';
+import { MATCH_RULES } from './constants.js';
 
 export const TRACE_ENABLED = true;
 
@@ -44,7 +45,7 @@ export function traceStartPoint(gs) {
   const t  = gs.trace;
   const p0 = gs.players[0];
   const p1 = gs.players[1];
-  const SL = ['0', '15', '30', '40', 'Ad'];
+  const SL = ['0', '15', '30', '40'];
 
   const srv  = gs.players[gs.server];
   const rcv  = gs.players[1 - gs.server];
@@ -52,15 +53,12 @@ export function traceStartPoint(gs) {
   const rcvS = rcv.score;
   const setsNeeded = gs.setsToWin ?? 2;
 
-  const isBreakPoint = gs.inTiebreak
-    ? false
-    : rcvS >= 3 && (rcvS > srvS || rcvS === 4);
+  const isBreakPoint = gs.inTiebreak ? false : rcvS >= MATCH_RULES.pointsPerGame - 1;
 
-  const isGamePoint = !gs.inTiebreak &&
-    srvS >= 3 && (srvS > rcvS || srvS === 4) && !isBreakPoint;
+  const isGamePoint = !gs.inTiebreak && srvS >= MATCH_RULES.pointsPerGame - 1 && !isBreakPoint;
 
-  const serverCloseSet = srv.games >= 5 && srv.games > rcv.games;
-  const rcvCloseSet    = rcv.games >= 5 && rcv.games > srv.games;
+  const serverCloseSet = srv.games >= MATCH_RULES.gamesPerSet - 1 && srv.games > rcv.games;
+  const rcvCloseSet    = rcv.games >= MATCH_RULES.gamesPerSet - 1 && rcv.games > srv.games;
   const isSetPoint     = (isGamePoint && serverCloseSet) || (isBreakPoint && rcvCloseSet);
 
   const isMatchPoint = isSetPoint &&
@@ -68,7 +66,7 @@ export function traceStartPoint(gs) {
      (isBreakPoint && rcv.sets === setsNeeded - 1));
 
   const isTiebreakMatchPoint = gs.inTiebreak &&
-    (gs.tbScore[0] >= 6 || gs.tbScore[1] >= 6) &&
+    (gs.tbScore[0] >= MATCH_RULES.tiebreakPoints - 1 || gs.tbScore[1] >= MATCH_RULES.tiebreakPoints - 1) &&
     Math.abs(gs.tbScore[0] - gs.tbScore[1]) >= 1 &&
     (srv.sets === setsNeeded - 1 || rcv.sets === setsNeeded - 1);
 
@@ -143,11 +141,21 @@ export function traceLogShot(gs, player, shot, posQuality) {
   const engineDirection = engine?.direction ?? shot.direction ?? null;
   const engineMemory = engine?.memory ?? null;
   const buildMode = engine?.buildMode ?? null;
+  const finishMode = engine?.finishMode ?? null;
+  const returnOutcome = engine?.returnOutcome ?? null;
+  const returnPlanFamily = engine?.returnPlanFamily ?? null;
+  const returnPill = engine?.returnPill ?? null;
+  const serveReturnKind = engine?.serveReturnKind ?? null;
   const styleSubType = engine?.styleSubType ?? null;
   const opportunityEV = engine?.opportunityEV ?? null;
-
   const HALF_L = 11.885;
   const shotMeta = ball?._lastShotMeta ? { ...ball._lastShotMeta } : null;
+  const courtIdentity = engine?.courtIdentity ?? shotMeta?.courtIdentity ?? null;
+  const coaching = engine?.coaching ?? shotMeta?.coaching ?? null;
+  const debugFlags = [...(shotMeta?.debugFlags ?? engineExecution?.debugFlags ?? [])];
+  if (engineMemory?.directionStreak?.value === 'BODY' && (engineMemory.directionStreak?.count ?? 0) >= 2) {
+    debugFlags.push('BODY_LOOP');
+  }
 
   const depthBucket = (absY) => absY > HALF_L * 0.78 ? 'DEEP' : absY > HALF_L * 0.45 ? 'MID' : 'SHORT';
   const widthBucket = (absX) => absX > 2.8 ? 'WIDE' : absX > 1.2 ? 'MID' : 'CENTRE';
@@ -254,10 +262,10 @@ export function traceLogShot(gs, player, shot, posQuality) {
     ballLabel,
     ballReasons,
     rallyPatternApplied:    at.rallyPatternApplied    ?? null,
-    signatureShotTriggered: null,
-    signatureLabel:         null,
-    signatureEmoji:         null,
-    signatureSource:        null,
+    signatureShotTriggered: shot.signatureMove?.id ?? null,
+    signatureLabel:         shot.signatureMove?.label ?? null,
+    signatureEmoji:         shot.signatureMove?.emoji ?? null,
+    signatureSource:        shot.signatureMove?.source ?? null,
     ballPos:     { x: +ball.pos.x.toFixed(2), y: +ball.pos.y.toFixed(2), z: +ball.pos.z.toFixed(2) },
     hitterPos:   { x: +player.pos.x.toFixed(2), y: +player.pos.y.toFixed(2) },
     oppPos:      { x: +opp.pos.x.toFixed(2),    y: +opp.pos.y.toFixed(2) },
@@ -297,10 +305,20 @@ export function traceLogShot(gs, player, shot, posQuality) {
     missChance: engineExecution?.missChance ?? shotMeta?.missChance ?? null,
     forcedErrorKind: engineExecution?.forcedErrorKind ?? shotMeta?.forcedErrorKind ?? null,
     identityTags: engineExecution?.identityTags ?? shotMeta?.identityTags ?? [],
+    flightProfileMode: engineExecution?.flightProfileMode ?? shotMeta?.flightProfileMode ?? null,
+    returnArcProfile: shotMeta?.returnArcProfile ?? null,
+    debugFlags,
     enginePhase: engine?.phase ?? null,
     buildMode,
+    finishMode,
+    returnOutcome,
+    returnPlanFamily,
+    returnPill,
+    serveReturnKind,
     styleSubType,
     opportunityEV,
+    courtIdentity,
+    coaching,
     memoryPlan: engineMemory?.rallyPlan ?? null,
     top5,
     whyChosen,
@@ -340,6 +358,12 @@ export function traceLogOutcome(gs, bounceX, bounceY, outcomeType) {
     postKmh: ball?.vel ? Math.round(Math.hypot(ball.vel.x ?? 0, ball.vel.y ?? 0, ball.vel.z ?? 0) * 3.6) : null,
   };
   if (shotMeta?.maxZ != null) shot.maxZ = +shotMeta.maxZ.toFixed(2);
+  if (shot.returnArcProfile
+    && !shot.returnArcProfile.includes('rescue')
+    && !shot.returnArcProfile.includes('lobbed')
+    && (shot.maxZ ?? 0) > 3.0) {
+    shot.debugFlags = [...new Set([...(shot.debugFlags ?? []), 'RETURN_ARC_MISMATCH'])];
+  }
   shot.landErr = err;
   if (outcomeType) shot.outcome = outcomeType;
   gs.trace._lastShot = null;
@@ -359,8 +383,8 @@ export function traceEndPoint(gs, winnerIdx, reason, isWinner) {
   else if (reason.includes('[REDE]'))                                           endType = 'NET';
   else if (reason.includes('DUPLA FALTA'))                                      endType = 'DOUBLE_FAULT';
   else if (reason.includes('CAMPO PRÓPRIO'))                                    endType = 'CAMPO_PROPRIO';
-  else if (reason.includes('FORÇADO') || reason.includes('forced'))             endType = 'FORCED_ERROR';
   else if (reason.includes('NÃO-FORÇADO') || reason.includes('unforced'))       endType = 'UNFORCED_ERROR';
+  else if (reason.includes('FORÇADO') || reason.includes('forced'))             endType = 'FORCED_ERROR';
 
   pt.endReason = endType;
   pt.endDetail = reason;
@@ -567,9 +591,14 @@ export function traceDump(gs) {
       const _formStr      = s.formMod != null && Math.abs(s.formMod - 1.0) > 0.02 ? `  forma:${s.formMod.toFixed(2)}` : '';
       const _engineStr = [
         s.enginePhase ? `phase:${s.enginePhase}` : null,
+        s.returnPlanFamily ? `rplan:${s.returnPlanFamily}` : null,
+        s.serveReturnKind ? `serveKind:${s.serveReturnKind}` : null,
+        s.returnOutcome ? `ret:${s.returnOutcome}` : null,
+        s.returnArcProfile ? `arc:${s.returnArcProfile}` : null,
         s.buildMode ? `build:${s.buildMode}` : null,
+        s.finishMode ? `finish:${s.finishMode}` : null,
         s.styleSubType ? `style:${s.styleSubType}` : null,
-        s.opportunityEV ? `ev:safe ${s.opportunityEV.safetyEV.toFixed(2)} pressure ${s.opportunityEV.pressureEV.toFixed(2)} finish ${s.opportunityEV.finishEV.toFixed(2)} variation ${s.opportunityEV.variationEV.toFixed(2)} conf ${s.opportunityEV.confidence.toFixed(2)}` : null,
+        s.opportunityEV ? `state:${s.opportunityEV.rallyState ?? '?'} ev:safe ${s.opportunityEV.safetyEV.toFixed(2)} pressure ${s.opportunityEV.pressureEV.toFixed(2)} finish ${s.opportunityEV.finishEV.toFixed(2)} serve:${s.opportunityEV.serveAdvantageLevel ?? 'NONE'} conf ${s.opportunityEV.confidence.toFixed(2)}` : null,
         s.qualityBand ? `band:${s.qualityBand}` : null,
         s.bodyState ? `body:${s.bodyState}` : null,
         s.errorRisk != null ? `risk:${(s.errorRisk*100).toFixed(0)}%` : null,
@@ -577,13 +606,14 @@ export function traceDump(gs) {
         s.dispersion != null ? `disp:${(s.dispersion*100).toFixed(0)}%` : null,
         s.forcedErrorKind ? `forced:${s.forcedErrorKind}` : null,
         s.memoryPlan ? `mem:${s.memoryPlan}` : null,
+        s.debugFlags?.length ? `flags:${s.debugFlags.join(',')}` : null,
       ].filter(Boolean).join('  ');
       lines.push(`│  ┌ ${s.ballLabel}${s.ballReasons.length ? ' (' + s.ballReasons.join(', ') + ')' : ''}  z:${s.ballPos.z}  maxZ:${s.maxZ ?? '?'}  Q:${(s.quality*100).toFixed(0)}%${_engineStr ? `  ${_engineStr}` : ''}  Mom:${(s.momentum*100).toFixed(0)}%  Stam:${s.stamina}%${_intensityStr}${_pressureStr}${_formStr}${s.evProbError != null ? `  errP:${(s.evProbError*100).toFixed(1)}%` : ''}`);
       lines.push(`│  │  Hitter(x:${s.hitterPos.x} y:${s.hitterPos.y})  ctrl:${s.inControl?'SIM':'NÃO'}`);
       lines.push(`│  │  Opp(x:${s.oppPos.x} y:${s.oppPos.y})  lat:${s.oppLateral}  dep:${s.oppDepth}  open:${s.openSide}  out:${(s.oppOut*100).toFixed(0)}%`);
       lines.push(`│  ├ Intent: ${s.intent}  "${s.intentReason}"`);
       if (s.opportunityEV?.reasons?.length) {
-        lines.push(`│  │  EV reason: ${s.opportunityEV.recommendedIntent} | ${s.opportunityEV.reasons.join('+')}`);
+        lines.push(`│  │  EV reason: ${s.opportunityEV.rallyState ?? s.opportunityEV.recommendedIntent} | ${s.opportunityEV.stateReason ?? s.opportunityEV.reasons.join('+')} | ${s.opportunityEV.reasons.join('+')}`);
       }
       if (s.movement) {
         const mv = s.movement;

@@ -1,8 +1,4 @@
-/**
- * MatchOverScreen.jsx — Tela Pós-Jogo · Redesign Completo
- * Tabs: RESUMO · ESTATÍSTICAS · RALLIES · SAQUE · MAPAS
- */
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import BounceMap from '../analytics/BounceMap.jsx';
 import ShotDirectionMap from '../analytics/ShotDirectionMap.jsx';
 import LandingMap from '../analytics/LandingMap.jsx';
@@ -13,803 +9,498 @@ import { readHeat } from '../../systems/analytics/MatchHeat.js';
 import { narrateMatch } from '../../systems/press/MatchNarrator.js';
 import { BROADCAST_THEME as BASE } from '../theme/uiTheme.js';
 
-const T = {
-  ...BASE,
-  bg:'#050609', bgPanel:'#0C0E14', bgCard:'#111318', bgHover:'#16191F',
-  border:'rgba(255,255,255,0.06)', borderMid:'rgba(255,255,255,0.12)',
-  cream:'#F2EDE4', dim:'rgba(242,237,228,0.55)', faint:'rgba(242,237,228,0.22)', ghost:'rgba(242,237,228,0.05)',
-  clay:'#C4572A', gold:'#D4A820', lime:'#52C46A', blue:'#4A90C4', red:'#D45050',
+const UI = {
+  bg: '#05070B',
+  panel: '#0B0F17',
+  card: '#111722',
+  soft: '#171E2A',
+  line: 'rgba(255,255,255,.08)',
+  line2: 'rgba(255,255,255,.14)',
+  text: '#F4EFE7',
+  muted: 'rgba(244,239,231,.58)',
+  faint: 'rgba(244,239,231,.28)',
+  gold: '#E8C84A',
+  cyan: '#71D3FF',
+  green: '#61D394',
+  red: '#F87171',
+  violet: '#A78BFA',
+  orange: '#F59E0B',
   disp: BASE.disp,
   cond: BASE.cond,
   mono: BASE.mono,
 };
-const SURFACE_COLOR = {CLAY:'#C4572A',GRASS:'#2E7D32',HARD:'#1565C0',INDOOR:'#6A1B9A'};
-const SURFACE_LABEL = {CLAY:'Saibro',GRASS:'Grama',HARD:'Dura',INDOOR:'Indoor'};
-const pct=(a,b)=>b>0?Math.round(a/b*100):0;
-const avg=arr=>arr?.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;
-const fmtAvg=arr=>arr?.length?avg(arr).toFixed(1):'0.0';
 
-function StatRow({label,valA,valB,fmtA,fmtB,higher=true}){
-  const a=typeof valA==='number'?valA:parseFloat(valA)||0;
-  const b=typeof valB==='number'?valB:parseFloat(valB)||0;
-  const aWins=higher?a>=b:a<=b, bWins=higher?b>=a:b<=a;
-  const cA=a===b?T.faint:aWins?T.cream:T.faint;
-  const cB=a===b?T.faint:bWins?T.cream:T.faint;
-  const tot=Math.max(a+b,1);
-  return(
-    <div style={{display:'grid',gridTemplateColumns:'1fr 160px 1fr',gap:8,alignItems:'center',padding:'7px 0',borderBottom:`1px solid ${T.border}`}}>
-      <div style={{textAlign:'right'}}><span style={{fontFamily:T.disp,fontSize:24,fontWeight:700,color:cA,lineHeight:1}}>{fmtA??valA}</span></div>
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-        <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:2,color:T.faint,textTransform:'uppercase',textAlign:'center'}}>{label}</span>
-        <div style={{width:'100%',display:'flex',height:2,overflow:'hidden',gap:1}}>
-          <div style={{flex:a/tot,background:cA===T.faint?T.ghost:T.cream,transition:'flex 0.6s'}}/>
-          <div style={{flex:b/tot,background:cB===T.faint?T.ghost:'rgba(242,237,228,0.38)',transition:'flex 0.6s'}}/>
-        </div>
-      </div>
-      <div style={{textAlign:'left'}}><span style={{fontFamily:T.disp,fontSize:24,fontWeight:700,color:cB,lineHeight:1}}>{fmtB??valB}</span></div>
-    </div>
-  );
+const SURFACES = {
+  CLAY: { label: 'Saibro', color: '#D06A32' },
+  GRASS: { label: 'Grama', color: '#57B66A' },
+  HARD: { label: 'Dura', color: '#4A90E2' },
+  INDOOR: { label: 'Indoor', color: '#A78BFA' },
+  CARPET: { label: 'Carpete', color: '#DC5F8A' },
+  STREET: { label: 'Asfalto', color: '#F59E0B' },
+};
+
+const safeNum = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+const sum = (arr) => arr.reduce((a, b) => a + safeNum(b), 0);
+const pct = (a, b) => safeNum(b) > 0 ? Math.round((safeNum(a) / safeNum(b)) * 100) : 0;
+const avg = (arr) => arr?.length ? sum(arr) / arr.length : 0;
+const fmt = (v, unit = '') => `${safeNum(v).toFixed(safeNum(v) % 1 ? 1 : 0)}${unit}`;
+
+function getStats(player) {
+  return player?.stats ?? {};
 }
 
-const TABS=[
-  {id:'resumo',label:'RESUMO',icon:'�S�'},
-  {id:'stats',label:'ESTATÍSTICAS',icon:'�0�'},
-  {id:'rallies',label:'RALLIES',icon:'�ƿ'},
-  {id:'saque',label:'SAQUE',icon:'�`"'},
-  {id:'mapas',label:'MAPAS',icon:'��'},
-];
-
-function TabBar({active,setActive}){
-  return(
-    <div style={{display:'flex',background:T.bgPanel,borderBottom:`1px solid ${T.border}`,position:'sticky',top:0,zIndex:20}}>
-      {TABS.map(tab=>{
-        const on=active===tab.id;
-        return(
-          <button key={tab.id} onClick={()=>setActive(tab.id)} style={{
-            flex:1,padding:'13px 6px',border:'none',cursor:'pointer',
-            borderBottom:on?`2px solid ${T.cream}`:'2px solid transparent',
-            background:on?T.ghost:'transparent',
-            display:'flex',flexDirection:'column',alignItems:'center',gap:3,transition:'all 0.15s',
-          }}>
-            <span style={{fontFamily:T.disp,fontSize:16,color:on?T.cream:T.faint}}>{tab.icon}</span>
-            <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:2,textTransform:'uppercase',color:on?T.cream:T.faint}}>{tab.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
+function buildPlayerLine(player) {
+  const s = getStats(player);
+  const firstTotal = safeNum(s.serve1Total);
+  const rallyLengths = Array.isArray(s.rallyLengths) ? s.rallyLengths : [];
+  const netApps = safeNum(s.netApproaches);
+  const servePts = safeNum(s.pointsWonServing) + safeNum(s.pointsLostServing);
+  const returnPts = safeNum(s.pointsWonReturning) + safeNum(s.pointsLostReturning);
+  return {
+    name: player?.name ?? 'Jogador',
+    color: player?.color ?? UI.gold,
+    sets: safeNum(player?.sets),
+    firstIn: pct(s.serve1In, firstTotal),
+    firstAvg: Math.round(safeNum(s.serve1AvgKmh)),
+    aces: safeNum(s.aces),
+    dfs: safeNum(s.doubleFaults),
+    winners: safeNum(s.winners),
+    ue: safeNum(s.unforcedErrors),
+    fe: safeNum(s.forcedErrors),
+    netPct: pct(s.netPointsWon, netApps),
+    netApps,
+    holdPct: pct(s.gamesHeld, s.gamesServed),
+    breakPct: pct(s.gamesConverted, s.gamesReturned),
+    servePct: pct(s.pointsWonServing, servePts),
+    returnPct: pct(s.pointsWonReturning, returnPts),
+    avgRally: avg(rallyLengths),
+    rallyLengths,
+    attackIndex: safeNum(s.winners) + safeNum(s.aces) - safeNum(s.unforcedErrors) * 0.75,
+    pressure: safeNum(s.breakPointsSaved) + safeNum(s.matchPointsSaved) * 2 + safeNum(s.tiebreaksWon) * 1.5,
+  };
 }
 
-function NarratorBlock({narration}){
-  const [expanded,setExpanded]=useState(false);
-  if(!narration) return(
-    <div style={{padding:'24px',background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:16}}>
-      <span style={{fontFamily:T.mono,fontSize:10,color:T.faint}}>Narração indisponível</span>
-    </div>
-  );
-  return(
-    <div style={{marginBottom:20}}>
-      <div style={{padding:'20px 24px 16px',background:T.bgCard,borderLeft:`3px solid ${T.clay}`,marginBottom:1}}>
-        <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.clay,textTransform:'uppercase',marginBottom:8}}>RELATÓRIO DA PARTIDA</div>
-        <div style={{fontFamily:T.disp,fontSize:22,fontWeight:700,color:T.cream,lineHeight:1.25,marginBottom:12}}>{narration.headline}</div>
-        {narration.tags?.length>0&&(
-          <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-            {narration.tags.map((tag,i)=>(
-              <span key={i} style={{fontFamily:T.mono,fontSize:8,letterSpacing:2,textTransform:'uppercase',padding:'3px 8px',border:`1px solid ${T.borderMid}`,color:T.dim,background:T.ghost}}>{tag}</span>
-            ))}
-          </div>
-        )}
-      </div>
-      <div style={{padding:'16px 24px',background:T.bgCard,borderLeft:`3px solid ${T.border}`,marginBottom:1}}>
-        <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:8}}>ANÁLISE TÁTICA</div>
-        <p style={{fontFamily:T.cond,fontSize:15,color:T.cream,lineHeight:1.6,margin:0}}>{narration.tactical_summary}</p>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1,marginBottom:1}}>
-        {narration.turning_point&&(
-          <div style={{padding:'14px 20px',background:T.bgCard,borderLeft:`3px solid ${T.gold}`}}>
-            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.gold,textTransform:'uppercase',marginBottom:6}}>PONTO DE VIRADA</div>
-            <p style={{fontFamily:T.cond,fontSize:13,color:T.dim,lineHeight:1.55,margin:0}}>{narration.turning_point}</p>
-          </div>
-        )}
-        {narration.pattern_highlight&&(
-          <div style={{padding:'14px 20px',background:T.bgCard,borderLeft:`3px solid ${T.blue}`}}>
-            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.blue,textTransform:'uppercase',marginBottom:6}}>PADR�O DOMINANTE</div>
-            <p style={{fontFamily:T.cond,fontSize:13,color:T.dim,lineHeight:1.55,margin:0}}>{narration.pattern_highlight}</p>
-          </div>
-        )}
-      </div>
-      {narration.plan_vs_result&&(
-        <div style={{padding:'14px 20px',background:T.bgCard,borderLeft:`3px solid ${T.lime}`,marginBottom:1}}>
-          <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.lime,textTransform:'uppercase',marginBottom:6}}>PLANO vs EXECUÇ�O</div>
-          <p style={{fontFamily:T.cond,fontSize:13,color:T.dim,lineHeight:1.55,margin:0}}>{narration.plan_vs_result}</p>
-        </div>
-      )}
-      {narration.full_report&&(
-        <div style={{background:T.bgCard,borderLeft:`3px solid ${T.border}`}}>
-          <button onClick={()=>setExpanded(e=>!e)} style={{width:'100%',padding:'12px 20px',background:'none',border:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase'}}>RELATÓRIO COMPLETO</span>
-            <span style={{fontFamily:T.mono,fontSize:10,color:T.faint}}>{expanded?'��':'��'}</span>
-          </button>
-          {expanded&&(
-            <div style={{padding:'0 20px 16px'}}>
-              <p style={{fontFamily:T.cond,fontSize:13,color:T.faint,lineHeight:1.7,margin:0,whiteSpace:'pre-line'}}>{narration.full_report}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+function inferAnalystNotes(a, b, heatData, maxRally, bounceLog) {
+  const notes = [];
+  const leader = a.sets >= b.sets ? a : b;
+  const serveGap = a.servePct - b.servePct;
+  const attackGap = a.attackIndex - b.attackIndex;
+  const bounceCount = bounceLog?.length ?? 0;
 
-function MatchDossierBlock({dossier, capsules=[]}){
-  const moments = dossier?.topMoments?.length ? dossier.topMoments : capsules.slice(-5).reverse();
-  if(!dossier && !moments.length) return null;
-  const heatPct = Math.round((dossier?.heatScore ?? 0) * 100);
-  return(
-    <div style={{marginBottom:20}}>
-      <div style={{
-        padding:'20px 24px',
-        background:'linear-gradient(135deg, rgba(232,200,74,.08), rgba(255,255,255,.025))',
-        border:`1px solid ${T.border}`,
-        borderLeft:`3px solid ${T.gold}`,
-        marginBottom:1,
-      }}>
-        <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.gold,textTransform:'uppercase',marginBottom:8}}>
-          DOSSIÊ DEFINITIVEME
-        </div>
-        <div style={{fontFamily:T.disp,fontSize:24,fontWeight:800,color:T.cream,lineHeight:1.12,marginBottom:10}}>
-          {dossier?.headline ?? moments[0]?.title ?? 'História da partida'}
-        </div>
-        <p style={{fontFamily:T.cond,fontSize:14,color:T.dim,lineHeight:1.55,margin:0}}>
-          {dossier?.thesis ?? moments[0]?.oneLine}
-        </p>
-        {dossier && (
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:14}}>
-            {[
-              {k:'heat',v:`${dossier.heatLabel ?? 'jogo'} ${heatPct}%`,c:T.gold},
-              {k:'qualidade',v:dossier.avgQuality!=null?`qualidade ${dossier.avgQuality}`:null,c:T.blue},
-              {k:'rally',v:dossier.avgRally!=null?`rally médio ${dossier.avgRally}`:null,c:T.lime},
-              {k:'identidade',v:dossier.dominantIdentity?.label?`tom ${dossier.dominantIdentity.label}`:null,c:T.clay},
-            ].filter(x=>x.v).map(x=>(
-              <span key={x.k} style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.8,textTransform:'uppercase',padding:'4px 8px',border:`1px solid ${x.c}44`,color:x.c,background:`${x.c}10`}}>
-                {x.v}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      {moments.length>0 && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:1}}>
-          {moments.slice(0,5).map((m,i)=>(
-            <div key={m.id ?? i} style={{padding:'14px 16px',background:T.bgCard,borderLeft:`2px solid ${m.color ?? T.borderMid}`}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:2,color:m.color ?? T.faint,textTransform:'uppercase',marginBottom:6}}>
-                momento {i+1} · {m.type ?? m.arcLabel ?? 'ponto'}
-              </div>
-              <div style={{fontFamily:T.disp,fontSize:17,fontWeight:700,color:T.cream,lineHeight:1.05,marginBottom:6}}>
-                {m.title}
-              </div>
-              <div style={{fontFamily:T.cond,fontSize:12,color:T.dim,lineHeight:1.45}}>
-                {m.oneLine ?? m.paragraphs?.[0]}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SetScoreline({p0,p1}){
-  const sh0=p0.setsHistory??[],sh1=p1.setsHistory??[];
-  const nSets=Math.max(sh0.length,sh1.length);
-  return(
-    <div style={{marginBottom:20}}>
-      <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>RESULTADO POR SET</div>
-      <div style={{display:'flex',gap:4}}>
-        {Array.from({length:nSets},(_,i)=>{
-          const g0=sh0[i]??0,g1=sh1[i]??0;
-          const w0=g0>g1,w1=g1>g0;
-          const isTb=g0===7||g1===7;
-          return(
-            <div key={i} style={{flex:1,padding:'14px 10px',background:T.bgCard,border:`1px solid ${T.border}`,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:2,color:T.faint,textTransform:'uppercase'}}>SET {i+1}{isTb?' TB':''}</div>
-              <div style={{display:'flex',alignItems:'baseline',gap:8}}>
-                <span style={{fontFamily:T.disp,fontSize:36,fontWeight:800,lineHeight:1,color:w0?T.cream:T.faint}}>{g0}</span>
-                <span style={{fontFamily:T.disp,fontSize:18,color:T.faint}}>–</span>
-                <span style={{fontFamily:T.disp,fontSize:36,fontWeight:800,lineHeight:1,color:w1?T.cream:T.faint}}>{g1}</span>
-              </div>
-              <div style={{display:'flex',gap:3,width:'100%'}}>
-                <div style={{flex:g0,height:2,background:w0?T.cream:T.ghost}}/>
-                <div style={{flex:g1,height:2,background:w1?'rgba(242,237,228,0.35)':T.ghost}}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function KpiGrid({p0,p1,maxRally}){
-  const s0=p0.stats,s1=p1.stats;
-  const w0=p0.sets>p1.sets;
-  const wp=w0?p0:p1,sw=w0?s0:s1;
-  const allRallies=[...(s0.rallyLengths??[]),...(s1.rallyLengths??[])];
-  const matchAvg=allRallies.length?avg(allRallies).toFixed(1):'—';
-  const holdW=pct(sw.gamesHeld??0,sw.gamesServed??1);
-  const breakW=pct(sw.gamesConverted??0,sw.gamesReturned??1);
-  const kpis=[
-    {label:'RALLY MÉDIO',val:matchAvg,sub:'golpes por ponto',color:T.blue},
-    {label:'MAIOR RALLY',val:maxRally,sub:'golpes max',color:T.gold},
-    {label:'HOLD RATE',val:`${holdW}%`,sub:wp.name.split(' ')[0],color:T.lime},
-    {label:'BREAK RATE',val:`${breakW}%`,sub:wp.name.split(' ')[0],color:T.clay},
-  ];
-  return(
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:1,marginBottom:20}}>
-      {kpis.map(k=>(
-        <div key={k.label} style={{padding:'16px',background:T.bgCard,borderLeft:`2px solid ${k.color}`}}>
-          <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:2,color:k.color,textTransform:'uppercase',marginBottom:6}}>{k.label}</div>
-          <div style={{fontFamily:T.disp,fontSize:28,fontWeight:800,color:T.cream,lineHeight:1}}>{k.val}</div>
-          <div style={{fontFamily:T.cond,fontSize:10,color:T.faint,marginTop:4}}>{k.sub}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const RALLY_BUCKETS=[
-  {label:'1–3',min:1,max:3},{label:'4–6',min:4,max:6},{label:'7–9',min:7,max:9},
-  {label:'10–14',min:10,max:14},{label:'15–19',min:15,max:19},{label:'20+',min:20,max:999},
-];
-
-function RallyHistogram({p0,p1}){
-  const merged=[...(p0.stats.rallyLengths??[]),...(p1.stats.rallyLengths??[])];
-  const counts=RALLY_BUCKETS.map(b=>({...b,n:merged.filter(r=>r>=b.min&&r<=b.max).length}));
-  const maxN=Math.max(...counts.map(c=>c.n),1);
-  const total=merged.length||1;
-  return(
-    <div style={{padding:'20px 24px',background:T.bgCard,marginBottom:1}}>
-      <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:16}}>DISTRIBUIÇ�O DE RALLY</div>
-      <div style={{display:'flex',alignItems:'flex-end',gap:8,height:140}}>
-        {counts.map(c=>{
-          const h=(c.n/maxN)*100;
-          const pctVal=Math.round(c.n/total*100);
-          const color=c.min>=20?T.gold:c.min>=15?T.clay:c.min>=10?T.blue:c.min>=7?T.lime:T.dim;
-          return(
-            <div key={c.label} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-              <span style={{fontFamily:T.mono,fontSize:8,color:pctVal>0?color:T.faint,lineHeight:1}}>{pctVal>0?`${pctVal}%`:''}</span>
-              <div style={{width:'100%',background:T.ghost,position:'relative',height:100}}>
-                <div style={{position:'absolute',bottom:0,width:'100%',height:`${h}%`,background:color,opacity:0.75,transition:'height 0.6s ease'}}/>
-              </div>
-              <span style={{fontFamily:T.mono,fontSize:7,color:T.faint,letterSpacing:1}}>{c.label}</span>
-              <span style={{fontFamily:T.disp,fontSize:13,color:T.dim}}>{c.n}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function WinnerErrorChart({p0,p1}){
-  const s0=p0.stats,s1=p1.stats;
-  const cats=[
-    {label:'WINNERS',a:s0.winners??0,b:s1.winners??0,color:T.lime},
-    {label:'ERROS N-F',a:s0.unforcedErrors??0,b:s1.unforcedErrors??0,color:T.red},
-    {label:'ERROS F',a:s0.forcedErrors??0,b:s1.forcedErrors??0,color:T.clay},
-    {label:'ACES',a:s0.aces??0,b:s1.aces??0,color:T.gold},
-  ];
-  const maxVal=Math.max(...cats.flatMap(c=>[c.a,c.b]),1);
-  return(
-    <div style={{padding:'20px 24px',background:T.bgCard,marginBottom:1}}>
-      <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:12}}>WINNERS & ERROS</div>
-      <div style={{display:'flex',gap:16,marginBottom:14}}>
-        {[p0,p1].map(p=>(
-          <div key={p.id} style={{display:'flex',alignItems:'center',gap:5}}>
-            <div style={{width:10,height:3,background:p.color}}/>
-            <span style={{fontFamily:T.cond,fontSize:10,color:T.dim}}>{p.name.split(' ')[0]}</span>
-          </div>
-        ))}
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:14}}>
-        {cats.map(c=>(
-          <div key={c.label}>
-            <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:2,color:T.faint,marginBottom:6}}>{c.label}</div>
-            {[{p:p0,v:c.a},{p:p1,v:c.b}].map(({p,v})=>(
-              <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
-                <div style={{width:28,textAlign:'right',fontFamily:T.disp,fontSize:16,color:T.cream,lineHeight:1}}>{v}</div>
-                <div style={{flex:1,height:6,background:T.ghost}}>
-                  <div style={{height:'100%',width:`${Math.round(v/maxVal*100)}%`,background:c.color,opacity:0.7,transition:'width 0.5s'}}/>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RallyTrendLine({p0,p1}){
-  const merged=[...(p0.stats.rallyLengths??[]),...(p1.stats.rallyLengths??[])].slice(0,200);
-  if(merged.length<5) return null;
-  const W=8,cw=520,ch=90,P={l:30,r:10,t:10,b:22};
-  const pts=[];
-  for(let i=W-1;i<merged.length;i++){
-    const sl=merged.slice(i-W+1,i+1);
-    pts.push({x:i,y:sl.reduce((a,b)=>a+b,0)/W});
-  }
-  const maxY=Math.max(...pts.map(p=>p.y),12);
-  const xs=i=>P.l+(i/(merged.length-1))*(cw-P.l-P.r);
-  const ys=v=>P.t+(1-v/maxY)*(ch-P.t-P.b);
-  const path=pts.map((p,i)=>`${i===0?'M':'L'}${xs(p.x).toFixed(1)},${ys(p.y).toFixed(1)}`).join(' ');
-  const avgVal=avg(merged);
-  return(
-    <div style={{padding:'20px 24px',background:T.bgCard}}>
-      <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:12}}>MÉDIA MÓVEL DE RALLY (janela: 8 pts)</div>
-      <svg width="100%" viewBox={`0 0 ${cw} ${ch}`} preserveAspectRatio="none" style={{maxHeight:90}}>
-        {[4,8,12].map(v=>(
-          <g key={v}>
-            <line x1={P.l} x2={cw-P.r} y1={ys(v)} y2={ys(v)} stroke={T.border} strokeWidth={1}/>
-            <text x={P.l-4} y={ys(v)+3} fill={T.faint} fontSize={8} textAnchor="end">{v}</text>
-          </g>
-        ))}
-        <line x1={P.l} x2={cw-P.r} y1={ys(avgVal)} y2={ys(avgVal)} stroke="rgba(212,168,32,0.3)" strokeWidth={1} strokeDasharray="4,3"/>
-        <text x={cw-P.r+2} y={ys(avgVal)+3} fill={T.gold} fontSize={7}>avg</text>
-        <path d={path} fill="none" stroke={T.blue} strokeWidth={2}/>
-        {pts.filter((_,i)=>i%10===0).map((p,i)=>(
-          <circle key={i} cx={xs(p.x)} cy={ys(p.y)} r={2} fill={T.blue} opacity={0.6}/>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function ShotDistribution({p0,p1}){
-  return(
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}>
-      {[p0,p1].map(p=>{
-        const s=p.stats;
-        const shots=Object.entries(s.byType??{}).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a);
-        const total=shots.reduce((a,[,v])=>a+v,0)||1;
-        const maxV=shots[0]?.[1]||1;
-        return(
-          <div key={p.id} style={{padding:'16px 20px',background:T.bgCard}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-              <div style={{width:3,height:20,background:p.color}}/>
-              <span style={{fontFamily:T.disp,fontSize:18,color:T.cream}}>{p.name}</span>
-            </div>
-            {shots.map(([k,v])=>(
-              <div key={k} style={{marginBottom:7}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                  <span style={{fontFamily:T.cond,fontSize:10,letterSpacing:1,color:T.faint,textTransform:'uppercase'}}>{k}</span>
-                  <span style={{fontFamily:T.disp,fontSize:14,color:T.cream}}>{v} <span style={{color:T.faint,fontSize:10}}>{Math.round(v/total*100)}%</span></span>
-                </div>
-                <div style={{height:3,background:T.ghost}}>
-                  <div style={{height:'100%',width:`${Math.round(v/maxV*100)}%`,background:p.color,opacity:0.7}}/>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function StatBarServe({label,valA,valB,note}){
-  const a=parseInt(valA)||0,b=parseInt(valB)||0;
-  const maxV=Math.max(a,b,1);
-  const qA=a>b?T.cream:T.faint,qB=b>a?T.cream:T.faint;
-  return(
-    <div style={{padding:'8px 0',borderBottom:`1px solid ${T.border}`,display:'grid',gridTemplateColumns:'1fr 140px 1fr',gap:8,alignItems:'center'}}>
-      <div style={{textAlign:'right',fontFamily:T.disp,fontSize:20,fontWeight:600,color:qA}}>{valA}</div>
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-        <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:2,textTransform:'uppercase',color:T.faint,textAlign:'center'}}>{label}</span>
-        {note&&<span style={{fontFamily:T.mono,fontSize:7,color:'#1e2025',letterSpacing:1}}>{note}</span>}
-        <div style={{width:'100%',display:'flex',height:2,gap:1}}>
-          <div style={{flex:a/maxV,background:qA===T.cream?T.cream:T.ghost}}/>
-          <div style={{flex:b/maxV,background:qB===T.cream?'rgba(242,237,228,0.4)':T.ghost}}/>
-        </div>
-      </div>
-      <div style={{textAlign:'left',fontFamily:T.disp,fontSize:20,fontWeight:600,color:qB}}>{valB}</div>
-    </div>
-  );
-}
-
-function ServeTimeline({log,color}){
-  const W=8;
-  if(!log||log.length<W+1) return <div style={{color:T.faint,fontSize:11}}>dados insuficientes</div>;
-  const pts=[];
-  for(let i=W-1;i<log.length;i++){
-    const sl=log.slice(i-W+1,i+1);
-    pts.push({x:i,y:sl.filter(l=>l.won).length/W});
-  }
-  const cw=400,ch=72,P={l:28,r:8,t:8,b:18};
-  const ATP=0.63;
-  const xs=i=>P.l+(i/Math.max(log.length-1,1))*(cw-P.l-P.r);
-  const ys=v=>P.t+(1-v)*(ch-P.t-P.b);
-  const path=pts.map((p,i)=>`${i===0?'M':'L'}${xs(p.x).toFixed(1)},${ys(p.y).toFixed(1)}`).join(' ');
-  const area=path+` L${xs(pts[pts.length-1].x).toFixed(1)},${ys(0).toFixed(1)} L${xs(pts[0].x).toFixed(1)},${ys(0).toFixed(1)} Z`;
-  return(
-    <svg width="100%" viewBox={`0 0 ${cw} ${ch}`} style={{maxHeight:72}}>
-      {[0,0.5,1].map(v=>(
-        <g key={v}>
-          <line x1={P.l} x2={cw-P.r} y1={ys(v)} y2={ys(v)} stroke={T.border} strokeWidth={1}/>
-          <text x={P.l-3} y={ys(v)+4} fill={T.faint} fontSize={8} textAnchor="end">{Math.round(v*100)}%</text>
-        </g>
-      ))}
-      <line x1={P.l} x2={cw-P.r} y1={ys(ATP)} y2={ys(ATP)} stroke="rgba(242,237,230,0.18)" strokeWidth={1} strokeDasharray="4,3"/>
-      <text x={cw-P.r+2} y={ys(ATP)+3} fill="rgba(242,237,230,0.3)" fontSize={7}>ATP</text>
-      <path d={area} fill={color} opacity={0.07}/>
-      <path d={path} fill="none" stroke={color} strokeWidth={1.5}/>
-      {pts.map((p,i)=>(
-        <circle key={i} cx={xs(p.x)} cy={ys(p.y)} r={2} fill={p.y>=ATP?T.lime:T.red} opacity={0.7}/>
-      ))}
-    </svg>
-  );
-}
-
-function PlayerServeCard({p}){
-  const s=p?.stats; if(!s) return null;
-  const log=s.serveLog||[];
-  const fmtPct=(a,b)=>b>0?`${Math.round(a/b*100)}%`:'—';
-  const avgKmhFn=arr=>arr.length?Math.round(arr.reduce((a,l)=>a+(l.kmh||0),0)/arr.length):null;
-  const t1=s.serve1WonPoints+s.serve1LostPoints;
-  const t2=s.serve2WonPoints+s.serve2LostPoints;
-  const holdPct=s.gamesServed>0?`${Math.round(s.gamesHeld/s.gamesServed*100)}%`:'—';
-  const breakPct=s.gamesReturned>0?`${Math.round(s.gamesConverted/s.gamesReturned*100)}%`:'—';
-  const avg1=avgKmhFn(log.filter(l=>l.isFirst!==false));
-  const avg2=avgKmhFn(log.filter(l=>l.isFirst===false));
-  const dirData=['T','BODY','WIDE'].map(dir=>{
-    const pts=log.filter(l=>l.dir===dir);
-    const won=pts.filter(l=>l.won).length;
-    return{label:dir,value:pts.length,won:pts.length>0?won/pts.length:null};
+  notes.push({
+    title: `${leader.name} controlou os pontos grandes`,
+    text: `O placar veio menos de volume bruto e mais de conversao. O indicador de pressao fechou em ${fmt(leader.pressure)}, com margem importante nos games de servico e nos pontos de ruptura.`,
+    tone: UI.gold,
   });
-  const grd=(v,lo,hi,good,mid)=>parseInt(v)>=hi?good:parseInt(v)<lo?T.red:mid||T.gold;
-  return(
-    <div style={{flex:1,padding:'18px 20px',borderRight:`1px solid ${T.border}`}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,paddingBottom:12,borderBottom:`1px solid ${T.border}`}}>
-        <div style={{width:3,height:28,background:p.color}}/>
-        <div>
-          <div style={{fontFamily:T.disp,fontSize:18,color:T.cream}}>{p.name}</div>
-          <div style={{fontFamily:T.mono,fontSize:8,color:T.faint,letterSpacing:2}}>{p.styleData?.abbr}</div>
+
+  notes.push({
+    title: Math.abs(serveGap) >= 8 ? 'O saque inclinou a quadra' : 'O saque ficou competitivo',
+    text: Math.abs(serveGap) >= 8
+      ? `${serveGap > 0 ? a.name : b.name} abriu ${Math.abs(serveGap)} pontos percentuais em aproveitamento sacando. Isso muda a geometria do jogo: mais bolas curtas, menos defesa neutra.`
+      : `Ninguem fugiu demais no aproveitamento sacando. A diferenca apareceu depois do retorno, na primeira bola de rally e na tolerancia ao erro.`,
+    tone: UI.cyan,
+  });
+
+  notes.push({
+    title: attackGap >= 0 ? `${a.name} teve mais dano liquido` : `${b.name} teve mais dano liquido`,
+    text: `O indice agressivo cruza winners, aces e erros nao-forcados. A leitura aqui e de ${Math.abs(attackGap).toFixed(1)} pontos de distancia, suficiente para explicar a sensacao de dominio.`,
+    tone: UI.green,
+  });
+
+  notes.push({
+    title: bounceCount > 30 ? 'Mapa com amostra forte' : 'Mapa ainda com amostra curta',
+    text: `${bounceCount} quiques foram registrados. A tela agora usa esse log para separar quique, alvo, direcao, contato, padroes e calor posicional sem depender de um unico painel antigo.`,
+    tone: UI.violet,
+  });
+
+  if (heatData) {
+    notes.push({
+      title: `Heat emocional: ${heatData.tier.label}`,
+      text: `O pico da partida bateu ${heatData.peak}. Quando esse numero sobe, a tela trata o jogo como evento narrativo, nao so planilha de estatistica.`,
+      tone: heatData.tier.color ?? UI.orange,
+    });
+  }
+
+  if (maxRally >= 12) {
+    notes.push({
+      title: 'Rallies longos mudaram o tom',
+      text: `O maior rally teve ${maxRally} bolas. Esse tipo de ponto pesa no fisico, aumenta erro tardio e revela quem sustenta padrao quando o saque nao resolve.`,
+      tone: UI.orange,
+    });
+  }
+
+  return notes;
+}
+
+function ShellButton({ active, children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: 'none',
+        borderBottom: `2px solid ${active ? UI.gold : 'transparent'}`,
+        background: active ? 'rgba(232,200,74,.08)' : 'transparent',
+        color: active ? UI.text : UI.faint,
+        cursor: 'pointer',
+        fontFamily: UI.mono,
+        fontSize: 9,
+        letterSpacing: 2.4,
+        padding: '14px 8px 12px',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function BigMetric({ label, value, sub, tone = UI.gold }) {
+  return (
+    <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderTop: `2px solid ${tone}`, padding: 16, minHeight: 96 }}>
+      <div style={{ color: `${tone}CC`, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2.5, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 34, fontWeight: 900, lineHeight: .9, marginTop: 10 }}>{value}</div>
+      {sub && <div style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 13, lineHeight: 1.35, marginTop: 8 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function CompareRow({ label, a, b, left, right, tone = UI.gold, lowerIsBetter = false }) {
+  const av = safeNum(a);
+  const bv = safeNum(b);
+  const max = Math.max(av, bv, 1);
+  const aWin = lowerIsBetter ? av <= bv : av >= bv;
+  const bWin = lowerIsBetter ? bv <= av : bv >= av;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 1fr', alignItems: 'center', gap: 10, borderBottom: `1px solid ${UI.line}`, padding: '10px 0' }}>
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ color: aWin ? UI.text : UI.faint, fontFamily: UI.disp, fontSize: 25, fontWeight: 800, lineHeight: 1 }}>{left ?? av}</div>
+        <div style={{ height: 3, background: 'rgba(255,255,255,.05)', marginTop: 7 }}>
+          <div style={{ height: '100%', width: `${Math.max(4, av / max * 100)}%`, marginLeft: 'auto', background: aWin ? tone : 'rgba(255,255,255,.16)' }} />
         </div>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:16}}>
-        {[
-          ['HOLD RATE',holdPct,`${s.gamesHeld??0}/${s.gamesServed??0}`,grd(holdPct,65,78,T.lime)],
-          ['BREAK RATE',breakPct,`${s.gamesConverted??0}/${s.gamesReturned??0}`,grd(breakPct,15,25,T.lime)],
-          ['WIN% 1º SAQ.',fmtPct(s.serve1WonPoints,t1),'ATP: ~71%',grd(fmtPct(s.serve1WonPoints,t1),55,68,T.lime)],
-          ['WIN% 2º SAQ.',fmtPct(s.serve2WonPoints,t2),'ATP: ~50%',grd(fmtPct(s.serve2WonPoints,t2),42,50,T.lime)],
-          ['VEL. 1º SAQUE',avg1?`${avg1}km/h`:'—','ATP: 185-210',avg1>=180?T.lime:avg1<155?T.red:T.gold],
-          ['VEL. 2º SAQUE',avg2?`${avg2}km/h`:'—','ATP: 145-165',avg2>=145?T.lime:avg2<120?T.red:T.gold],
-        ].map(([lbl,val,note,clr])=>(
-          <div key={lbl} style={{background:T.bgCard,padding:'8px 10px',borderLeft:`2px solid ${clr||T.faint}`}}>
-            <div style={{fontFamily:T.mono,fontSize:7,color:T.faint,letterSpacing:2,textTransform:'uppercase',marginBottom:3}}>{lbl}</div>
-            <div style={{fontFamily:T.disp,fontSize:18,fontWeight:700,color:clr||T.cream,lineHeight:1}}>{val}</div>
-            <div style={{fontFamily:T.cond,fontSize:8,color:'#1e2025',marginTop:2}}>{note}</div>
+      <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2, textAlign: 'center', textTransform: 'uppercase' }}>{label}</div>
+      <div>
+        <div style={{ color: bWin ? UI.text : UI.faint, fontFamily: UI.disp, fontSize: 25, fontWeight: 800, lineHeight: 1 }}>{right ?? bv}</div>
+        <div style={{ height: 3, background: 'rgba(255,255,255,.05)', marginTop: 7 }}>
+          <div style={{ height: '100%', width: `${Math.max(4, bv / max * 100)}%`, background: bWin ? tone : 'rgba(255,255,255,.16)' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Scoreline({ p0, p1 }) {
+  const a = p0?.setsHistory ?? [];
+  const b = p1?.setsHistory ?? [];
+  const size = Math.max(a.length, b.length, 1);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, minmax(70px, 1fr))`, gap: 8 }}>
+      {Array.from({ length: size }, (_, i) => {
+        const ga = safeNum(a[i]);
+        const gb = safeNum(b[i]);
+        return (
+          <div key={i} style={{ background: UI.panel, border: `1px solid ${UI.line}`, padding: '12px 10px', textAlign: 'center' }}>
+            <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2, textTransform: 'uppercase' }}>Set {i + 1}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'baseline', marginTop: 8 }}>
+              <span style={{ color: ga >= gb ? UI.text : UI.faint, fontFamily: UI.disp, fontSize: 36, fontWeight: 900, lineHeight: .9 }}>{ga}</span>
+              <span style={{ color: UI.faint, fontFamily: UI.disp, fontSize: 20 }}>x</span>
+              <span style={{ color: gb >= ga ? UI.text : UI.faint, fontFamily: UI.disp, fontSize: 36, fontWeight: 900, lineHeight: .9 }}>{gb}</span>
+            </div>
           </div>
-        ))}
+        );
+      })}
+    </div>
+  );
+}
+
+function AnalystDesk({ notes }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+      {notes.map((note) => (
+        <div key={note.title} style={{ background: UI.card, border: `1px solid ${UI.line}`, borderLeft: `3px solid ${note.tone}`, padding: 16 }}>
+          <div style={{ color: note.tone, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 }}>Analista</div>
+          <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 22, fontWeight: 800, lineHeight: 1.05 }}>{note.title}</div>
+          <div style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 14, lineHeight: 1.5, marginTop: 8 }}>{note.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NarrativeBlock({ narration, dossier, capsules }) {
+  const moments = dossier?.topMoments?.length ? dossier.topMoments : (capsules ?? []).slice(-4).reverse();
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(280px, .65fr)', gap: 12 }}>
+      <div style={{ background: UI.card, border: `1px solid ${UI.line}`, padding: 20 }}>
+        <div style={{ color: UI.gold, fontFamily: UI.mono, fontSize: 8, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 10 }}>Relatorio central</div>
+        <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 32, fontWeight: 900, lineHeight: .98 }}>{dossier?.headline ?? narration?.headline ?? 'Partida decodificada'}</div>
+        <p style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 16, lineHeight: 1.6, margin: '14px 0 0' }}>
+          {dossier?.thesis ?? narration?.tactical_summary ?? 'A nova tela cruza estatistica, mapas e narrativa para mostrar por que o jogo terminou desse jeito.'}
+        </p>
+        {narration?.turning_point && (
+          <div style={{ marginTop: 16, borderTop: `1px solid ${UI.line}`, paddingTop: 14 }}>
+            <div style={{ color: UI.orange, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2.5, textTransform: 'uppercase' }}>Ponto de virada</div>
+            <div style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 14, lineHeight: 1.5, marginTop: 6 }}>{narration.turning_point}</div>
+          </div>
+        )}
       </div>
-      {dirData.some(d=>d.value>0)&&(
-        <div style={{marginBottom:14}}>
-          <div style={{fontFamily:T.mono,fontSize:8,color:T.faint,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>WIN% POR DIREÇ�O</div>
-          {dirData.filter(d=>d.value>0).map(d=>{
-            const pv=d.won!=null?Math.round(d.won*100):null;
-            const clr=pv>=63?T.lime:pv>=50?T.cream:T.red;
-            return(
-              <div key={d.label} style={{marginBottom:6}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                  <span style={{fontFamily:T.cond,fontSize:10,color:T.faint}}>{d.label}</span>
-                  <span style={{fontFamily:T.disp,fontSize:13,color:clr}}>{pv!=null?`${pv}%`:'—'} <span style={{color:T.faint,fontSize:10}}>({d.value})</span></span>
-                </div>
-                <div style={{height:3,background:T.ghost,position:'relative'}}>
-                  <div style={{height:'100%',width:`${pv??0}%`,background:clr,opacity:0.7}}/>
-                  <div style={{position:'absolute',left:'63%',top:0,bottom:0,width:1,background:'rgba(255,255,255,0.15)'}}/>
-                </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {moments.length ? moments.slice(0, 4).map((m, i) => (
+          <div key={m.id ?? i} style={{ background: UI.panel, border: `1px solid ${UI.line}`, borderLeft: `3px solid ${m.color ?? UI.cyan}`, padding: 12 }}>
+            <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 7, letterSpacing: 2, textTransform: 'uppercase' }}>Momento {i + 1}</div>
+            <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 18, fontWeight: 800, lineHeight: 1.05, marginTop: 5 }}>{m.title ?? m.type ?? 'Momento chave'}</div>
+            <div style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 12, lineHeight: 1.35, marginTop: 5 }}>{m.oneLine ?? m.paragraphs?.[0] ?? 'Registro decisivo da partida.'}</div>
+          </div>
+        )) : <BigMetric label="Momentos" value="Em branco" sub="Sem capsulas narrativas registradas neste jogo." tone={UI.faint} />}
+      </div>
+    </div>
+  );
+}
+
+function RallyBands({ a, b, maxRally }) {
+  const bands = [
+    { label: '0-3', test: (n) => n <= 3, tone: UI.cyan },
+    { label: '4-8', test: (n) => n >= 4 && n <= 8, tone: UI.green },
+    { label: '9+', test: (n) => n >= 9, tone: UI.orange },
+  ];
+  const all = [...a.rallyLengths, ...b.rallyLengths];
+  return (
+    <div style={{ background: UI.card, border: `1px solid ${UI.line}`, padding: 16 }}>
+      <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 12 }}>Distribuicao de rallies</div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {bands.map((band) => {
+          const count = all.filter(band.test).length;
+          const width = pct(count, Math.max(1, all.length));
+          return (
+            <div key={band.label} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 48px', gap: 10, alignItems: 'center' }}>
+              <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 22, fontWeight: 800 }}>{band.label}</div>
+              <div style={{ height: 12, background: 'rgba(255,255,255,.055)' }}>
+                <div style={{ width: `${width}%`, height: '100%', background: band.tone }} />
               </div>
-            );
-          })}
-        </div>
-      )}
-      {log.length>=4&&(
-        <div>
-          <div style={{fontFamily:T.mono,fontSize:8,color:T.faint,letterSpacing:2,textTransform:'uppercase',marginBottom:8}}>WIN% SAQUE — janela 8pts</div>
-          <ServeTimeline log={log} color={p.color}/>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ServeTab({p0,p1}){
-  const s0=p0?.stats,s1=p1?.stats;
-  if(!s0||!s1) return <div style={{padding:32,color:T.faint}}>Sem dados de saque.</div>;
-  const fp=(a,b)=>b>0?`${Math.round(a/b*100)}%`:'—';
-  const t01=s0.serve1WonPoints+s0.serve1LostPoints;
-  const t02=s0.serve2WonPoints+s0.serve2LostPoints;
-  const t11=s1.serve1WonPoints+s1.serve1LostPoints;
-  const t12=s1.serve2WonPoints+s1.serve2LostPoints;
-  return(
-    <div style={{color:T.cream}}>
-      <div style={{padding:'14px 24px 8px',borderBottom:`1px solid ${T.border}`}}>
-        <div style={{fontFamily:T.mono,fontSize:9,letterSpacing:4,color:T.faint,textTransform:'uppercase',marginBottom:4}}>COMPARATIVO</div>
-        <StatBarServe label="HOLD RATE" note="ATP ref: ~81%" valA={fp(s0.gamesHeld,s0.gamesServed)} valB={fp(s1.gamesHeld,s1.gamesServed)}/>
-        <StatBarServe label="WIN% 1º SAQUE" note="ATP ref: ~71%" valA={fp(s0.serve1WonPoints,t01)} valB={fp(s1.serve1WonPoints,t11)}/>
-        <StatBarServe label="WIN% 2º SAQUE" note="ATP ref: ~50%" valA={fp(s0.serve2WonPoints,t02)} valB={fp(s1.serve2WonPoints,t12)}/>
-        <StatBarServe label="BREAK RATE" note="ATP ref: ~19-23%" valA={fp(s0.gamesConverted,s0.gamesReturned)} valB={fp(s1.gamesConverted,s1.gamesReturned)}/>
-        <StatBarServe label="WIN% SACANDO" valA={fp(s0.pointsWonServing,(s0.pointsWonServing??0)+(s0.pointsLostServing??0))} valB={fp(s1.pointsWonServing,(s1.pointsWonServing??0)+(s1.pointsLostServing??0))}/>
-        <StatBarServe label="WIN% RECEBENDO" valA={fp(s0.pointsWonReturning,(s0.pointsWonReturning??0)+(s0.pointsLostReturning??0))} valB={fp(s1.pointsWonReturning,(s1.pointsWonReturning??0)+(s1.pointsLostReturning??0))}/>
-      </div>
-      <div style={{display:'flex'}}>
-        <PlayerServeCard p={p0}/>
-        <PlayerServeCard p={p1}/>
-      </div>
-    </div>
-  );
-}
-
-const MAP_TABS=[
-  {id:'bounce',label:'Quiques',icon:'●'},{id:'direction',label:'Direção',icon:'→'},
-  {id:'landing',label:'Alvo',icon:'� '},{id:'contact',label:'Contato',icon:'�S�'},
-  {id:'patterns',label:'Padrões',icon:'�0�'},{id:'heatmap',label:'Posição',icon:'�xR�'},
-];
-
-function MapsTab({bounceLog,debugEvents,p0,p1}){
-  const [activeMap,setActiveMap]=useState('bounce');
-  return(
-    <div>
-      <div style={{display:'flex',background:T.bgPanel,borderBottom:`1px solid ${T.border}`}}>
-        {MAP_TABS.map(mt=>{
-          const on=activeMap===mt.id;
-          return(
-            <button key={mt.id} onClick={()=>setActiveMap(mt.id)} style={{
-              flex:1,padding:'10px 4px',border:'none',cursor:'pointer',
-              borderBottom:on?`2px solid ${T.clay}`:'2px solid transparent',
-              background:on?T.ghost:'transparent',
-              display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-            }}>
-              <span style={{fontFamily:T.disp,fontSize:14,color:on?T.cream:T.faint}}>{mt.icon}</span>
-              <span style={{fontFamily:T.mono,fontSize:7,letterSpacing:1,textTransform:'uppercase',color:on?T.cream:T.faint}}>{mt.label}</span>
-            </button>
+              <div style={{ color: band.tone, fontFamily: UI.mono, fontSize: 10, textAlign: 'right' }}>{width}%</div>
+            </div>
           );
         })}
       </div>
-      <div>
-        {activeMap==='bounce'&&<BounceMap bounceLog={bounceLog} p0={p0} p1={p1}/>}
-        {activeMap==='direction'&&<ShotDirectionMap debugEvents={debugEvents} p0={p0} p1={p1}/>}
-        {activeMap==='landing'&&<LandingMap bounceLog={bounceLog} p0={p0} p1={p1}/>}
-        {activeMap==='contact'&&<ContactMap debugEvents={debugEvents} p0={p0} p1={p1}/>}
-        {activeMap==='patterns'&&<PatternMap debugEvents={debugEvents} p0={p0} p1={p1}/>}
-        {activeMap==='heatmap'&&<PositionHeatmap p0={p0} p1={p1}/>}
+      <div style={{ color: UI.muted, fontFamily: UI.cond, fontSize: 14, lineHeight: 1.45, marginTop: 14 }}>
+        Maior rally: {maxRally} bolas. Media combinada: {avg(all).toFixed(1)}.
       </div>
     </div>
   );
 }
 
-export default function MatchOverScreen({p0,p1,maxRally,totalPoints,bounceLog,debugEvents=[],heat,courtMeta,matchNarrativeDossier=null,matchStoryCapsules=[],onNew,onSame}){
-  const [tab,setTab]=useState('resumo');
-  if(!p0||!p1) return null;
+function ServeRadar({ player, line }) {
+  const items = [
+    ['1o in', line.firstIn, UI.cyan],
+    ['Saque', line.servePct, UI.gold],
+    ['Hold', line.holdPct, UI.green],
+    ['Rede', line.netPct, UI.violet],
+  ];
+  return (
+    <div style={{ background: UI.card, border: `1px solid ${UI.line}`, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+        <div>
+          <div style={{ color: player?.color ?? UI.text, fontFamily: UI.disp, fontSize: 24, fontWeight: 900, lineHeight: 1 }}>{line.name}</div>
+          <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>{line.firstAvg} km/h media 1o saque</div>
+        </div>
+        <div style={{ color: UI.gold, fontFamily: UI.disp, fontSize: 38, fontWeight: 900, lineHeight: .9 }}>{line.aces}</div>
+      </div>
+      <div style={{ display: 'grid', gap: 9 }}>
+        {items.map(([label, value, tone]) => (
+          <div key={label} style={{ display: 'grid', gridTemplateColumns: '64px 1fr 40px', alignItems: 'center', gap: 8 }}>
+            <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 1.5, textTransform: 'uppercase' }}>{label}</div>
+            <div style={{ height: 8, background: 'rgba(255,255,255,.06)' }}>
+              <div style={{ width: `${Math.min(100, value)}%`, height: '100%', background: tone }} />
+            </div>
+            <div style={{ color: tone, fontFamily: UI.mono, fontSize: 10, textAlign: 'right' }}>{value}%</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  const winner=p0.sets>p1.sets?p0:p1;
-  const loser=winner===p0?p1:p0;
-  const s0=p0.stats,s1=p1.stats;
-  const heatData=heat?readHeat({heat}):null;
-  const pct1A=s0.serve1Total>0?Math.round(s0.serve1In/s0.serve1Total*100):0;
-  const pct1B=s1.serve1Total>0?Math.round(s1.serve1In/s1.serve1Total*100):0;
-  const netPA=s0.netApproaches>0?Math.round(s0.netPointsWon/s0.netApproaches*100):0;
-  const netPB=s1.netApproaches>0?Math.round(s1.netPointsWon/s1.netApproaches*100):0;
-  const avgA=fmtAvg(s0.rallyLengths),avgB=fmtAvg(s1.rallyLengths);
+const mapTabs = [
+  ['bounce', 'Quique'],
+  ['landing', 'Alvos'],
+  ['direction', 'Direcao'],
+  ['contact', 'Contato'],
+  ['patterns', 'Padroes'],
+  ['heatmap', 'Calor'],
+];
 
-  const sh0=p0.setsHistory??[],sh1=p1.setsHistory??[];
-  const setsDetail=sh0.map((g,i)=>[g,sh1[i]??0]);
+function MapsRoom({ p0, p1, bounceLog = [], debugEvents = [] }) {
+  const [active, setActive] = useState('bounce');
+  return (
+    <div style={{ background: UI.card, border: `1px solid ${UI.line}`, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${mapTabs.length}, 1fr)`, background: UI.panel, borderBottom: `1px solid ${UI.line}` }}>
+        {mapTabs.map(([id, label]) => <ShellButton key={id} active={active === id} onClick={() => setActive(id)}>{label}</ShellButton>)}
+      </div>
+      <div style={{ minHeight: 430 }}>
+        {active === 'bounce' && <BounceMap bounceLog={bounceLog} p0={p0} p1={p1} />}
+        {active === 'landing' && <LandingMap bounceLog={bounceLog} p0={p0} p1={p1} />}
+        {active === 'direction' && <ShotDirectionMap debugEvents={debugEvents} p0={p0} p1={p1} />}
+        {active === 'contact' && <ContactMap debugEvents={debugEvents} p0={p0} p1={p1} />}
+        {active === 'patterns' && <PatternMap debugEvents={debugEvents} p0={p0} p1={p1} />}
+        {active === 'heatmap' && <PositionHeatmap p0={p0} p1={p1} />}
+      </div>
+    </div>
+  );
+}
 
-  const surfKey=(courtMeta?.surface??'HARD').toUpperCase();
-  const surfColor=SURFACE_COLOR[surfKey]||T.clay;
-  const surfLabel=SURFACE_LABEL[surfKey]||'Dura';
-  const winnerShort = winner.name?.split(' ')?.[0] ?? winner.name;
-  const summaryCards = [
-    { label:'Dominio na rede', value:`${winnerShort} ${winner.stats?.netApproaches ? `${Math.round((winner.stats.netPointsWon ?? 0) / Math.max(1, winner.stats.netApproaches) * 100)}%` : '—'}`, sub:'aproveitamento nas subidas', color:T.lime },
-    { label:'Primeiro saque', value:`${Math.max(pct1A, pct1B)}%`, sub:'melhor taxa de primeiro saque dentro', color:T.blue },
-    { label:'Clima do jogo', value: heatData ? heatData.tier.label : 'Estavel', sub: heatData ? `peak ${heatData.peak}` : 'sem pico registrado', color: heatData?.tier?.color ?? T.gold },
+export default function MatchOverScreen({
+  p0,
+  p1,
+  maxRally = 0,
+  totalPoints = 0,
+  bounceLog = [],
+  debugEvents = [],
+  heat = null,
+  courtMeta = null,
+  matchNarrativeDossier = null,
+  matchStoryCapsules = [],
+  onNew,
+  onSame,
+}) {
+  const [tab, setTab] = useState('overview');
+  if (!p0 || !p1) return null;
+
+  const a = useMemo(() => buildPlayerLine(p0), [p0]);
+  const b = useMemo(() => buildPlayerLine(p1), [p1]);
+  const winner = safeNum(p0.sets) >= safeNum(p1.sets) ? p0 : p1;
+  const loser = winner === p0 ? p1 : p0;
+  const surfaceKey = String(courtMeta?.surface ?? courtMeta?.courtKey ?? 'HARD').toUpperCase();
+  const surface = SURFACES[surfaceKey] ?? SURFACES.HARD;
+  const heatData = heat ? readHeat({ heat }) : null;
+  const setsDetail = (p0.setsHistory ?? []).map((games, i) => [games, p1.setsHistory?.[i] ?? 0]);
+  const notes = useMemo(() => inferAnalystNotes(a, b, heatData, maxRally, bounceLog), [a, b, heatData, maxRally, bounceLog]);
+  const narration = useMemo(() => {
+    try {
+      const winnerIsP0 = winner === p0;
+      return narrateMatch(winner, loser, { winner, stats: { a: p0.stats, b: p1.stats }, setsDetail, gs: { players: [p0, p1] }, log: [] }, surfaceKey);
+    } catch (err) {
+      console.warn('[MatchOverScreen] narrator failed:', err);
+      return null;
+    }
+  }, [p0, p1, winner, loser, surfaceKey]);
+
+  const tabs = [
+    ['overview', 'Resumo'],
+    ['analysts', 'Analistas'],
+    ['numbers', 'Numeros'],
+    ['serve', 'Saque'],
+    ['rally', 'Rallies'],
+    ['maps', 'Mapas'],
   ];
 
-  const narration=useMemo(()=>{
-    try{
-      const winnerIsP0=p0.sets>p1.sets;
-      const result={winner:winnerIsP0?p0:p1,stats:{a:p0.stats,b:p1.stats},setsDetail,gs:{players:[p0,p1]},log:[]};
-      return narrateMatch(winnerIsP0?p0:p1,winnerIsP0?p1:p0,result,surfKey);
-    }catch(e){console.warn('[MatchOverScreen] narrator failed:',e);return null;}
-  // eslint-disable-next-line
-  },[p0?.name,p1?.name]);
-
-  return(
-    <div style={{width:'100%',minHeight:'100vh',background:T.bg,color:T.cream,fontFamily:T.cond,display:'flex',flexDirection:'column'}}>
-
-      {/* HEADER */}
-      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(180deg, rgba(12,14,20,.98), rgba(8,10,15,.94))',borderBottom:`1px solid ${surfColor}44`,flexShrink:0}}>
-        <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${surfColor},${surfColor}00)`}}/>
-        <div style={{position:'absolute',inset:0,background:`radial-gradient(circle at 18% 22%, ${surfColor}12, transparent 22%), radial-gradient(circle at 82% 24%, rgba(255,255,255,.06), transparent 18%)`,pointerEvents:'none'}}/>
-        <div style={{padding:'24px 32px 20px'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
-            <div style={{width:2,height:16,background:surfColor}}/>
-            <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:4,color:surfColor,textTransform:'uppercase'}}>{surfLabel}</span>
-            {courtMeta?.name&&<span style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint}}>· {courtMeta.name.toUpperCase()}</span>}
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:0}}>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:6}}>VENCEDOR</div>
-              <div style={{fontFamily:T.disp,fontSize:'clamp(32px,5vw,60px)',fontWeight:900,color:T.cream,lineHeight:0.9}}>{winner.name}</div>
-              <div style={{fontFamily:T.cond,fontSize:11,letterSpacing:2,color:T.faint,marginTop:6,display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:8,height:8,background:winner.color,borderRadius:'50%'}}/>
-                {winner.styleData?.icon} {winner.styleData?.label}
+  return (
+    <div style={{ minHeight: '100vh', background: UI.bg, color: UI.text, display: 'flex', flexDirection: 'column', fontFamily: UI.cond }}>
+      <div style={{ position: 'relative', overflow: 'hidden', borderBottom: `1px solid ${surface.color}55`, background: `linear-gradient(135deg, ${surface.color}18, rgba(5,7,11,.98) 42%, rgba(17,23,34,.96))` }}>
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px)', backgroundSize: '42px 42px', maskImage: 'linear-gradient(90deg, black, transparent 85%)' }} />
+        <div style={{ position: 'relative', padding: '28px 32px 22px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ color: surface.color, fontFamily: UI.mono, fontSize: 9, letterSpacing: 3.5, textTransform: 'uppercase', marginBottom: 12 }}>
+                Pos-jogo completo · {surface.label}{courtMeta?.name ? ` · ${courtMeta.name}` : ''}
+              </div>
+              <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 'clamp(42px, 7vw, 86px)', fontWeight: 950, letterSpacing: 0, lineHeight: .82 }}>
+                {winner.name}
+              </div>
+              <div style={{ color: UI.muted, fontFamily: UI.disp, fontSize: 'clamp(20px, 3vw, 36px)', fontWeight: 800, lineHeight: 1, marginTop: 8 }}>
+                venceu {loser.name}
               </div>
             </div>
-            <div style={{textAlign:'center',padding:'0 32px',borderLeft:`1px solid ${T.border}`,borderRight:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.disp,fontSize:'clamp(48px,8vw,96px)',fontWeight:900,letterSpacing:-4,color:T.cream,lineHeight:0.85}}>{p0.sets}–{p1.sets}</div>
-              <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,marginTop:4}}>{setsDetail.length} SETS · {totalPoints} PTS</div>
-              {heatData&&(
-                <div style={{display:'inline-flex',alignItems:'center',gap:6,marginTop:10,padding:'5px 12px',border:`1px solid ${heatData.tier.color}55`,borderLeft:`2px solid ${heatData.tier.color}`,background:`${heatData.tier.color}0A`}}>
-                  <span style={{fontSize:10}}>�xR�</span>
-                  <span style={{fontFamily:T.disp,fontSize:20,fontWeight:800,color:heatData.tier.color}}>{heatData.peak}</span>
-                  <span style={{fontFamily:T.mono,fontSize:7,color:`${heatData.tier.color}88`,letterSpacing:2}}>PEAK · {heatData.tier.label}</span>
-                </div>
-              )}
-            </div>
-            <div style={{flex:1,textAlign:'right'}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:6}}>DERROTADO</div>
-              <div style={{fontFamily:T.disp,fontSize:'clamp(20px,3.5vw,42px)',fontWeight:700,color:T.faint,lineHeight:0.9}}>{loser.name}</div>
-              <div style={{fontFamily:T.cond,fontSize:11,letterSpacing:2,color:'rgba(242,237,228,0.2)',marginTop:6}}>{loser.styleData?.icon} {loser.styleData?.label}</div>
+            <div style={{ minWidth: 230, textAlign: 'right' }}>
+              <div style={{ color: UI.text, fontFamily: UI.disp, fontSize: 88, fontWeight: 950, lineHeight: .78 }}>{p0.sets} x {p1.sets}</div>
+              <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 9, letterSpacing: 2.5, textTransform: 'uppercase', marginTop: 10 }}>{totalPoints} pontos · {maxRally} maior rally</div>
             </div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginTop:18}}>
-            {summaryCards.map(card => (
-              <div key={card.label} style={{
-                padding:'12px 14px',
-                background:'rgba(255,255,255,.03)',
-                border:`1px solid ${card.color}26`,
-                borderTop:`2px solid ${card.color}`,
-              }}>
-                <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:'.24em',textTransform:'uppercase',color:`${card.color}CC`,marginBottom:6}}>{card.label}</div>
-                <div style={{fontFamily:T.disp,fontSize:26,color:T.cream,lineHeight:.9}}>{card.value}</div>
-                <div style={{fontFamily:T.cond,fontSize:12,color:T.dim,marginTop:6,lineHeight:1.45}}>{card.sub}</div>
-              </div>
-            ))}
+          <div style={{ marginTop: 22 }}>
+            <Scoreline p0={p0} p1={p1} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginTop: 16 }}>
+            <BigMetric label="Heat do jogo" value={heatData?.tier?.label ?? 'Estavel'} sub={heatData ? `Pico ${heatData.peak}` : 'Sem pico emocional registrado'} tone={heatData?.tier?.color ?? UI.gold} />
+            <BigMetric label="Saque mais forte" value={`${Math.max(a.firstAvg, b.firstAvg)} km/h`} sub="Media de primeiro saque mais alta" tone={UI.cyan} />
+            <BigMetric label="Dano liquido" value={fmt(Math.max(a.attackIndex, b.attackIndex))} sub="Winners e aces contra erros" tone={UI.green} />
+            <BigMetric label="Mapas vivos" value={bounceLog.length} sub={`${debugEvents.length} eventos de debug`} tone={UI.violet} />
           </div>
         </div>
       </div>
 
-      <TabBar active={tab} setActive={setTab}/>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tabs.length}, 1fr)`, background: UI.panel, borderBottom: `1px solid ${UI.line}`, position: 'sticky', top: 0, zIndex: 5 }}>
+        {tabs.map(([id, label]) => <ShellButton key={id} active={tab === id} onClick={() => setTab(id)}>{label}</ShellButton>)}
+      </div>
 
-      <div style={{flex:1,overflowY:'auto'}}>
-
-        {tab==='resumo'&&(
-          <div style={{padding:'20px 24px 32px'}}>
-            <SetScoreline p0={p0} p1={p1}/>
-            <KpiGrid p0={p0} p1={p1} maxRally={maxRally}/>
-            <MatchDossierBlock dossier={matchNarrativeDossier} capsules={matchStoryCapsules}/>
-            <NarratorBlock narration={narration}/>
+      <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+        {tab === 'overview' && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <NarrativeBlock narration={narration} dossier={matchNarrativeDossier} capsules={matchStoryCapsules} />
+            <AnalystDesk notes={notes.slice(0, 4)} />
           </div>
         )}
 
-        {tab==='stats'&&(
-          <div style={{padding:'20px 24px 32px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 160px 1fr',gap:8,paddingBottom:12,marginBottom:4,borderBottom:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.disp,fontSize:20,color:p0===winner?T.cream:T.faint}}>{p0.name}</div>
-              <div style={{textAlign:'center',fontFamily:T.mono,fontSize:8,letterSpacing:3,color:T.faint,textTransform:'uppercase',alignSelf:'center'}}>Estatística</div>
-              <div style={{fontFamily:T.disp,fontSize:20,color:p1===winner?T.cream:T.faint,textAlign:'right'}}>{p1.name}</div>
+        {tab === 'analysts' && <AnalystDesk notes={notes} />}
+
+        {tab === 'numbers' && (
+          <div style={{ background: UI.card, border: `1px solid ${UI.line}`, padding: '18px 22px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 1fr', gap: 10, marginBottom: 10 }}>
+              <div style={{ color: p0.color ?? UI.text, fontFamily: UI.disp, fontSize: 25, fontWeight: 900, textAlign: 'right' }}>{p0.name}</div>
+              <div />
+              <div style={{ color: p1.color ?? UI.text, fontFamily: UI.disp, fontSize: 25, fontWeight: 900 }}>{p1.name}</div>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,margin:'18px 0 16px'}}>
-              {[
-                {label:'Melhor saque', value:`${Math.max(Math.round(s0.serve1AvgKmh||0), Math.round(s1.serve1AvgKmh||0))} km/h`, tone:'#E8C84A'},
-                {label:'Rally topo', value:`${maxRally} bolas`, tone:'#7DD3FC'},
-                {label:'Rede', value:`${Math.max(netPA, netPB)}%`, tone:'#A78BFA'},
-                {label:'Clutch', value:`${(s0.matchPointsSaved??0)+(s1.matchPointsSaved??0)} MPs`, tone:sc},
-              ].map(card => (
-                <div key={card.label} style={{padding:'14px 16px',background:'linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015))',border:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:`${card.tone}88`,textTransform:'uppercase',marginBottom:6}}>{card.label}</div>
-                  <div style={{fontFamily:T.disp,fontSize:26,lineHeight:.95,color:card.tone}}>{card.value}</div>
-                </div>
-              ))}
-            </div>
-            <StatRow label="Aces" valA={s0.aces} valB={s1.aces}/>
-            <StatRow label="Duplas Faltas" valA={s0.doubleFaults} valB={s1.doubleFaults} higher={false}/>
-            <StatRow label="1º Saque Dentro" valA={pct1A} valB={pct1B} fmtA={`${pct1A}%`} fmtB={`${pct1B}%`}/>
-            <StatRow label="Vel. 1º Saque" valA={Math.round(s0.serve1AvgKmh||0)} valB={Math.round(s1.serve1AvgKmh||0)} fmtA={`${Math.round(s0.serve1AvgKmh||0)}km/h`} fmtB={`${Math.round(s1.serve1AvgKmh||0)}km/h`}/>
-            <StatRow label="Winners" valA={s0.winners} valB={s1.winners}/>
-            <StatRow label="Erros Não-Forçados" valA={s0.unforcedErrors} valB={s1.unforcedErrors} higher={false}/>
-            <StatRow label="Erros Forçados" valA={s0.forcedErrors} valB={s1.forcedErrors} higher={false}/>
-            <StatRow label="Subidas à Rede" valA={s0.netApproaches} valB={s1.netApproaches}/>
-            <StatRow label="% Pontos na Rede" valA={netPA} valB={netPB} fmtA={`${netPA}%`} fmtB={`${netPB}%`}/>
-            <StatRow label="Rally Médio" valA={parseFloat(avgA)} valB={parseFloat(avgB)} fmtA={avgA} fmtB={avgB}/>
-            <StatRow label="Maior Rally" valA={maxRally} valB={maxRally}/>
-            <StatRow label="Hold Rate" valA={pct(s0.gamesHeld??0,s0.gamesServed??1)} valB={pct(s1.gamesHeld??0,s1.gamesServed??1)} fmtA={`${pct(s0.gamesHeld??0,s0.gamesServed??1)}%`} fmtB={`${pct(s1.gamesHeld??0,s1.gamesServed??1)}%`}/>
-            <StatRow label="Break Rate" valA={pct(s0.gamesConverted??0,s0.gamesReturned??1)} valB={pct(s1.gamesConverted??0,s1.gamesReturned??1)} fmtA={`${pct(s0.gamesConverted??0,s0.gamesReturned??1)}%`} fmtB={`${pct(s1.gamesConverted??0,s1.gamesReturned??1)}%`}/>
-            <StatRow label="Tiebreaks Ganhos" valA={s0.tiebreaksWon??0} valB={s1.tiebreaksWon??0}/>
-            <StatRow label="Match Points Salvos" valA={s0.matchPointsSaved??0} valB={s1.matchPointsSaved??0}/>
-            <div style={{marginTop:22,padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Distribuição de golpes</div>
-              <ShotDistribution p0={p0} p1={p1}/>
+            <CompareRow label="Aces" a={a.aces} b={b.aces} tone={UI.gold} />
+            <CompareRow label="Duplas faltas" a={a.dfs} b={b.dfs} tone={UI.red} lowerIsBetter />
+            <CompareRow label="1o saque" a={a.firstIn} b={b.firstIn} left={`${a.firstIn}%`} right={`${b.firstIn}%`} tone={UI.cyan} />
+            <CompareRow label="Media 1o saque" a={a.firstAvg} b={b.firstAvg} left={`${a.firstAvg} km/h`} right={`${b.firstAvg} km/h`} tone={UI.cyan} />
+            <CompareRow label="Winners" a={a.winners} b={b.winners} tone={UI.green} />
+            <CompareRow label="Erros nao-forcados" a={a.ue} b={b.ue} tone={UI.red} lowerIsBetter />
+            <CompareRow label="Erros forcados" a={a.fe} b={b.fe} tone={UI.orange} lowerIsBetter />
+            <CompareRow label="Hold rate" a={a.holdPct} b={b.holdPct} left={`${a.holdPct}%`} right={`${b.holdPct}%`} tone={UI.gold} />
+            <CompareRow label="Break rate" a={a.breakPct} b={b.breakPct} left={`${a.breakPct}%`} right={`${b.breakPct}%`} tone={UI.violet} />
+            <CompareRow label="Pontos sacando" a={a.servePct} b={b.servePct} left={`${a.servePct}%`} right={`${b.servePct}%`} tone={UI.gold} />
+            <CompareRow label="Pontos recebendo" a={a.returnPct} b={b.returnPct} left={`${a.returnPct}%`} right={`${b.returnPct}%`} tone={UI.green} />
+            <CompareRow label="Rede" a={a.netPct} b={b.netPct} left={`${a.netPct}%`} right={`${b.netPct}%`} tone={UI.violet} />
+            <CompareRow label="Rally medio" a={a.avgRally} b={b.avgRally} left={a.avgRally.toFixed(1)} right={b.avgRally.toFixed(1)} tone={UI.orange} />
+          </div>
+        )}
+
+        {tab === 'serve' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <ServeRadar player={p0} line={a} />
+            <ServeRadar player={p1} line={b} />
+            <div style={{ gridColumn: '1 / -1', background: UI.card, border: `1px solid ${UI.line}`, padding: 18 }}>
+              <CompareRow label="Win sacando" a={a.servePct} b={b.servePct} left={`${a.servePct}%`} right={`${b.servePct}%`} tone={UI.gold} />
+              <CompareRow label="Win recebendo" a={a.returnPct} b={b.returnPct} left={`${a.returnPct}%`} right={`${b.returnPct}%`} tone={UI.green} />
+              <CompareRow label="Hold" a={a.holdPct} b={b.holdPct} left={`${a.holdPct}%`} right={`${b.holdPct}%`} tone={UI.cyan} />
+              <CompareRow label="Break" a={a.breakPct} b={b.breakPct} left={`${a.breakPct}%`} right={`${b.breakPct}%`} tone={UI.violet} />
             </div>
           </div>
         )}
 
-        {tab==='rallies'&&(
-          <div style={{padding:'20px 24px 32px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginBottom:18}}>
-              {[
-                {label:'Ritmo', value:maxRally>=14?'Alta rotação':maxRally>=9?'Rallys médios':'Pontos curtos', tone:'#7DD3FC'},
-                {label:'Pressão', value:(s0.matchPointsSaved??0)+(s1.matchPointsSaved??0)>0?'Clutch real':'Sem match point', tone:'#F59E0B'},
-                {label:'Tendência', value:(s0.winners??0)+(s1.winners??0) > (s0.unforcedErrors??0)+(s1.unforcedErrors??0) ? 'Agressiva' : 'De desgaste', tone:sc},
-              ].map(card => (
-                <div key={card.label} style={{padding:'14px 16px',background:'rgba(255,255,255,.024)',border:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:`${card.tone}88`,textTransform:'uppercase',marginBottom:6}}>{card.label}</div>
-                  <div style={{fontFamily:T.disp,fontSize:24,lineHeight:.95,color:card.tone}}>{card.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`,marginBottom:14}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Distribuição de rallies</div>
-              <RallyHistogram p0={p0} p1={p1}/>
-            </div>
-            <div style={{padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`,marginBottom:14}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Saldo de winners e erros</div>
-              <WinnerErrorChart p0={p0} p1={p1}/>
-            </div>
-            <div style={{padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Ritmo ao longo da partida</div>
-              <RallyTrendLine p0={p0} p1={p1}/>
+        {tab === 'rally' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <RallyBands a={a} b={b} maxRally={maxRally} />
+            <div style={{ background: UI.card, border: `1px solid ${UI.line}`, padding: 16 }}>
+              <div style={{ color: UI.faint, fontFamily: UI.mono, fontSize: 8, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 12 }}>Leitura de troca</div>
+              <CompareRow label="Winners" a={a.winners} b={b.winners} tone={UI.green} />
+              <CompareRow label="Erros nao-forcados" a={a.ue} b={b.ue} tone={UI.red} lowerIsBetter />
+              <CompareRow label="Indice agressivo" a={a.attackIndex} b={b.attackIndex} left={a.attackIndex.toFixed(1)} right={b.attackIndex.toFixed(1)} tone={UI.gold} />
+              <CompareRow label="Pressao" a={a.pressure} b={b.pressure} left={a.pressure.toFixed(1)} right={b.pressure.toFixed(1)} tone={UI.orange} />
             </div>
           </div>
         )}
 
-        {tab==='saque'&&(
-          <div style={{padding:'20px 24px 32px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginBottom:18}}>
-              {[
-                {label:'1º saque topo', value:`${Math.max(Math.round(s0.serve1AvgKmh||0), Math.round(s1.serve1AvgKmh||0))} km/h`, tone:'#E8C84A'},
-                {label:'Aces', value:`${(s0.aces??0)+(s1.aces??0)}`, tone:'#7DD3FC'},
-                {label:'Risco', value:`${(s0.doubleFaults??0)+(s1.doubleFaults??0)} DFs`, tone:sc},
-              ].map(card => (
-                <div key={card.label} style={{padding:'14px 16px',background:'rgba(255,255,255,.024)',border:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:`${card.tone}88`,textTransform:'uppercase',marginBottom:6}}>{card.label}</div>
-                  <div style={{fontFamily:T.disp,fontSize:24,lineHeight:.95,color:card.tone}}>{card.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Painel de saque</div>
-              <ServeTab p0={p0} p1={p1}/>
-            </div>
-          </div>
-        )}
-
-        {tab==='mapas'&&(
-          <div style={{padding:'20px 24px 32px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginBottom:18}}>
-              {[
-                {label:'Leitura', value:'Posicionamento', tone:'#A78BFA'},
-                {label:'Camada', value:'Bounce + debug', tone:'#7DD3FC'},
-                {label:'Uso', value:'Análise fina', tone:sc},
-              ].map(card => (
-                <div key={card.label} style={{padding:'14px 16px',background:'rgba(255,255,255,.024)',border:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:`${card.tone}88`,textTransform:'uppercase',marginBottom:6}}>{card.label}</div>
-                  <div style={{fontFamily:T.disp,fontSize:24,lineHeight:.95,color:card.tone}}>{card.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{padding:'16px 16px 12px',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012))',border:`1px solid ${T.border}`}}>
-              <div style={{fontFamily:T.mono,fontSize:7,letterSpacing:3,color:T.faint,textTransform:'uppercase',marginBottom:10}}>Mapas e calor da partida</div>
-              <MapsTab bounceLog={bounceLog} debugEvents={debugEvents} p0={p0} p1={p1}/>
-            </div>
+        {tab === 'maps' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <AnalystDesk notes={notes.slice(3, 5)} />
+            <MapsRoom p0={p0} p1={p1} bounceLog={bounceLog} debugEvents={debugEvents} />
           </div>
         )}
       </div>
 
-      <div style={{height:72,flexShrink:0,display:'grid',gridTemplateColumns:'1.1fr .9fr',gap:1,borderTop:`1px solid ${T.border}`,background:T.bgPanel}}>
-        <button onClick={onSame} style={{height:'100%',border:'none',cursor:'pointer',fontFamily:T.disp,fontSize:20,fontWeight:700,letterSpacing:4,textTransform:'uppercase',background:T.cream,color:T.bg}}>↺ Revanche</button>
-        <button onClick={onNew} style={{height:'100%',border:'none',cursor:'pointer',fontFamily:T.disp,fontSize:20,fontWeight:700,letterSpacing:4,textTransform:'uppercase',background:'linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01))',color:T.faint,borderLeft:`1px solid ${T.border}`}}>Nova Partida</button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr .85fr', height: 72, borderTop: `1px solid ${UI.line}`, background: UI.panel }}>
+        <button onClick={onSame} style={{ border: 'none', cursor: 'pointer', background: UI.text, color: UI.bg, fontFamily: UI.disp, fontSize: 22, fontWeight: 900, letterSpacing: 3, textTransform: 'uppercase' }}>Revanche</button>
+        <button onClick={onNew} style={{ border: 'none', borderLeft: `1px solid ${UI.line}`, cursor: 'pointer', background: UI.soft, color: UI.muted, fontFamily: UI.disp, fontSize: 22, fontWeight: 900, letterSpacing: 3, textTransform: 'uppercase' }}>Nova partida</button>
       </div>
     </div>
   );

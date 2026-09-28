@@ -6,7 +6,9 @@ import {
   getNetGameMeta,
   getRallyCadenceMeta,
   getRiskProfileMeta,
+  getRallyIntentMeta,
 } from './playerPrefs.js';
+import { getCourtIdentity } from './PlayerCourtIdentity.js';
 import { getPlayerTraits } from '../../systems/traits/TraitSystem.js';
 import { topStrengths, topWeaknesses, ovrTier } from '../../systems/scouting/ScoutProfile.js';
 import { buildSeasonArc } from '../../systems/narrative/SeasonArcEngine.js';
@@ -148,6 +150,9 @@ function buildNarrative(identity) {
   if (identity.game.archetype?.name) {
     pieces.push(`${firstName(identity.player)} compete como ${identity.game.archetype.name.toLowerCase()}`);
   }
+  if (identity.courtIdentity?.favoritePlay?.label) {
+    pieces.push(`tem como marca ${identity.courtIdentity.favoritePlay.label.toLowerCase()}`);
+  }
   if (identity.personality.competitiveArchetype.coreDriver) {
     pieces.push(`e se move por ${identity.personality.competitiveArchetype.coreDriver}`);
   }
@@ -234,6 +239,7 @@ function getContradictionSnapshot({ player, form, surface, personality, strength
 export function buildPlayerIdentity(player, { surfaceKey = null } = {}) {
   const prefs = player?.prefs ?? generatePrefs(player?.attrs ?? {});
   const archetype = getArchetype(prefs);
+  const courtIdentity = getCourtIdentity(player);
   const traits = normalizeTraits(player);
   const perceptions = normalizePerceptions(player);
   const dominantTrait = getDominantTrait(traits);
@@ -274,7 +280,9 @@ export function buildPlayerIdentity(player, { surfaceKey = null } = {}) {
       buildStyle: getBuildStyleMeta(prefs?.buildStyle),
       rallyCadence: getRallyCadenceMeta(prefs?.rallyCadence),
       riskProfile: getRiskProfileMeta(prefs?.riskProfile),
+      rallyIntent: getRallyIntentMeta(prefs),
       netGame: getNetGameMeta(prefs?.netGame),
+      courtIdentity,
     },
     personality,
     seasonArc,
@@ -295,6 +303,7 @@ export function buildPlayerIdentity(player, { surfaceKey = null } = {}) {
       weaknesses,
     },
   };
+  identity.courtIdentity = courtIdentity;
 
   identity.signature = {
     headline: `${identity.firstName} - ${identity.game.archetype?.name ?? identity.personality.competitiveArchetype.label}`,
@@ -321,8 +330,8 @@ export function buildIdentityDuel(playerA, playerB, opts = {}) {
     a,
     b,
     contrast: {
-      tempo: `${a.game.rallyCadence.label} vs ${b.game.rallyCadence.label}`,
-      risk: `${a.game.riskProfile.label} vs ${b.game.riskProfile.label}`,
+      tempo: `${a.game.rallyIntent.label} vs ${b.game.rallyIntent.label}`,
+      risk: `${a.courtIdentity.blindSpot.label} vs ${b.courtIdentity.blindSpot.label}`,
       persona: `${a.personality.pressPersona.label} vs ${b.personality.pressPersona.label}`,
       mood: `${a.personality.mood.id} vs ${b.personality.mood.id}`,
       paradox: a.contradictions[0] && b.contradictions[0]

@@ -427,7 +427,7 @@ export function auditRegisterPointEnd(gs, winnerIdx, reason) {
       return acc;
     }, {});
     const touchTotal = (allCounts.DROP ?? 0) + (allCounts.SLICE_SHORT ?? 0);
-    const angleTotal = (allCounts.SHORT_ACCEL ?? 0) + (allCounts.BANANA ?? 0);
+    const angleTotal = (allCounts.SHORT_ANGLE ?? 0) + (allCounts.SHORT_ACCEL ?? 0) + (allCounts.BANANA ?? 0);
     if (touchTotal === 0) {
       pushEvent(gs, {
         key: 'global-touch-void',
@@ -444,7 +444,7 @@ export function auditRegisterPointEnd(gs, winnerIdx, reason) {
         type: 'macro',
         severity: 'low',
         title: 'ngulos especiais quase não existem',
-        detail: `SHORT_ACCEL e BANANA quase não apareceram nesta partida. Vale observar se o sistema está convergindo demais para bolas centrais/profundas.`,
+        detail: `SHORT_ANGLE, SHORT_ACCEL e BANANA quase não apareceram nesta partida. Vale observar se o sistema está convergindo demais para bolas centrais/profundas.`,
         dedupeMs: 18000,
       });
       audit.counters.patternFlags++;

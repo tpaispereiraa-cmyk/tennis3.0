@@ -1,27 +1,27 @@
-// styles.js — Dados COSMÉTICOS de estilo de jogo (UI only)
+// styles.js â€” Dados COSMÃ‰TICOS de estilo de jogo (UI only)
 // -------------------------------------------------------------------
-// PHASE 1 REFACTOR: Este arquivo agora contém APENAS dados de display.
-// Nenhum campo aqui é lido pelo engine de jogo.
+// PHASE 1 REFACTOR: Este arquivo agora contÃ©m APENAS dados de display.
+// Nenhum campo aqui â€” lido pelo engine de jogo.
 //
-// O engine lê attrs (v3) + prefs do jogador — ver shotPhysics.js e
+// O engine lÃª attrs (v3) + prefs do jogador â€” ver shotPhysics.js e
 // o futuro shotDecision.js (Phase 3).
 //
 // motor antigo de shots arquivado
 // -------------------------------------------------------------------
 
 export const PLAY_STYLES = {
-  AGG_BASELINER:       { id: 'AGG_BASELINER',       label: 'Aggressive Baseliner',  abbr: 'AGG.BASE',  icon: '?',  refs: 'Djokovic · Alcaraz',     barColor: '#FF6B35' },
-  CTR_PUNCHER:         { id: 'CTR_PUNCHER',         label: 'Counter-Puncher',        abbr: 'CTR.PUNCH', icon: '??',  refs: 'Nadal · Murray',          barColor: '#FF4444' },
-  ALL_COURT:           { id: 'ALL_COURT',           label: 'All-Court Player',       abbr: 'ALL-CRT',   icon: '??',  refs: 'Federer · Graf',          barColor: '#FFD700' },
-  SRV_VOL:             { id: 'SRV_VOL',             label: 'Serve & Volleyer',       abbr: 'SRV.VOL',   icon: '??',  refs: 'McEnroe · Edberg',        barColor: '#00FF88' },
-  BIG_SERVER:          { id: 'BIG_SERVER',          label: 'Big Server',             abbr: 'BIG SRV',   icon: '??',  refs: 'Isner · Karlovic',        barColor: '#AA44FF' },
-  RETRIEVER:           { id: 'RETRIEVER',           label: 'Retriever',              abbr: 'RETRIEV',   icon: '??',  refs: 'Wozniacki · Ferrer',      barColor: '#00AAFF' },
-  TAKEALLRISK:         { id: 'TAKEALLRISK',         label: 'All-Risk Gunner',        abbr: 'T.A.RISK',  icon: '??',  refs: 'Kyrgios · peak Safin',    barColor: '#FF0055' },
-  GRINDER:             { id: 'GRINDER',             label: 'Grinder',                abbr: 'GRINDER',   icon: '??',  refs: 'Hewitt · Robredo',        barColor: '#FF8800' },
-  POWER_BASELINER:     { id: 'POWER_BASELINER',     label: 'Power Baseliner',        abbr: 'PWR.BASE',  icon: '??',  refs: 'Medvedev · peak Agassi',  barColor: '#FF3300' },
-  TACTICAL_TECHNICIAN: { id: 'TACTICAL_TECHNICIAN', label: 'Tactical Technician',    abbr: 'TACT.TEC',  icon: '??',  refs: 'Henin · Stosur',          barColor: '#00CCFF' },
-  NET_SPECIALIST:      { id: 'NET_SPECIALIST',      label: 'Net Specialist',         abbr: 'NET.SPEC',  icon: '???',  refs: 'Navratilova · Rafter',    barColor: '#88FF44' },
-  MOMENTUM_PLAYER:     { id: 'MOMENTUM_PLAYER',     label: 'Momentum Player',        abbr: 'MOM.PLAY',  icon: '??',  refs: 'Monfils · peak Tsonga',   barColor: '#FF00AA' },
+  AGG_BASELINER:       { id: 'AGG_BASELINER',       label: 'Aggressive Baseliner',  abbr: 'AGG.BASE',  icon: 'âš¡',  refs: 'Djokovic â€” Alcaraz',     barColor: '#FF6B35' },
+  CTR_PUNCHER:         { id: 'CTR_PUNCHER',         label: 'Counter-Puncher',        abbr: 'CTR.PUNCH', icon: 'ðŸ›¡ï¸',  refs: 'Nadal â€” Murray',          barColor: '#FF4444' },
+  ALL_COURT:           { id: 'ALL_COURT',           label: 'All-Court Player',       abbr: 'ALL-CRT',   icon: 'ðŸŽ¯',  refs: 'Federer â€” Graf',          barColor: '#FFD700' },
+  SRV_VOL:             { id: 'SRV_VOL',             label: 'Serve & Volleyer',       abbr: 'SRV.VOL',   icon: 'â†—',   refs: 'McEnroe â€” Edberg',        barColor: '#00FF88' },
+  BIG_SERVER:          { id: 'BIG_SERVER',          label: 'Big Server',             abbr: 'BIG SRV',   icon: 'ðŸ’¥',  refs: 'Isner â€” Karlovic',        barColor: '#AA44FF' },
+  RETRIEVER:           { id: 'RETRIEVER',           label: 'Retriever',              abbr: 'RETRIEV',   icon: 'ðŸƒ',  refs: 'Wozniacki â€” Ferrer',      barColor: '#00AAFF' },
+  TAKEALLRISK:         { id: 'TAKEALLRISK',         label: 'All-Risk Gunner',        abbr: 'T.A.RISK',  icon: 'ðŸ”¥',  refs: 'Kyrgios â€” peak Safin',    barColor: '#FF0055' },
+  GRINDER:             { id: 'GRINDER',             label: 'Grinder',                abbr: 'GRINDER',   icon: 'â³',  refs: 'Hewitt â€” Robredo',        barColor: '#FF8800' },
+  POWER_BASELINER:     { id: 'POWER_BASELINER',     label: 'Power Baseliner',        abbr: 'PWR.BASE',  icon: 'ðŸš€',  refs: 'Medvedev â€” peak Agassi',  barColor: '#FF3300' },
+  TACTICAL_TECHNICIAN: { id: 'TACTICAL_TECHNICIAN', label: 'Tactical Technician',    abbr: 'TACT.TEC',  icon: 'ðŸ§ ',  refs: 'Henin â€” Stosur',          barColor: '#00CCFF' },
+  NET_SPECIALIST:      { id: 'NET_SPECIALIST',      label: 'Net Specialist',         abbr: 'NET.SPEC',  icon: 'â—†',   refs: 'Navratilova â€” Rafter',    barColor: '#88FF44' },
+  MOMENTUM_PLAYER:     { id: 'MOMENTUM_PLAYER',     label: 'Momentum Player',        abbr: 'MOM.PLAY',  icon: 'ðŸŒŠ',  refs: 'Monfils â€” peak Tsonga',   barColor: '#FF00AA' },
 };
 
 PLAY_STYLES.PWR_BASE  = PLAY_STYLES.POWER_BASELINER;
@@ -33,7 +33,7 @@ export const STYLE_KEYS = Object.keys(PLAY_STYLES).filter(k =>
   !['PWR_BASE','TACT_TEC','NET_SPEC','ADPT_TAC'].includes(k)
 );
 
-// -- Signature Shots — apenas label/icon (UI) --------------------
+// -- Signature Shots â€” apenas label/icon (UI) --------------------
 export const SIGNATURE_SHOTS = {
   INSIDE_OUT_FH:    { id: 'INSIDE_OUT_FH',    label: 'Inside-Out Forehand',    icon: '??' },
   INSIDE_IN_FH:     { id: 'INSIDE_IN_FH',     label: 'Forehand Inside-In',     icon: '??' },
@@ -52,7 +52,7 @@ export const SIGNATURE_SHOTS = {
   DROP_SHOT:        { id: 'DROP_SHOT',        label: 'Drop Shot',              icon: '??' },
   MOONBALL:         { id: 'MOONBALL',         label: 'Moonball',               icon: '??' },
   TOPSPIN_PASS:     { id: 'TOPSPIN_PASS',     label: 'Passing Topspin',        icon: '??' },
-  SLICE_APPROACH:   { id: 'SLICE_APPROACH',   label: 'Slice de Aproximação',   icon: '??' },
+  SLICE_APPROACH:   { id: 'SLICE_APPROACH',   label: 'Slice de AproximaÃ§Ã£o',   icon: '??' },
   BIG_SERVE:        { id: 'BIG_SERVE',        label: 'Saque Dominador',        icon: '?' },
   FLAT_SERVE_T:     { id: 'FLAT_SERVE_T',     label: 'Saque no T',             icon: '??' },
   WIDE_SLICE_SERVE: { id: 'WIDE_SLICE_SERVE', label: 'Saque Slice Aberto',     icon: '??' },
@@ -66,16 +66,16 @@ export const SIGNATURE_SHOTS = {
 };
 export const SIGNATURE_SHOT_KEYS = Object.keys(SIGNATURE_SHOTS);
 
-// -- Rally Patterns — apenas cosmético ---------------------------
+// -- Rally Patterns â€” apenas cosmÃ©tico ---------------------------
 export const RALLY_PATTERNS = {
   CROSS_HEAVY:         { id: 'CROSS_HEAVY',         label: 'Cruzado Dominante',     icon: '?' },
-  DTL_HUNTER:          { id: 'DTL_HUNTER',          label: 'Caçador DTL',           icon: '?' },
-  DEEP_GRINDER:        { id: 'DEEP_GRINDER',        label: 'Fundão Implacável',     icon: '?' },
+  DTL_HUNTER:          { id: 'DTL_HUNTER',          label: 'CaÃ§ador DTL',           icon: '?' },
+  DEEP_GRINDER:        { id: 'DEEP_GRINDER',        label: 'FundÃ£o ImplacÃ¡vel',     icon: '?' },
   SHORT_ANGLE_BUILDER: { id: 'SHORT_ANGLE_BUILDER', label: 'Construtor de ngulos', icon: '??' },
   CENTRE_CONTROL:      { id: 'CENTRE_CONTROL',      label: 'Controle Central',      icon: '?' },
   AGGRESSIVE_EARLY:    { id: 'AGGRESSIVE_EARLY',    label: 'Ataque Precoce',        icon: '?' },
   SERVE_PLUS_ONE:      { id: 'SERVE_PLUS_ONE',      label: 'Serve + 1',             icon: '??' },
-  NET_APPROACH:        { id: 'NET_APPROACH',        label: 'Aproximação da Rede',   icon: '??' },
+  NET_APPROACH:        { id: 'NET_APPROACH',        label: 'AproximaÃ§Ã£o da Rede',   icon: '??' },
   DEFENSIVE_BASE:      { id: 'DEFENSIVE_BASE',      label: 'Base Defensiva',        icon: '??' },
   RHYTHM_DISRUPTION:   { id: 'RHYTHM_DISRUPTION',   label: 'Quebra de Ritmo',       icon: '??' },
   SLICE_DISRUPTOR:     { id: 'SLICE_DISRUPTOR',     label: 'Disruptor de Slice',    icon: '??' },

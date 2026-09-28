@@ -1,20 +1,20 @@
-﻿/**
+/**
  * Headless.jsx
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  * Motor de simulação de partidas completo — usa exatamente o mesmo
  * engine do jogo visual (game.js, ai.js, physics.js, constants.js)
  * mas sem render, sem som e sem delays entre pontos.
  *
  * ATUALIZADO para alinhar com as novas físicas e stats:
- *   - DT_HEADLESS: 1/60 → 1/120 (alinhado com DT de constants.js)
- *   - MAX_TICKS_PER_POINT dobrado (15k→30k) para compensar o DT menor
- *   - Court key INDOOR_MASTERS → O2_ARENA (nome real em courtConfigs.js)
+ *   - DT_HEADLESS: 1/60 ? 1/120 (alinhado com DT de constants.js)
+ *   - MAX_TICKS_PER_POINT dobrado (15k?30k) para compensar o DT menor
+ *   - Court key INDOOR_MASTERS ? O2_ARENA (nome real em courtConfigs.js)
  *   - createEmptyStats / accStats / divStats atualizados com todos os
  *     novos campos: byType, pointsWonServing, hold%, break%, serveLog...
- *   - StatsCard mostra hold%, break%, pts c/ 1º/2º saque
+ *   - StatsCard mostra hold%, break%, pts c/ 1—/2— saque
  *
  * COMO FUNCIONA
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  * O engine visual usa setTimeout(fn, 800ms) para pausar entre pontos
  * (scheduleNextPoint em game.js). Em modo headless, interceptamos o
  * setTimeout globalmente durante a simulação — os callbacks são
@@ -24,17 +24,17 @@
  * aqui são as mesmas chamadas pelo jogo visual.
  *
  * EXPORTS
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  *   simulateMatchHeadless(configA, configB, courtKey?)
- *     → HeadlessResult
+ *     ? HeadlessResult
  *
  *   simulateTournamentHeadless(players, surface?)
- *     → TournamentResult
+ *     ? TournamentResult
  *
  *   HeadlessUI   — componente React para testar/visualizar o headless
  *
  * TIPOS
- * ─────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------
  *   configA / configB: {
  *     namedKey?:  string   — chave em NAMED_PLAYERS (ex: 'VANTORINI')
  *     playerData?: object  — objeto player completo (newgens, etc.)
@@ -61,19 +61,17 @@ import { GameState } from './constants.js';
 import { initGameState, gameTick, computeCrowdPressure } from '../game.jsx';
 import { NAMED_PLAYERS, overallRating } from '../domain/players/players.js';
 import { PLAY_STYLES, STYLE_KEYS } from '../domain/players/styles.js';
-import { runChangeover } from '../systems/coaches/CoachInfluencer.js';
-import { heatScoreToTier } from '../systems/analytics/MatchHeat.js';
-import { analyzeMatch } from '../systems/coaches/CoachAnalyzer.js';
-import { generateInstructions } from '../systems/coaches/CoachAdvisor.js';
+import { finalizeMatchHeat } from '../systems/analytics/MatchHeat.js';
 import { buildMatchTelemetry, createSimulationEdgeCaseTracker } from '../systems/analytics/simulationTelemetry.js';
+import { narrateMatch } from '../systems/press/MatchNarrator.js';
 
 const REPLAY_SAMPLE_EVERY_TICKS = 2; // highlights gravados a 60fps equivalente
 const REPLAY_TRAIL_LEN = 18;
 const MAX_REPLAY_FRAMES_PER_POINT = 900;
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // INTERNALS
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 // Limites de segurança para evitar loops infinitos
 const MAX_TICKS_PER_POINT = 30_000;   // ~250s a 120fps — dobrado para compensar DT menor
@@ -87,7 +85,7 @@ const DT_SLIM     = 1 / 30;          // SLIM: 4× menos ticks — ~4× mais ráp
  * o engine completamente síncrono. Todos os callbacks de scheduleNextPoint
  * são coletados e disparados imediatamente após cada ponto terminar.
  *
- * A interceptação é escopo-local: restauramos o setTimeout original
+ * A interceptação — escopo-local: restauramos o setTimeout original
  * em bloco finally, garantindo segurança mesmo em exceções.
  */
 function runHeadless(fn) {
@@ -191,7 +189,7 @@ function buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, mode, 
     ],
   });
 
-  return {
+  const result = {
     winner,
     loser,
     format: matchMeta?.format ?? null,
@@ -201,9 +199,13 @@ function buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, mode, 
     stats: { a: pA.stats, b: pB.stats },
     traitMetrics,
     telemetry,
-    heat: gs.heat
-      ? { score: Math.round(gs.heat.score), peak: Math.round(gs.heat.peak), tier: heatScoreToTier(gs.heat.peak) }
-      : null,
+    heat: finalizeMatchHeat({
+      statsA: pA.stats,
+      statsB: pB.stats,
+      setsDetail,
+      points,
+      liveHeat: gs.heat,
+    }),
     retirement: gs.matchRetirement ?? null,
     inMatchInjuryEvents: gs.inMatchInjuryEvents ?? [],
     log: gs.log,
@@ -212,11 +214,90 @@ function buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, mode, 
     points,
     edgeCases,
   };
+
+  const story = buildSimulationStory({ result, winner, loser, surface: telemetry.surface ?? gs.courtMeta?.surface ?? null, mode });
+  if (story) {
+    result.matchNarrativeDossier = story.dossier;
+    result.matchStoryCapsules = story.capsules;
+    result.storyTags = story.tags;
+  }
+
+  return result;
 }
 
-// ═══════════════════════════════════════════════════════════════════
+function buildSimulationStory({ result, winner, loser, surface, mode }) {
+  try {
+    const narration = narrateMatch(winner, loser, result, surface ?? 'HARD');
+    const meta = narration?._meta ?? {};
+    const tags = Array.isArray(narration?.tags) ? narration.tags : [];
+    const heatScore = result?.heat?.peak != null
+      ? Math.max(0, Math.min(1, result.heat.peak / 100))
+      : meta.matchHeat?.peak != null
+        ? Math.max(0, Math.min(1, meta.matchHeat.peak / 100))
+        : 0;
+
+    const topMoments = [
+      narration?.turning_point ? {
+        type: 'turning_point',
+        title: 'Ponto de virada',
+        oneLine: narration.turning_point,
+        weight: 0.92,
+      } : null,
+      narration?.pattern_highlight ? {
+        type: 'pattern',
+        title: 'Padrao dominante',
+        oneLine: narration.pattern_highlight,
+        weight: 0.82,
+      } : null,
+      narration?.plan_vs_result ? {
+        type: 'plan',
+        title: 'Plano contra execucao',
+        oneLine: narration.plan_vs_result,
+        weight: 0.74,
+      } : null,
+      narration?.rivalry_context ? {
+        type: 'rivalry',
+        title: 'Contexto de rivalidade',
+        oneLine: narration.rivalry_context,
+        weight: 0.68,
+      } : null,
+    ].filter(Boolean);
+
+    const capsules = [
+      {
+        type: 'headline',
+        title: narration?.headline ?? `${winner?.name ?? 'Vencedor'} vence ${loser?.name ?? 'perdedor'}`,
+        oneLine: narration?.tactical_summary ?? `${winner?.name ?? 'Vencedor'} encontrou o caminho da partida.`,
+        tags,
+        mode,
+        weight: 1,
+      },
+      ...topMoments,
+    ];
+
+    return {
+      dossier: {
+        headline: narration?.headline ?? `${winner?.name ?? 'Vencedor'} vence ${loser?.name ?? 'perdedor'}`,
+        thesis: narration?.tactical_summary ?? `${winner?.name ?? 'Vencedor'} foi superior na partida.`,
+        fullReport: narration?.full_report ?? null,
+        tags,
+        heatScore,
+        mode,
+        topMoments,
+        meta,
+      },
+      capsules,
+      tags,
+    };
+  } catch (err) {
+    console.warn('[Headless] buildSimulationStory falhou:', err);
+    return null;
+  }
+}
+
+// -------------------------------------------------------------------
 // FUNÇÃO PRINCIPAL — simulateMatchHeadless
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 /**
  * Simula uma partida completa de tênis usando o engine exato do jogo.
@@ -247,7 +328,7 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
       );
       gameState.isSlam = isSlam;
 
-      // ── Crowd Pressure: peso da arena calculado com base em torneio + rivalidade ──
+      // -- Crowd Pressure: peso da arena calculado com base em torneio + rivalidade --
       if (matchMeta) {
         let rivalry = null;
         if (rivalSystem && ca.namedKey && cb.namedKey) {
@@ -267,14 +348,14 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
         gameState.gameState !== GameState.GAME_OVER &&
         points < MAX_POINTS_PER_MATCH
       ) {
-        // ── Tick até o ponto terminar ──────────────────────────────
+        // -- Tick até o ponto terminar ------------------------------
         let ticksThisPoint = 0;
         while (
           gameState.gameState !== GameState.POINT_END &&
           gameState.gameState !== GameState.GAME_OVER &&
           ticksThisPoint < MAX_TICKS_PER_POINT
         ) {
-          // ── Headless: resolve MTO instantaneamente (sem esperar o timer) ──
+          // -- Headless: resolve MTO instantaneamente (sem esperar o timer) --
           // Em modo visual o stateTimer acumula em tempo real; em headless
           // avançamos direto para a decisão para evitar centenas de ticks vazios
           // e garantir que a partida só encerre se canContinue = false.
@@ -289,30 +370,11 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
           edgeCases.add('POINT_TICK_CAP', { mode: 'headless', pointIndex: points, ticksThisPoint });
         }
 
-        // ── Disparar callbacks de scheduleNextPoint (sem delay) ────
+        // -- Disparar callbacks de scheduleNextPoint (sem delay) ----
         const cbs = pending.splice(0);
         for (const cb of cbs) cb();
 
-        // ── FASE 5: Changeover do técnico em headless ─────────────
-        // game.js sinaliza gs._pendingCoachChangeover a cada 2 games.
-        // No modo visual é tratado em definitiveME; aqui fazemos diretamente.
-        if (gameState._pendingCoachChangeover) {
-          gameState._pendingCoachChangeover = false;
-          const [hp0, hp1] = gameState.players;
-          // Constrói matchLog mínimo a partir das stats acumuladas
-          const _hMatchLog = (gameState._headlessMatchLog ?? []);
-          for (const [hpi, hopp] of [[hp0, hp1], [hp1, hp0]]) {
-            if (!hpi.coach?.philosophy) continue;
-            const coachStub = { philosophy: hpi.coach.philosophy, id: hpi.coach.coachId };
-            // Injeta stamina real do oponente no ctx para o analyzer
-            hopp.ctx._realStamina = hopp.stamina;
-            try {
-              runChangeover(hpi, hopp, _hMatchLog, coachStub, analyzeMatch, generateInstructions);
-            } catch (_e) { /* silencia erros de coach em headless */ }
-          }
-        }
-
-        // Registra ponto no matchLog headless para o CoachAnalyzer
+        // Registra ponto no matchLog headless
         if (gameState.gameState === GameState.POINT_END) {
           const [lp0, lp1] = gameState.players;
           const won0 = gameState.pointWinnerIdx === 0;
@@ -329,7 +391,7 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
           gameState._headlessMatchLog = [...(gameState._headlessMatchLog ?? []), entry0].slice(-150);
         }
 
-        // ── Drena filas visuais (não usadas em headless) ──────────
+        // -- Drena filas visuais (não usadas em headless) ----------
         // Evita acúmulo de vfxQueue/pendingHitLabels ao longo da partida.
         // Em uma partida de ~300 pontos com 20 golpes cada, sem esse drain,
         // pendingHitLabels acumularia ~6000 entradas desnecessariamente.
@@ -346,9 +408,9 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
   }
   if (points >= MAX_POINTS_PER_MATCH) edgeCases.add('MATCH_POINT_CAP', { mode: 'headless', points });
 
-  // ── Restaurar attrs pós-lesão em campo ──────────────────────────
-  // Qualquer penalidade aplicada por applyInMatchPenalty é temporária.
-  // O jogador volta ao estado anterior à lesão ao fim da partida.
+  // -- Restaurar attrs pós-lesão em campo --------------------------
+  // Qualquer penalidade aplicada por applyInMatchPenalty — temporária.
+  // O jogador volta ao estado anterior — lesão ao fim da partida.
   // Os attrs originais foram salvos em player._attrsBeforeInjury no momento da lesão.
   for (const p of gs.players) {
     if (p._attrsBeforeInjury) {
@@ -357,7 +419,7 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
     }
   }
 
-  // ── Montar resultado ─────────────────────────────────────────────
+  // -- Montar resultado ---------------------------------------------
   const [pA, pB] = gs.players;
   const aWon = pA.sets > pB.sets;
   const winner = aWon ? pA : pB;
@@ -394,13 +456,13 @@ export function simulateMatchHeadless(configA, configB, courtKey = 'US_OPEN', be
   return buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, 'headless', edgeCases.flags);
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // SLIM SIMULATION — Versão rápida do headless (sem highlights)
-// Usa DT_SLIM (1/30) → ~4× mais rápido que simulateMatchHeadless.
+// Usa DT_SLIM (1/30) ? ~4— mais rápido que simulateMatchHeadless.
 // Mantém toda a lógica de jogo: traits, momentum, stamina, crowd
-// pressure, MTO, coach changeover, signature shots, prefs.
-// Não grava frames → não pode ser usado para highlights/replays.
-// ═══════════════════════════════════════════════════════════════════
+// pressure, MTO, signature shots, prefs.
+// Não grava frames ? não pode ser usado para highlights/replays.
+// -------------------------------------------------------------------
 
 /**
  * Simula uma partida usando o mesmo engine do headless, porém com
@@ -472,20 +534,6 @@ export function simulateMatchSlim(configA, configB, courtKey = 'US_OPEN', bestOf
         const cbs = pending.splice(0);
         for (const cb of cbs) cb();
 
-        if (gameState._pendingCoachChangeover) {
-          gameState._pendingCoachChangeover = false;
-          const [hp0, hp1] = gameState.players;
-          const _hMatchLog = (gameState._headlessMatchLog ?? []);
-          for (const [hpi, hopp] of [[hp0, hp1], [hp1, hp0]]) {
-            if (!hpi.coach?.philosophy) continue;
-            const coachStub = { philosophy: hpi.coach.philosophy, id: hpi.coach.coachId };
-            hopp.ctx._realStamina = hopp.stamina;
-            try {
-              runChangeover(hpi, hopp, _hMatchLog, coachStub, analyzeMatch, generateInstructions);
-            } catch (_e) {}
-          }
-        }
-
         if (gameState.gameState === GameState.POINT_END) {
           const [lp0, lp1] = gameState.players;
           const won0 = gameState.pointWinnerIdx === 0;
@@ -556,15 +604,15 @@ export function simulateMatchSlim(configA, configB, courtKey = 'US_OPEN', bestOf
   return buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, 'slim', edgeCases.flags);
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // MID SIMULATION — Versão intermediária do headless (sem highlights)
-// Usa DT_MID (1/60) → ~2× mais rápido que simulateMatchHeadless.
+// Usa DT_MID (1/60) ? ~2— mais rápido que simulateMatchHeadless.
 // Mesma lógica completa do slim, contact gap de 16ms vs 33ms.
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 /**
  * Simula uma partida com timestep 1/60 — meio-termo entre headless full
- * (1/120) e slim (1/30). ~2× mais rápido que o full, com divergência
+ * (1/120) e slim (1/30). ~2— mais rápido que o full, com divergência
  * de resultado muito menor que o slim.
  *
  * @param {object|string} configA
@@ -631,20 +679,6 @@ export function simulateMatchMid(configA, configB, courtKey = 'US_OPEN', bestOf 
 
         const cbs = pending.splice(0);
         for (const cb of cbs) cb();
-
-        if (gameState._pendingCoachChangeover) {
-          gameState._pendingCoachChangeover = false;
-          const [hp0, hp1] = gameState.players;
-          const _hMatchLog = (gameState._headlessMatchLog ?? []);
-          for (const [hpi, hopp] of [[hp0, hp1], [hp1, hp0]]) {
-            if (!hpi.coach?.philosophy) continue;
-            const coachStub = { philosophy: hpi.coach.philosophy, id: hpi.coach.coachId };
-            hopp.ctx._realStamina = hopp.stamina;
-            try {
-              runChangeover(hpi, hopp, _hMatchLog, coachStub, analyzeMatch, generateInstructions);
-            } catch (_e) {}
-          }
-        }
 
         if (gameState.gameState === GameState.POINT_END) {
           const [lp0, lp1] = gameState.players;
@@ -716,19 +750,19 @@ export function simulateMatchMid(configA, configB, courtKey = 'US_OPEN', bestOf 
   return buildHeadlessResult(gs, winner, loser, matchMeta, ticks, points, 'mid', edgeCases.flags);
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // SIMULATE & COLLECT HIGHLIGHTS  — Cinematic Reel Edition
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 /**
  * Simula a partida completa headless e retorna o resultado mais uma
  * lista rica de clips (allClips) ordenados cronologicamente.
- * Cada clip é um snapshot do PRE_SERVE pronto para reprodução ao vivo.
+ * Cada clip — um snapshot do PRE_SERVE pronto para reprodução ao vivo.
  *
  * Tipos detectados:
- *   MATCH_POINT · SET_POINT · TIEBREAK_CRITICAL
- *   EPIC_RALLY · EPIC_RALLY_CLUTCH
- *   BREAK_POINT · GAME_POINT · FIFTH_SET_OPENER
+ *   MATCH_POINT — SET_POINT — TIEBREAK_CRITICAL
+ *   EPIC_RALLY — EPIC_RALLY_CLUTCH
+ *   BREAK_POINT — GAME_POINT — FIFTH_SET_OPENER
  *   FINAL_POINT
  *
  * @returns {{ result, allClips }}
@@ -744,7 +778,7 @@ export function simulateAndCollectHighlights(
   const SCORE_LABELS = ['0', '15', '30', '40', 'Ad'];
   const setsToWin   = Math.ceil(bestOf / 2);
 
-  // ── Clip metadata ────────────────────────────────────────────────
+  // -- Clip metadata ------------------------------------------------
   const CLIP_META = {
     FINAL_POINT:        { label: 'PONTO FINAL',        color: '#E8C84A', priority: 101 },
     MATCH_POINT:        { label: 'MATCH POINT',        color: '#FF3333', priority: 100 },
@@ -757,7 +791,7 @@ export function simulateAndCollectHighlights(
     GAME_POINT:         { label: 'GAME CONFIRMADO',    color: '#66BB6A', priority: 30  },
   };
 
-  // ── Helpers ───────────────────────────────────────────────────────
+  // -- Helpers -------------------------------------------------------
   function fmtScore(gs) {
     const p0 = gs.players[0], p1 = gs.players[1];
     if (gs.inTiebreak) return `TB ${gs.tbScore[0]}\u2013${gs.tbScore[1]}`;
@@ -898,16 +932,16 @@ export function simulateAndCollectHighlights(
     }
 
     // Set point: winning THIS game would win the set.
-    // Normal set: win 6 with ≥2 lead, or 7-5.
+    // Normal set: win 6 with =2 lead, or 7-5.
     // Bug fix: at 5-5 (sv.games=5, rv.games=5), isGP && sv.games>=5 was TRUE
     // but winning only makes 6-5 (not enough to win the set). Must check rv.games < sv.games.
     let isSP = false;
     if (gs.inTiebreak) {
       isSP = isGP || isBP;
     } else {
-      // Server set point: sv.games+1 wins the set (needs ≥6 with ≥2 lead)
+      // Server set point: sv.games+1 wins the set (needs =6 with =2 lead)
       const svClosesSet = isGP && sv.games >= 5 && rv.games < sv.games;
-      // Receiver set point: rv.games+1 wins the set (needs ≥6 with ≥2 lead)
+      // Receiver set point: rv.games+1 wins the set (needs =6 with =2 lead)
       const rvClosesSet = isBP && rv.games >= 5 && sv.games < rv.games;
       isSP = svClosesSet || rvClosesSet;
     }
@@ -978,7 +1012,7 @@ export function simulateAndCollectHighlights(
     };
   }
 
-  // ── Collection state ─────────────────────────────────────────────
+  // -- Collection state ---------------------------------------------
   const rawClips = [];   // may have multiple per chronIdx; deduped after
   let chronIdx = 0;
   let lastSetKey      = null;
@@ -1018,7 +1052,7 @@ export function simulateAndCollectHighlights(
 
       while (gameState.gameState !== GameState.GAME_OVER && points < MAX_POINTS_PER_MATCH) {
 
-        // ── PRE_SERVE: snapshot + classify ──────────────────────────
+        // -- PRE_SERVE: snapshot + classify --------------------------
         if (gameState.gameState === GameState.PRE_SERVE) {
           const snap = deepCloneGs(gameState);
           const cls  = classify(gameState);
@@ -1038,7 +1072,7 @@ export function simulateAndCollectHighlights(
           }
           lastSetKey = setKey;
 
-          // ── Score-critical clips (hierarchy: MP > SP > TB > BP > GP) ──
+          // -- Score-critical clips (hierarchy: MP > SP > TB > BP > GP) --
           if (snap && cls.isMP) {
             rawClips.push(makeClip('MATCH_POINT', gameState, snap, chronIdx));
           } else if (snap && cls.isSP) {
@@ -1058,7 +1092,7 @@ export function simulateAndCollectHighlights(
         const preG0 = gameState.players[0].games, preG1 = gameState.players[1].games;
         const preS0 = gameState.players[0].sets,  preS1 = gameState.players[1].sets;
 
-        // ── Run PRE_SERVE ticks until SERVING begins ───────────────────────
+        // -- Run PRE_SERVE ticks until SERVING begins -----------------------
         // We run PRE_SERVE normally so player positions are exact.
         // Once SERVING starts we take a serveSnapshot — this is the true
         // starting state for deterministic replay (exact positions, stateTimer=0).
@@ -1077,7 +1111,7 @@ export function simulateAndCollectHighlights(
           ? deepCloneGs(gameState)
           : null;
 
-        // ── Run the rest of the point — record random sequence ─────────────
+        // -- Run the rest of the point — record random sequence -------------
         // Recording starts here (SERVING), matching where the live replay
         // begins consuming randoms after loading serveSnapshot.
         const randomSequence = [];
@@ -1133,7 +1167,7 @@ export function simulateAndCollectHighlights(
         const cbs = pending.splice(0);
         for (const cb of cbs) cb();
 
-        // ── Post-point: annotate clips with point winner + replay data ─────
+        // -- Post-point: annotate clips with point winner + replay data -----
         const pointWinnerIdx = gameState.pointWinnerIdx ?? 0;
         if (lastMeta) {
           for (let k = rawClips.length - 1; k >= 0; k--) {
@@ -1143,7 +1177,7 @@ export function simulateAndCollectHighlights(
           }
         }
 
-        // ── Post-point: epic rally detection ──────────────────────
+        // -- Post-point: epic rally detection ----------------------
         const rallyLen = gameState.rally ?? 0;
         const postS0 = gameState.players[0].sets, postS1 = gameState.players[1].sets; // eslint-disable-line no-unused-vars
         const isCritical = lastClsState && (lastClsState.isMP || lastClsState.isSP || lastClsState.isTbCritical);
@@ -1193,7 +1227,7 @@ export function simulateAndCollectHighlights(
         points++;
       }
 
-      // ── Always push the final point into rawClips ──────────────
+      // -- Always push the final point into rawClips --------------
       // IMPORTANT: use lastSnapshot (deep clone at PRE_SERVE), NOT lastGs.
       // After the final point, gameState mutates: games/score reset to 0-0
       // for the "next game" that never starts. lastGs is a live reference —
@@ -1218,7 +1252,7 @@ export function simulateAndCollectHighlights(
     cleanupTempKeys(ca, cb);
   }
 
-  // ── Deduplicate by chronIdx (keep highest priority per point) ─────
+  // -- Deduplicate by chronIdx (keep highest priority per point) -----
   const byChron = {};
   for (const clip of rawClips) {
     const existing = byChron[clip.chronIdx];
@@ -1228,35 +1262,16 @@ export function simulateAndCollectHighlights(
   }
   let allClips = Object.values(byChron).sort((a, b) => a.chronIdx - b.chronIdx);
 
-  // ── Per-game dedup: GAME_POINT, BREAK_POINT and SET_POINT ───────────────────
-  // Multiple clips with the same type+game can exist (e.g., 3 break points in
-  // a game before a break). Keep only the LAST converted one (decisive moment).
-  // If no converted clip exists for that game, keep the last one regardless.
-  const GP_TYPES = new Set(['GAME_POINT', 'BREAK_POINT', 'SET_POINT']);
-  const seenGameConverted = {}; // key → last CONVERTED clip chronIdx
-  const seenGameAny      = {}; // key → last clip chronIdx (fallback)
-  for (const clip of allClips) {
-    if (!GP_TYPES.has(clip.type)) continue;
-    const key = `${clip.type}|${clip.s0}|${clip.s1}|${clip.g0}|${clip.g1}`;
-    seenGameAny[key] = clip.chronIdx;
-    if (clip.pointWinnerIdx === clip.momentHolderIdx) {
-      seenGameConverted[key] = clip.chronIdx;
-    }
-  }
-  allClips = allClips.filter(clip => {
-    if (!GP_TYPES.has(clip.type)) return true;
-    const key = `${clip.type}|${clip.s0}|${clip.s1}|${clip.g0}|${clip.g1}`;
-    // Prefer converted clip; fallback to last any
-    const target = seenGameConverted[key] ?? seenGameAny[key];
-    return clip.chronIdx === target;
-  });
+  // Keep every distinct point after chronIdx dedupe. The reel modes decide how
+  // much to reveal; dropping extra break/set points here makes "Impact Points"
+  // incomplete and can hide the exact point the UI promised to show.
 
-  // ── Debug: log all collected clips ───────────────────────────────
+  // -- Debug: log all collected clips -------------------------------
   console.group(`[HL-SIM] ${allClips.length} clips coletados (${points} pontos simulados)`);
   allClips.forEach((c, i) => {
     const holder = c.momentHolderIdx === 0 ? gs.players[0].name : gs.players[1].name;
     const winner = c.pointWinnerIdx  === 0 ? gs.players[0].name : gs.players[1].name;
-    const conv   = c.pointWinnerIdx === c.momentHolderIdx ? '✔ convertido' : '✖ salvo/perdido';
+    const conv   = c.pointWinnerIdx === c.momentHolderIdx ? '? convertido' : '? salvo/perdido';
     console.log(
       `#${String(i+1).padStart(2)} chron=${c.chronIdx} [${c.type}]` +
       `  sets=${c.s0}-${c.s1}  games=${c.g0}-${c.g1}  score="${c.score}"` +
@@ -1267,7 +1282,7 @@ export function simulateAndCollectHighlights(
   });
   console.groupEnd();
 
-  // ── Build result ─────────────────────────────────────────────────
+  // -- Build result -------------------------------------------------
   const [pA, pB] = gs.players;
   const aWon = pA.sets > pB.sets;
   const winner = aWon ? pA : pB;
@@ -1293,9 +1308,13 @@ export function simulateAndCollectHighlights(
     sets: [pA.sets, pB.sets],
     setsDetail,
     stats: { a: pA.stats, b: pB.stats },
-    heat: gs.heat
-      ? { score: Math.round(gs.heat.score), peak: Math.round(gs.heat.peak), tier: heatScoreToTier(gs.heat.peak) }
-      : null,
+    heat: finalizeMatchHeat({
+      statsA: pA.stats,
+      statsB: pB.stats,
+      setsDetail,
+      points,
+      liveHeat: gs.heat,
+    }),
     retirement:          gs.matchRetirement ?? null,
     inMatchInjuryEvents: gs.inMatchInjuryEvents ?? [],
     log: gs.log,
@@ -1305,9 +1324,9 @@ export function simulateAndCollectHighlights(
   return { result, allClips };
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // TORNEIO HEADLESS — bracket de eliminatória simples
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 /**
  * Simula um torneio de eliminatória simples com N jogadores (potência de 2).
@@ -1318,12 +1337,14 @@ export function simulateAndCollectHighlights(
  * @returns {{ rounds, champion, results }}
  */
 export function simulateTournamentHeadless(players, surface = 'HARD') {
-  // Mapa surface → courtKey
+  // Mapa surface ? courtKey
   const SURFACE_COURT = {
     CLAY:   'ROLAND_GARROS',
     GRASS:  'WIMBLEDON',
     HARD:   'US_OPEN',
     INDOOR: 'O2_ARENA',
+    STREET: 'URBAN_COURT',
+    CARPET: 'CARPET_COURT',
   };
   const courtKey = SURFACE_COURT[surface] ?? 'US_OPEN';
 
@@ -1389,7 +1410,7 @@ export function simulateTournamentHeadless(players, surface = 'HARD') {
   return { rounds, champion, results };
 }
 
-// ── Yield helper: libera a main thread por 1 frame ──────────────
+// -- Yield helper: libera a main thread por 1 frame --------------
 function yieldToMain() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
@@ -1411,6 +1432,8 @@ export async function simulateTournamentHeadlessAsync(players, surface = 'HARD',
     GRASS:  'WIMBLEDON',
     HARD:   'US_OPEN',
     INDOOR: 'O2_ARENA',
+    STREET: 'URBAN_COURT',
+    CARPET: 'CARPET_COURT',
   };
   const courtKey = SURFACE_COURT[surface] ?? 'US_OPEN';
 
@@ -1432,7 +1455,7 @@ export async function simulateTournamentHeadlessAsync(players, surface = 'HARD',
       const pA = current[i];
       const pB = current[i + 1];
 
-      // ── Yield antes de cada partida — libera o browser ──────────
+      // -- Yield antes de cada partida — libera o browser ----------
       await yieldToMain();
 
       const result = simulateMatchHeadless(
@@ -1483,9 +1506,9 @@ export async function simulateTournamentHeadlessAsync(players, surface = 'HARD',
   return { rounds, champion, results };
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // HELPERS DE FORMATAÇÃO
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 function fmtScore(result) {
   if (!result.setsDetail.length) return `${result.sets[0]}-${result.sets[1]}`;
@@ -1516,9 +1539,9 @@ function fmtStats(stats, name) {
   ].filter(Boolean).join('\n');
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // COMPONENTE REACT — HeadlessUI (testes / visualização de resultado)
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 const HUI = {
   bg:        '#0A0A0A',
@@ -1537,7 +1560,7 @@ const HUI = {
 };
 
 const ALL_NAMED_KEYS = Object.keys(NAMED_PLAYERS);
-const SURFACE_OPTIONS = ['HARD', 'CLAY', 'GRASS', 'INDOOR'];
+const SURFACE_OPTIONS = ['HARD', 'CLAY', 'GRASS', 'INDOOR', 'STREET', 'CARPET'];
 const COURT_MAP = {
   HARD:   'US_OPEN',
   CLAY:   'ROLAND_GARROS',
@@ -1554,7 +1577,7 @@ export default function HeadlessUI({ onBack }) {
   const [nSims, setNSims]       = useState(1);
   const [bulkResults, setBulkResults] = useState(null);
 
-  // ── Simulação simples ─────────────────────────────────────────
+  // -- Simulação simples -----------------------------------------
   const handleSimulate = useCallback(() => {
     setRunning(true);
     setResult(null);
@@ -1577,7 +1600,7 @@ export default function HeadlessUI({ onBack }) {
     }, 0);
   }, [keyA, keyB, surface]);
 
-  // ── Bulk simulation (N partidas) ──────────────────────────────
+  // -- Bulk simulation (N partidas) ------------------------------
   const handleBulk = useCallback(() => {
     setRunning(true);
     setResult(null);
@@ -1643,7 +1666,7 @@ export default function HeadlessUI({ onBack }) {
             fontFamily: HUI.mono, fontSize: 10, letterSpacing: 2, padding: '4px 12px',
             cursor: 'pointer', textTransform: 'uppercase',
           }}>
-            ← Voltar
+            ? Voltar
           </button>
         )}
         <span style={{
@@ -1653,7 +1676,7 @@ export default function HeadlessUI({ onBack }) {
           HEADLESS ENGINE
         </span>
         <span style={{ fontFamily: HUI.mono, fontSize: 9, color: HUI.textFaint, letterSpacing: 2 }}>
-          MOTOR COMPLETO · SEM RENDER · SÍNCRONO
+          MOTOR COMPLETO — SEM RENDER — SÍNCRONO
         </span>
       </div>
 
@@ -1733,7 +1756,7 @@ export default function HeadlessUI({ onBack }) {
           </button>
         </div>
 
-        {/* Área de resultado */}
+        {/* área de resultado */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
 
           {!result && !bulkResults && !running && (
@@ -1771,7 +1794,7 @@ export default function HeadlessUI({ onBack }) {
   );
 }
 
-// ── Sub-componentes de resultado ──────────────────────────────────
+// -- Sub-componentes de resultado ----------------------------------
 
 function MatchResultView({ result }) {
   const [pA, pB] = result.gs.players;
@@ -1786,7 +1809,7 @@ function MatchResultView({ result }) {
         marginBottom: 24,
       }}>
         <div style={{ fontFamily: HUI.mono, fontSize: 9, letterSpacing: 5, color: HUI.gold, marginBottom: 16 }}>
-          RESULTADO FINAL · {result.points} PONTOS · {result.ticks.toLocaleString()} TICKS
+          RESULTADO FINAL — {result.points} PONTOS — {result.ticks.toLocaleString()} TICKS
         </div>
 
         {/* Jogadores */}
@@ -1801,7 +1824,7 @@ function MatchResultView({ result }) {
               borderBottom: i === 0 ? `1px solid ${HUI.border}` : 'none',
               opacity: won ? 1 : 0.55,
             }}>
-              {won && <span style={{ fontSize: 20 }}>🏆</span>}
+              {won && <span style={{ fontSize: 20 }}>??</span>}
               {!won && <span style={{ width: 28 }} />}
 
               <div style={{ flex: 1 }}>
@@ -1813,7 +1836,7 @@ function MatchResultView({ result }) {
                   {p.name}
                 </div>
                 <div style={{ fontFamily: HUI.mono, fontSize: 10, color: HUI.textFaint, marginTop: 3, letterSpacing: 2 }}>
-                  {p.nationality} · OVR {ovr} · {style?.label ?? p.styleId}
+                  {p.nationality} — OVR {ovr} — {style?.label ?? p.styleId}
                 </div>
               </div>
 
@@ -1897,8 +1920,8 @@ function StatsCard({ player, stats, won }) {
       {[
         ['Aces',              stats.aces],
         ['Duplas Faltas',     stats.doubleFaults],
-        [`1º Srv %`,          `${s1Pct}% · ${Math.round(stats.serve1AvgKmh ?? 0)} km/h`],
-        [`2º Srv %`,          `${s2Pct}% · ${Math.round(stats.serve2AvgKmh ?? 0)} km/h`],
+        [`1º Srv %`,          `${s1Pct}% — ${Math.round(stats.serve1AvgKmh ?? 0)} km/h`],
+        [`2º Srv %`,          `${s2Pct}% — ${Math.round(stats.serve2AvgKmh ?? 0)} km/h`],
         srv1WinPct !== null ? ['Pts w/ 1º Srv', `${srv1WinPct}%`] : null,
         srv2WinPct !== null ? ['Pts w/ 2º Srv', `${srv2WinPct}%`] : null,
         holdPct !== null   ? [`Hold %`, `${holdPct}% (${stats.gamesHeld}/${stats.gamesServed})`] : null,
@@ -1937,7 +1960,7 @@ function BulkResultView({ bulk, nameA, nameB }) {
         borderTop: `3px solid #4A9B3F`, padding: '28px 32px', marginBottom: 24,
       }}>
         <div style={{ fontFamily: HUI.mono, fontSize: 9, letterSpacing: 5, color: '#4A9B3F', marginBottom: 20 }}>
-          RESULTADOS BULK · {bulk.n} PARTIDAS · {bulk.totalPoints.toLocaleString()} PONTOS TOTAIS
+          RESULTADOS BULK — {bulk.n} PARTIDAS — {bulk.totalPoints.toLocaleString()} PONTOS TOTAIS
         </div>
 
         {/* Barra de win% */}
@@ -2029,7 +2052,7 @@ function LogPanel({ log }) {
         }}
       >
         <span>LOG DA PARTIDA ({log.length} linhas)</span>
-        <span>{open ? '▲' : '▼'}</span>
+        <span>{open ? '?' : '?'}</span>
       </button>
       {open && (
         <div style={{
@@ -2050,7 +2073,7 @@ function LogPanel({ log }) {
   );
 }
 
-// ── Micro-componentes ─────────────────────────────────────────────
+// -- Micro-componentes ---------------------------------------------
 
 function PlayerPicker({ value, onChange, keys }) {
   return (
@@ -2085,7 +2108,7 @@ function PlayerMini({ player, color }) {
           {player.name}
         </div>
         <div style={{ fontFamily: HUI.mono, fontSize: 9, color: HUI.textFaint, letterSpacing: 1, marginTop: 2 }}>
-          {player.nationality} · {sty?.abbr ?? player.styleId}
+          {player.nationality} — {sty?.abbr ?? player.styleId}
         </div>
       </div>
       <div style={{ fontFamily: HUI.display, fontSize: 24, fontWeight: 700, color, lineHeight: 1.2 }}>
@@ -2113,7 +2136,7 @@ function EmptyState() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       height: '60vh', flexDirection: 'column', gap: 12,
     }}>
-      <div style={{ fontSize: 48, opacity: 0.2 }}>🎾</div>
+      <div style={{ fontSize: 48, opacity: 0.2 }}>??</div>
       <div style={{ fontFamily: HUI.display, fontSize: 20, color: HUI.textFaint, letterSpacing: 3, textTransform: 'uppercase' }}>
         Selecione dois jogadores e simule
       </div>
@@ -2124,7 +2147,7 @@ function EmptyState() {
   );
 }
 
-// ── Helpers de stats para bulk ────────────────────────────────────
+// -- Helpers de stats para bulk ------------------------------------
 
 function createEmptyStats() {
   return {
@@ -2152,6 +2175,13 @@ function createEmptyStats() {
     // Games hold/break
     gamesServed: 0, gamesHeld: 0,
     gamesReturned: 0, gamesConverted: 0,
+    breakPointsOpportunities: 0, breakPointsConverted: 0,
+    breakPointsFaced: 0, breakPointsSaved: 0,
+    setPointsOpportunities: 0, setPointsConverted: 0,
+    setPointsFaced: 0, setPointsSaved: 0,
+    matchPointsOpportunities: 0, matchPointsConverted: 0,
+    matchPointsFaced: 0, matchPointsSaved: 0,
+    tiebreakPointsPlayed: 0, tiebreakPointsWon: 0,
     serveLog: [],
     returnLog: [], receptionLog: [], contactLog: [], shotLog: [], intentLog: [],
     qualitySum: 0, qualityCount: 0,
@@ -2188,6 +2218,12 @@ function accStats(acc, s) {
   acc.gamesHeld           += s.gamesHeld           ?? 0;
   acc.gamesReturned       += s.gamesReturned       ?? 0;
   acc.gamesConverted      += s.gamesConverted      ?? 0;
+  for (const field of [
+    'breakPointsOpportunities', 'breakPointsConverted', 'breakPointsFaced', 'breakPointsSaved',
+    'setPointsOpportunities', 'setPointsConverted', 'setPointsFaced', 'setPointsSaved',
+    'matchPointsOpportunities', 'matchPointsConverted', 'matchPointsFaced', 'matchPointsSaved',
+    'tiebreakPointsPlayed', 'tiebreakPointsWon',
+  ]) acc[field] += s[field] ?? 0;
   acc.qualitySum          += s.qualitySum          ?? 0;
   acc.qualityCount        += s.qualityCount        ?? 0;
   acc.attackShots         += s.attackShots         ?? 0;

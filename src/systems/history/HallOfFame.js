@@ -1,51 +1,64 @@
 ﻿// ════════════════════════════════════════════════════════════════════
 // 🏛️ HALL OF FAME ENGINE
 // Critérios de elegibilidade, GOAT score e timeline de carreira
+import { buildPlayerMomentEvents } from './PlayerTimelineEvents.js';
 // ════════════════════════════════════════════════════════════════════
 
-// ── Os 4 Grand Slams do universo ────────────────────────────────────
+// ── Os 6 Grand Slams do universo ────────────────────────────────────
 import { getInjuryDisplayName } from '../health/InjurySystem.js';
 import { RETIREMENT_TYPES } from '../career/RetirementSystem.js';
+import { computeCoachRecords } from '../coaching/CoachNarrativeSystem.js';
 
-export const GRAND_SLAM_IDS = ['JAN_GS_MERIDIAN', 'MAI_GS_ROLAND', 'JUN_GS_ALBION', 'AGO_GS_EMPIRE'];
+export const GRAND_SLAM_IDS = ['B1_GS_MERIDIAN', 'B2_GS_TERRA', 'B3_GS_HIGHLAND', 'B4_GS_URBAN', 'B5_GS_VELVET', 'B6_GS_CRYSTAL'];
 
 export const GRAND_SLAM_INFO = {
-  JAN_GS_MERIDIAN: {
-    name: 'Open de Meridian', surface: 'HARD',
+  B1_GS_MERIDIAN: {
+    name: 'Meridian Open', surface: 'HARD',
     color: '#1565C0', light: '#4A90D9', glow: 'rgba(21,101,192,0.4)',
-    icon: '🏙️', label: 'Hard', order: 0,
+    icon: '🏙️', label: 'Dura', order: 0,
   },
-  MAI_GS_ROLAND: {
-    name: "Roland d'Occitane", surface: 'CLAY',
+  B2_GS_TERRA: {
+    name: 'Terra Magna', surface: 'CLAY',
     color: '#C4572A', light: '#E8834A', glow: 'rgba(196,87,42,0.4)',
-    icon: '🏺', label: 'Saibro', order: 1,
+    icon: '🏺', label: 'Terra', order: 1,
   },
-  JUN_GS_ALBION: {
-    name: 'Championships of Albion', surface: 'GRASS',
+  B3_GS_HIGHLAND: {
+    name: 'The Highland', surface: 'GRASS',
     color: '#2E7D32', light: '#52AA6A', glow: 'rgba(46,125,50,0.4)',
-    icon: '🌿', label: 'Grama', order: 2,
+    icon: '🌿', label: 'Prado', order: 2,
   },
-  AGO_GS_EMPIRE: {
-    name: 'Empire Open', surface: 'INDOOR',
+  B4_GS_URBAN: {
+    name: 'Urban Classic', surface: 'STREET',
+    color: '#B45309', light: '#EF9F27', glow: 'rgba(180,83,9,0.4)',
+    icon: '🛣️', label: 'Asfalto', order: 3,
+  },
+  B5_GS_VELVET: {
+    name: 'Velvet Grand', surface: 'CARPET',
+    color: '#8B1A3A', light: '#C4426A', glow: 'rgba(139,26,58,0.4)',
+    icon: '🎭', label: 'Veludo', order: 4,
+  },
+  B6_GS_CRYSTAL: {
+    name: 'Crystal Empire', surface: 'INDOOR',
     color: '#6A1B9A', light: '#AB47BC', glow: 'rgba(106,27,154,0.4)',
-    icon: '🏟️', label: 'Indoor', order: 3,
+    icon: '🏟️', label: 'Cristal', order: 5,
   },
 };
 
 const MIN_RECORD_MATCHES = 100;
-const HOF_PRIMARY_MIN_SLAMS = 3;
-const HOF_PRIMARY_MIN_TOP10_MONTHS = 20;
-const HOF_LEGACY_ROUTE_MAX_SLAMS = 1;
-const HOF_LEGACY_ROUTE_MIN_GOAT_SCORE = 900;
-const HOF_LEGACY_ROUTE_MIN_TOP10_MONTHS = 48;
-const HOF_LEGACY_ROUTE_MIN_BIG_TITLES = 10;
-const HOF_LEGACY_ROUTE_MIN_TOTAL_TITLES = 25;
+const HOF_MAX_INDUCTEES = 70;
+const HOF_MIN_SLAMS = 1;
+const HOF_MIN_MASTERS = 5;
+const HOF_SURFACE_KEYS = ['HARD', 'CLAY', 'GRASS', 'STREET', 'CARPET', 'INDOOR'];
+
+function emptySurfaceStats(value = 0) {
+  return Object.fromEntries(HOF_SURFACE_KEYS.map(surface => [surface, value]));
+}
 
 // ── Tiebreaker em cascata ────────────────────────────────────────────
 // 1. GOAT Score total
 // 2. Grand Slams
 // 3. Masters 1000 (definido pelo usuário como desempate principal)
-// 4. Career Grand Slam (todos os 4 diferentes)
+// 4. Career Grand Slam (todos os 6 diferentes)
 // 5. Meses no top 10
 // 6. Win rate
 
@@ -56,7 +69,7 @@ export function computeGOATScore(stats) {
   const slamClashScore  = stats.slam_clash * 30;
   const atp500Score     = stats.atp500 * 4;
   const olympicScore    = (stats.olympic_gold ?? 0) * 30;
-  const careerSlamBonus = stats.careerSlam ? 150 : 0;
+  const careerSlamBonus = stats.careerSlam ? 240 : 0;  // 6 slams — feito histórico
   const top10Score      = Math.min(stats.top10Months ?? 0, 120) * 0.8;
   const winRateScore    = stats.winRate >= 0.75 ? 20
                         : stats.winRate >= 0.65 ? 12
@@ -81,21 +94,10 @@ export function compareGOAT(a, b) {
   return b.winRate - a.winRate;
 }
 
-function meetsPrimaryHofRoute(stats) {
-  return stats.gs >= HOF_PRIMARY_MIN_SLAMS && stats.top10Months >= HOF_PRIMARY_MIN_TOP10_MONTHS;
-}
-
-function meetsLegacyVolumeHofRoute(stats) {
-  const bigTitles = (stats.masters ?? 0) + (stats.finals_titles ?? 0) + (stats.slam_clash ?? 0) + (stats.olympic_gold ?? 0);
-  const hasHistoricSustain = (stats.top10Months ?? 0) >= HOF_LEGACY_ROUTE_MIN_TOP10_MONTHS;
-  const hasHistoricPeak = ((stats.yearsAsNo1?.length ?? 0) >= 1) || ((stats.bestYearData?.yearEndRank ?? Infinity) === 1);
-  const hasHistoricVolume = bigTitles >= HOF_LEGACY_ROUTE_MIN_BIG_TITLES || (stats.totalTitles ?? 0) >= HOF_LEGACY_ROUTE_MIN_TOTAL_TITLES;
-
-  return (stats.gs ?? 0) <= HOF_LEGACY_ROUTE_MAX_SLAMS
-    && (stats.goatScore?.total ?? 0) >= HOF_LEGACY_ROUTE_MIN_GOAT_SCORE
-    && hasHistoricSustain
-    && hasHistoricPeak
-    && hasHistoricVolume;
+function getHofRoute(stats) {
+  if ((stats.gs ?? 0) >= HOF_MIN_SLAMS) return 'SLAM';
+  if ((stats.masters ?? 0) >= HOF_MIN_MASTERS) return 'MASTERS';
+  return null;
 }
 
 // ── Engine principal ─────────────────────────────────────────────────
@@ -121,9 +123,9 @@ export function computeHOFData(state) {
       gs: 0, gsWon: new Set(), gsYears: {},
     masters: 0, slam_clash: 0, atp500: 0, atp250: 0, finals_titles: 0, totalTitles: 0,
       wins: 0, losses: 0, matchesPlayed: 0, careerPts: 0,
-      surfTitles:  { HARD:0, CLAY:0, GRASS:0, INDOOR:0 },
-      surfWins:    { HARD:0, CLAY:0, GRASS:0, INDOOR:0 },
-      surfLosses:  { HARD:0, CLAY:0, GRASS:0, INDOOR:0 },
+      surfTitles:  emptySurfaceStats(),
+      surfWins:    emptySurfaceStats(),
+      surfLosses:  emptySurfaceStats(),
       seasonData:  {},   // year → { pts, titles, wins, top10Months }
       titleEvents: [],   // { year, tournamentId, name, category, surface, opponent, isSlam }
       finalLosses: [],   // GS final losses: { year, tournamentId, name, surface, opponent }
@@ -357,25 +359,20 @@ export function computeHOFData(state) {
 
     const isVeteranActive = !enriched.isRetired && (enriched.age ?? 0) >= 35;
     enriched.isEligible   = enriched.isRetired || isVeteranActive;
-    enriched.meetsGS      = s.gs >= HOF_PRIMARY_MIN_SLAMS;
-    enriched.meetsTop10   = top10Months >= HOF_PRIMARY_MIN_TOP10_MONTHS;
-    enriched.meetsPrimaryRoute = meetsPrimaryHofRoute(enriched);
-    enriched.meetsLegacyVolumeRoute = meetsLegacyVolumeHofRoute(enriched);
-    enriched.hofRoute = enriched.meetsPrimaryRoute
-      ? 'SLAMS'
-      : enriched.meetsLegacyVolumeRoute
-        ? 'LEGACY_VOLUME'
-        : null;
-    enriched.inducted     = enriched.isEligible && (enriched.meetsPrimaryRoute || enriched.meetsLegacyVolumeRoute);
+    enriched.meetsGS      = s.gs >= HOF_MIN_SLAMS;
+    enriched.meetsMasters = s.masters >= HOF_MIN_MASTERS;
+    enriched.hofRoute = getHofRoute(enriched);
+    enriched.inducted     = enriched.isEligible && !!enriched.hofRoute;
 
     return enriched;
   }).filter(Boolean);
 
   const inductees = allStats
     .filter(s => s.inducted)
-    .sort(compareGOAT);
+    .sort(compareGOAT)
+    .slice(0, HOF_MAX_INDUCTEES);
 
-  return { inductees, allStats, currentYear, sponsorRecords: _computeSponsorRecords(state, allStats) };
+  return { inductees, allStats, currentYear, sponsorRecords: _computeSponsorRecords(state, allStats), coachRecords: computeCoachRecords(state?.coachMarket, allPlayers) };
 }
 
 // ── Recordes de patrocínio (consumido pelo HoF e SponsorTab) ────────
@@ -474,6 +471,17 @@ function formatTournamentLoss(slotsOut = 0) {
 
 function describeBreakingEvent(item) {
   if (!item) return null;
+  if (String(item.type ?? '').startsWith('CIRCUIT_SHOCK_')) {
+    return {
+      type: 'CIRCUIT_SHOCK',
+      title: item.shockHeadline ?? 'Um caso que marcou a carreira',
+      subtitle: item.shockDeck ?? 'O episódio entrou para a memória pública do circuito.',
+      detail: item.outcome ? `Conclusão: ${String(item.outcome).toLowerCase().replaceAll('_', ' ')}` : item.shockBody ?? null,
+      icon: item.family === 'INTEGRITY' ? '⚖️' : item.family === 'POSITIVE' ? '✦' : '📰',
+      color: item.outcome === 'CLEARED' ? '#52AA6A' : item.family === 'INTEGRITY' ? '#AB47BC' : '#64B5F6',
+      isHighlight: ['SEISMIC', 'ERA_DEFINING'].includes(item.scale),
+    };
+  }
   if (item.type === 'RETIREMENT_ANNOUNCED') {
     return {
       type: 'RETIREMENT_ANNOUNCED',
@@ -610,8 +618,21 @@ export function buildPlayerTimeline(playerId, state) {
   const seasonHistory = [...(player._seasonHistory ?? [])].sort((a, b) => a.year - b.year);
   const seasonMap = Object.fromEntries(seasonHistory.map(season => [season.year, season]));
   const injuryHistory = Array.isArray(player.injuryHistory) ? player.injuryHistory : [];
-  const breakingHistory = Array.isArray(player.breakingNews?.history) ? player.breakingNews.history : [];
+  const breakingHistory = [
+    ...(Array.isArray(player.breakingNews?.history) ? player.breakingNews.history : []),
+    ...(Array.isArray(player.circuitShock?.publicHistory) ? player.circuitShock.publicHistory : []),
+  ];
   const events = [];
+  // A memória pessoal pertence ao jogador, não à tela da ficha. Por isso a
+  // mesma fonte continua enriquecendo a biografia depois da aposentadoria.
+  const archivedSponsorEvents = state.chronicleEngine?.getSponsorTimeline
+    ? (state.chronicleEngine.getSponsorTimeline(playerId) ?? [])
+    : [];
+  const archivedCoachEvents = state.coachMarket?.yearlyEvents ?? [];
+  const lifeMoments = buildPlayerMomentEvents(player, {
+    sponsorEvents: archivedSponsorEvents,
+    coachEvents: archivedCoachEvents,
+  }).filter(event => event.type.startsWith('LIFE_') || event.type === 'SPONSOR' || event.type.startsWith('COACH_') || event.type === 'RANKING');
 
   // ── ESTREIA ──────────────────────────────────────────────────────
   if (pStats.firstYear) {
@@ -668,6 +689,8 @@ export function buildPlayerTimeline(playerId, state) {
 
   // Rastrear Career Slam progressivamente
   const gsWonSoFar = new Set();
+  let slamTitleCount = 0;
+  const slamWinsBySurface = emptySurfaceStats(0);
   const yearsArr   = Array.from(relevantYears).sort((a, b) => a - b);
 
   yearsArr.forEach(yr => {
@@ -688,23 +711,26 @@ export function buildPlayerTimeline(playerId, state) {
       const wasComplete = GRAND_SLAM_IDS.every(id => gsWonSoFar.has(id));
       gsWonSoFar.add(t.tournamentId);
       const completedNow = !wasComplete && GRAND_SLAM_IDS.every(id => gsWonSoFar.has(id));
+      slamTitleCount += 1;
+      const surface = String(t.surface ?? GRAND_SLAM_INFO[t.tournamentId]?.surface ?? '').toUpperCase();
+      if (surface) slamWinsBySurface[surface] = (slamWinsBySurface[surface] ?? 0) + 1;
 
       const gsInfo = GRAND_SLAM_INFO[t.tournamentId];
       events.push({
         year: yr, type: 'GRAND_SLAM',
         title: t.name,
-        subtitle: t.opponent ? `def. ${t.opponent} na final` : 'Campeão',
+        subtitle: `${slamTitleCount}º Grand Slam${surface ? ` · ${slamWinsBySurface[surface]}º na ${gsInfo?.label?.toLowerCase() ?? surface.toLowerCase()}` : ''}${t.opponent ? ` · def. ${t.opponent} na final` : ''}`,
         detail: gsInfo?.label ?? null,
         icon: '⭐', color: gsInfo?.color ?? '#E8C84A', light: gsInfo?.light,
         isHighlight: true, surface: t.surface, tournamentId: t.tournamentId,
-        gsCount: pStats.gs,
+        gsCount: slamTitleCount,
       });
 
       if (completedNow) {
         events.push({
           year: yr, type: 'CAREER_SLAM',
           title: 'Career Grand Slam Completo',
-          subtitle: 'Conquistou os 4 títulos em 4 superfícies diferentes',
+          subtitle: `Conquistou os ${GRAND_SLAM_IDS.length} títulos em ${HOF_SURFACE_KEYS.length} superfícies diferentes`,
           detail: 'Uma das conquistas mais raras do esporte',
           icon: '🏆', color: '#FFD700', isHighlight: true, isMega: true,
         });
@@ -808,6 +834,16 @@ export function buildPlayerTimeline(playerId, state) {
     });
   }
 
+  // Vida, equipe, contratos e marcos de ranking também são legado. Eles
+  // aparecem aqui sem substituir os grandes títulos detalhados acima.
+  lifeMoments.forEach(event => {
+    events.push({
+      ...event,
+      type: event.type === 'RANKING' ? 'RANKING_MILESTONE' : event.type,
+      isHighlight: (event.importance ?? 0) >= 8,
+    });
+  });
+
   // ── APOSENTADORIA ────────────────────────────────────────────────
   if (pStats.isRetired && pStats.lastYear) {
     const retirementNarrative = buildRetirementNarrative(pStats);
@@ -830,6 +866,10 @@ export function buildPlayerTimeline(playerId, state) {
     YEAR_SUMMARY: 1,
     RIVALRY: 2,
     BREAKING_NEWS: 3,
+    RANKING_MILESTONE: 5,
+    SPONSOR: 5,
+    COACH_START: 5,
+    COACH_RUPTURE: 6,
     RETIREMENT_ANNOUNCED: 4,
     INJURY_MAJOR: 5,
     TITLES_MINOR: 6,
@@ -839,7 +879,7 @@ export function buildPlayerTimeline(playerId, state) {
     FINALS: 9,
     SLAM_CLASH: 10,
     GRAND_SLAM: 11,
-    CAREER_SLAM: 12,
+    CAREER_SLAM: 18,  // 6 slams diferentes — feito muito mais raro
   };
   events.sort((a, b) => {
     if (a.year !== b.year) return a.year - b.year;
@@ -848,4 +888,3 @@ export function buildPlayerTimeline(playerId, state) {
 
   return { events, epitaph, stats: pStats };
 }
-

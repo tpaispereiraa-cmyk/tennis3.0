@@ -92,18 +92,34 @@ export const PRESSURE_SERVE_META = {
  * @returns {{ buildStyle, netGame, rallyCadence, riskProfile, adaptability, serveProfile, serve1Bias, serve2Bias, pressureServe }}
  */
 export function generatePrefs(attrs) {
-  const {
-    agressividade: ag = 60,
-    controle:      ct = 60,
-    leitura:       lr = 60,
-    mentalidade:   mn = 60,
-    topspin:       ts = 60,
-    jogoDeRede:    jr = 60,
-    slice:         sl = 60,
-    saqueForca:    sf = attrs?.saque ?? 60,
-    saquePrecisao: sp = attrs?.saque ?? 60,
-    visaoTatica:   vt = attrs?.agressividade ?? 60,
-  } = attrs;
+  const source = attrs ?? {};
+  // O schema atual não possui mais agressividade/controle/jogoDeRede globais.
+  // Derivamos esses sinais dos 21 atributos modernos para que o gosto do
+  // jogador nasça da ficha sem transformar preferência em atributo extra.
+  const fhPower = source.fhPotencia ?? source.potencia ?? 60;
+  const bhPower = source.bhPotencia ?? source.potencia ?? 60;
+  const fhControl = source.fhControle ?? source.controle ?? 60;
+  const bhControl = source.bhControle ?? source.controle ?? 60;
+  const vt = source.visaoTatica ?? source.agressividade ?? 60;
+  const ag = source.agressividade ?? Math.round(
+    Math.max(fhPower, bhPower) * 0.46
+    + vt * 0.27
+    + (source.explosividade ?? 60) * 0.17
+    + (source.saqueForca ?? source.saque ?? 60) * 0.10
+  );
+  const ct = source.controle ?? Math.round(
+    Math.max(fhControl, bhControl) * 0.52
+    + Math.min(fhControl, bhControl) * 0.20
+    + (source.regularidade ?? 60) * 0.18
+    + (source.leitura ?? 60) * 0.10
+  );
+  const lr = source.leitura ?? 60;
+  const mn = source.mentalidade ?? 60;
+  const ts = source.topspin ?? 60;
+  const jr = source.jogoDeRede ?? Math.round((source.volley ?? 60) * 0.62 + (source.smash ?? 60) * 0.38);
+  const sl = source.slice ?? 60;
+  const sf = source.saqueForca ?? source.saque ?? 60;
+  const sp = source.saquePrecisao ?? source.saque ?? 60;
 
   // ── buildStyle ───────────────────────────────────────────────────
   // Ordem importa: perfis mais específicos têm prioridade sobre genéricos.
@@ -159,7 +175,7 @@ export function generatePrefs(attrs) {
   else                                   riskProfile = 'CALCULATED';
 
   // ── adaptability — numérico 0–100 ────────────────────────────────
-  const adaptability = Math.round(mn * 0.55 + lr * 0.45);
+  const adaptability = Math.round((source.adaptacao ?? mn) * 0.52 + lr * 0.28 + mn * 0.20);
 
   let serveProfile;
   if      (sf >= 86 && sp >= 74)               serveProfile = 'CANNON';
@@ -227,6 +243,36 @@ export function getRiskProfileMeta(val)  { return RISK_PROFILE_META[val]  ?? { l
 export function getServeProfileMeta(val) { return SERVE_PROFILE_META[val]  ?? { label: val, abbr: val, icon: '?', desc: '' }; }
 export function getServeBiasMeta(val)    { return SERVE_BIAS_META[val]     ?? { label: val, abbr: val, icon: '?', desc: '' }; }
 export function getPressureServeMeta(val){ return PRESSURE_SERVE_META[val] ?? { label: val, abbr: val, icon: '?', desc: '' }; }
+
+export function getRallyIntentMeta(prefs = {}) {
+  const { rallyCadence, riskProfile } = prefs;
+  const bold = ['GAMBLER', 'ALLOUT'].includes(riskProfile);
+  const safe = ['SAFE', 'SAFETY_FIRST'].includes(riskProfile);
+
+  if (rallyCadence === 'EXPLOSIVE') {
+    return bold
+      ? { label: 'Ataque Total', abbr: 'ATQ+', icon: '>>', desc: 'Acelera cedo e aceita erro como custo natural da pressão.' }
+      : { label: 'Explosão Controlada', abbr: 'EXP.CTL', icon: '>>', desc: 'Procura encurtar o ponto, mas ainda respeita a abertura real.' };
+  }
+  if (rallyCadence === 'EARLY_ATTACK') {
+    return bold
+      ? { label: 'Aceleração Agressiva', abbr: 'ACEL+', icon: '>', desc: 'Ataca nas primeiras bolas e força decisões antes do rally estabilizar.' }
+      : { label: 'Pressão Antecipada', abbr: 'PRES', icon: '>', desc: 'Gosta de tomar iniciativa cedo sem transformar todo ponto em aposta.' };
+  }
+  if (rallyCadence === 'PATIENT') {
+    return safe
+      ? { label: 'Espera Segura', abbr: 'ESP.SEG', icon: '..', desc: 'Alongar o ponto é parte do plano; só acelera quando a vantagem está clara.' }
+      : { label: 'Construção Longa', abbr: 'CONST+', icon: '..', desc: 'Aceita rallies maiores para preparar uma mudança de ritmo mais limpa.' };
+  }
+  if (rallyCadence === 'MEASURED') {
+    return safe
+      ? { label: 'Gestão Segura', abbr: 'GEST', icon: '=', desc: 'Controla o ponto sem pressa e reduz decisões de baixa margem.' }
+      : { label: 'Controle Medido', abbr: 'MEDIDO', icon: '=', desc: 'Mantém o rally sob controle e acelera quando o cenário fica favorável.' };
+  }
+  return bold
+    ? { label: 'Equilíbrio Ofensivo', abbr: 'EQ.OFF', icon: '+', desc: 'Mistura troca e agressão, com tendência a buscar a bola decisiva.' }
+    : { label: 'Rally Flexível', abbr: 'FLEX', icon: '+', desc: 'Alterna construção e ataque de acordo com a leitura do ponto.' };
+}
 
 export function mergeGeneratedPrefs(attrs, prefs = {}) {
   const generated = generatePrefs(attrs ?? {});

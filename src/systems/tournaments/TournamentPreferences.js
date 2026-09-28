@@ -75,13 +75,13 @@ export const PREFERENCE_BONUS = {
 
 // Afinidade de superfície por estilo de jogo
 const STYLE_SURFACE_AFFINITY = {
-  AGG_BASELINER:  { CLAY: 1.8, HARD: 1.2, GRASS: 0.6, INDOOR: 1.0 },
-  CTR_PUNCHER:    { CLAY: 2.0, HARD: 1.0, GRASS: 0.5, INDOOR: 0.9 },
-  ALL_COURT:      { CLAY: 1.0, HARD: 1.2, GRASS: 1.1, INDOOR: 1.1 },
-  SRV_VOL:        { CLAY: 0.5, HARD: 1.1, GRASS: 2.2, INDOOR: 1.4 },
-  BIG_SERVER:     { CLAY: 0.6, HARD: 1.3, GRASS: 2.0, INDOOR: 1.5 },
-  RETRIEVER:      { CLAY: 1.9, HARD: 1.1, GRASS: 0.7, INDOOR: 0.9 },
-  TAKEALLRISK:    { CLAY: 1.0, HARD: 1.4, GRASS: 1.3, INDOOR: 1.2 },
+  AGG_BASELINER:  { CLAY: 1.8, HARD: 1.2, GRASS: 0.6, STREET: 1.3, CARPET: 0.9, INDOOR: 1.0 },
+  CTR_PUNCHER:    { CLAY: 2.0, HARD: 1.0, GRASS: 0.5, STREET: 1.1, CARPET: 0.8, INDOOR: 0.9 },
+  ALL_COURT:      { CLAY: 1.0, HARD: 1.2, GRASS: 1.1, STREET: 1.0, CARPET: 1.0, INDOOR: 1.1 },
+  SRV_VOL:        { CLAY: 0.5, HARD: 1.1, GRASS: 2.2, STREET: 1.2, CARPET: 1.8, INDOOR: 1.4 },
+  BIG_SERVER:     { CLAY: 0.6, HARD: 1.3, GRASS: 2.0, STREET: 1.3, CARPET: 2.0, INDOOR: 1.5 },
+  RETRIEVER:      { CLAY: 1.9, HARD: 1.1, GRASS: 0.7, STREET: 1.2, CARPET: 0.6, INDOOR: 0.9 },
+  TAKEALLRISK:    { CLAY: 1.0, HARD: 1.4, GRASS: 1.3, STREET: 1.5, CARPET: 1.4, INDOOR: 1.2 },
 };
 
 // Leve boost para 500s (prestígio > 250)

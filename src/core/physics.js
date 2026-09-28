@@ -99,7 +99,7 @@ export function stepBallPhysics(ball, dt, airDensity = PHYSICS.airDensity) {
 }
 
 // ── Ground contact ────────────────────────────────────────────────
-export function handleGroundBounce(ball, courtPhys) {
+export function handleGroundBounce(ball, courtPhys, options = null) {
   if (ball.pos.z > PHYSICS.ballRadius || ball.vel.z >= 0) return false;
   ball.pos.z = PHYSICS.ballRadius;
   const isSliceServeBounce = ball._servePhysType === 'SLICE' && ball.bounceCount === 0;
@@ -161,6 +161,13 @@ export function handleGroundBounce(ball, courtPhys) {
   // após o quique para cada família de spin.
   ball.vel.x *= friction;
   ball.vel.y *= friction;
+  // A deep slice is supposed to stay low, not turn into a disguised drop shot.
+  // Profile carry is deliberately modest; its main depth still comes from targeting.
+  if (effSpin < 0 && ball._sliceProfile && ball._sliceCarryMult != null) {
+    const carry = clamp(ball._sliceCarryMult, 0.78, 1.08);
+    ball.vel.x *= carry;
+    ball.vel.y *= carry;
+  }
 
   if (!isSliceServeBounce && !isKickServeBounce && hSpdPre > QUIQUE.pacebrake_inicio) {
     const paceBrake = clamp(
@@ -179,7 +186,12 @@ export function handleGroundBounce(ball, courtPhys) {
     ball.vel.z  = Math.min(ball.vel.z * DROP_SHOT.vel_vertical_mult, DROP_SHOT.vel_vertical_max);
     // Helper: aqui mora o "drop morre". Se o drop estiver escapando vivo,
     // mexa primeiro nestes três números.
-  } else if (!isSliceServeBounce && !isKickServeBounce && effSpin < QUIQUE.backspin_forte_min) {
+  } else if (
+    !isSliceServeBounce
+    && !isKickServeBounce
+    && effSpin < QUIQUE.backspin_forte_min
+    && Math.abs(_incomingVz) <= DROP_SHOT.dead_ball_incoming_vz_guard
+  ) {
     ball.vel.x *= QUIQUE.backspin_forte_vel_mult;
     ball.vel.y *= QUIQUE.backspin_forte_vel_mult;
     ball.vel.z *= QUIQUE.backspin_forte_vz_mult;
@@ -209,9 +221,11 @@ export function handleGroundBounce(ball, courtPhys) {
   // Saibro (RG/Monte Carlo): bounceVariance=0.02–0.03 → muito consistente
   // Indoor/Hard: bounceVariance=0.00–0.01 → quase perfeito
   const bVariance = courtPhys?.bounceVariance ?? 0;
-  if (bVariance > 0) {
+  const applyBounceVariance = options?.applyBounceVariance !== false;
+  const random = typeof options?.random === 'function' ? options.random : Math.random;
+  if (applyBounceVariance && bVariance > 0) {
     // Box-Muller para ruído com distribuição gaussiana (mais realista que uniform)
-    const u1 = Math.max(1e-9, Math.random()), u2 = Math.random();
+    const u1 = Math.max(1e-9, random()), u2 = random();
     const gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
     // Ruído vertical: altera altura do bounce (±)
     ball.vel.z  = Math.max(0, ball.vel.z + gauss * bVariance * 3.5);
@@ -233,7 +247,7 @@ export function handleGroundBounce(ball, courtPhys) {
     ball.vel.x *= DROP_SHOT.dead_ball_vel_x_mult;
     ball.vel.y *= DROP_SHOT.dead_ball_vel_y_mult;
     ball.vel.z  = Math.min(Math.max(ball.vel.z, DROP_SHOT.dead_ball_vz_min), DROP_SHOT.dead_ball_vz_max);
-  } else if (!isSliceServeBounce && !isKickServeBounce && !_highArcBounce && hSpd < dropHSpd && effSpin < dropSpin && ball.bounceCount === 1) {
+  } else if (ball._sliceProfile === 'SHORT_VARIATION' && !isSliceServeBounce && !isKickServeBounce && !_highArcBounce && hSpd < dropHSpd && effSpin < dropSpin && ball.bounceCount === 1) {
     ball._deadBall = true;
     // Extra kill: squeeze horizontal velocity further on first dead-ball contact
     ball.vel.x *= DROP_SHOT.dead_ball_extra_kill_mult;
@@ -317,15 +331,28 @@ export function checkServiceBox(ball, serverSide, serveLeft) {
 }
 
 // ── Adaptive sub-step integration ────────────────────────────────
-// gs._bounce(gs) is set by game.js to avoid circular imports
-export function stepPhysics(gs, dt) {
-  const ball = gs.ball, spd = mag3(ball.vel);
-  // Apply wind/altitude once per frame (not per sub-step — subtle effect)
-  applyWindToBall(ball, gs.environment, dt);
-  const sub  = spd > 32 ? 6 : spd > 16 ? 4 : ball.pos.z < 0.28 ? 4 : 2;
+// Fonte física única para a partida e para qualquer previsão determinística.
+// A previsão desliga apenas a amostra aleatória do piso: ela recebe a média e
+// expõe a variância separadamente, em vez de "adivinhar" o próximo irregular.
+export function advanceBallPhysics(ball, dt, {
+  environment = null,
+  courtPhysics = null,
+  airDensity = environment?.airDensity ?? PHYSICS.airDensity,
+  applyBounceVariance = true,
+  random = Math.random,
+  substepsOverride = null,
+  onBounce = null,
+  onSubstep = null,
+} = {}) {
+  if (!ball?.inFlight || dt <= 0) return 0;
+  const spd = mag3(ball.vel);
+  // O vento é aplicado uma vez por frame, igual ao jogo vivo.
+  applyWindToBall(ball, environment, dt);
+  const adaptiveSub = spd > 32 ? 6 : spd > 16 ? 4 : ball.pos.z < 0.28 ? 4 : 2;
+  const sub = Number.isFinite(substepsOverride)
+    ? Math.max(1, Math.round(substepsOverride))
+    : adaptiveSub;
   const subDt = dt / sub;
-  // Densidade do ar efetiva: calculada em initEnvironment com altitude real
-  const airDensity = gs.environment?.airDensity ?? PHYSICS.airDensity;
 
   // FIX NET: salva Y/Z ANTES de todos os sub-steps.
   // _prevY é sobrescrito a cada sub-step em stepBallPhysics — se a bola cruza
@@ -339,181 +366,193 @@ export function stepPhysics(gs, dt) {
 
   for (let s = 0; s < sub; s++) {
     stepBallPhysics(ball, subDt, airDensity);
-    if (handleGroundBounce(ball, gs.courtPhysics)) {
+    const bounced = handleGroundBounce(ball, courtPhysics, { applyBounceVariance, random });
+    if (bounced && typeof onBounce === 'function') onBounce(ball);
+    if (typeof onSubstep === 'function' && onSubstep(ball, subDt, bounced) === false) break;
+  }
+  return sub;
+}
+
+// gs._bounce(gs) is set by game.js to avoid circular imports
+export function stepPhysics(gs, dt) {
+  advanceBallPhysics(gs.ball, dt, {
+    environment: gs.environment,
+    courtPhysics: gs.courtPhysics,
+    airDensity: gs.environment?.airDensity ?? PHYSICS.airDensity,
+    onBounce: (ball) => {
       gs.lastBouncePos = { ...ball.pos };
       gs._bounce(gs);
-    }
-  }
+    },
+  });
 }
 
 // ── Trajectory look-ahead (for AI targeting) ──────────────────────
 // Returns: crossPoint (where/when ball crosses targetY), landPoint (first bounce),
 //          timeToContact (alias for crossPoint.t for arrival margin calculation)
-export function predictTrajectory(ball, targetY, maxTime = 2.8, airDensityForPred = PHYSICS.airDensity, courtPhysForPred = null, interceptOpts = null) {
+export function predictTrajectory(
+  ball,
+  targetY,
+  maxTime = 2.8,
+  airDensityForPred = PHYSICS.airDensity,
+  courtPhysForPred = null,
+  interceptOpts = null,
+  environmentForPred = null,
+) {
   const sim = {
-    pos: { ...ball.pos }, vel: { ...ball.vel }, spin: { ...ball.spin }, inFlight: true,
+    pos: { ...ball.pos },
+    vel: { ...ball.vel },
+    spin: { ...ball.spin },
+    inFlight: ball.inFlight !== false,
+    bounceCount: ball.bounceCount ?? 0,
+    outGraceTimer: ball.outGraceTimer ?? 0,
+    _timeSinceBounce: ball._timeSinceBounce,
+    _deadBall: ball._deadBall ?? false,
     _servePhysType: ball._servePhysType ?? null,
-    // ── Bug fix: se a bola já quicou na vida real (bounceCount >= 1), a fase
-    // pós-quique já está ativa — a simulação deve detectar optimalHitPoint na
-    // subida ATUAL, não só após o próximo quique simulado.
+    _isDropShot: ball._isDropShot ?? false,
+    _sliceProfile: ball._sliceProfile ?? null,
+    _sliceCarryMult: ball._sliceCarryMult ?? 1,
+    _sigBounce: ball._sigBounce ?? null,
+    _sigBounceSpin: ball._sigBounceSpin ?? null,
     _postBounce: (ball.bounceCount ?? 0) > 0,
     _optHitFound: false,
     _optHitScore: -Infinity,
   };
-  // Use court-specific physics for bounce simulation (restitution, friction vary per surface)
-  const superficiePred = getConfigSuperficie(courtPhysForPred?.surface ?? 'DURA');
-  const predRestitution = courtPhysForPred?.restitution ?? superficiePred.restituicao ?? PHYSICS.restitution;
-  const predGroundFriction = courtPhysForPred?.groundFriction ?? superficiePred.friccao_chao ?? PHYSICS.groundFriction;
-  const predHumidityFriction = courtPhysForPred?.humidityFriction ?? superficiePred.humidade_friccao ?? 0;
   const interceptProfile = resolveInterceptProfile(courtPhysForPred, interceptOpts);
-  let lastPos = { ...sim.pos }, crossPoint = null, landPoint = null;
-  // FIX: usa 1/120fps para bater com stepPhysics (antes 1/60fps causava
-  // pequenos desvios de posicionamento acumulados — jogadores chegavam atrasados).
-  const dt = 1 / 120, steps = Math.floor(maxTime / dt);
+  const environment = environmentForPred ?? interceptOpts?.environment ?? null;
+  const bounceVariance = Math.max(0, courtPhysForPred?.bounceVariance ?? 0);
+  const trajectoryUncertainty = {
+    deterministicMean: true,
+    bounceVariance,
+    lateralVelocitySigma: bounceVariance * QUIQUE.variancia_lateral_quique,
+    verticalVelocitySigma: bounceVariance * 3.5,
+  };
 
-  for (let i = 0; i < steps; i++) {
-    const acc = computeAcceleration(sim, airDensityForPred);
-    sim.vel.x += acc.x * dt; sim.vel.y += acc.y * dt; sim.vel.z += acc.z * dt;
-    lastPos = { ...sim.pos };
-    sim.pos.x += sim.vel.x * dt; sim.pos.y += sim.vel.y * dt; sim.pos.z += sim.vel.z * dt;
+  let previousPos = { ...sim.pos };
+  let elapsed = 0;
+  let crossPoint = null;
+  let landPoint = null;
+  const hitCandidates = [];
+  let legacyWindowClosed = false;
+  let legacyOptimalHitPoint = null;
+  let stopped = false;
+  // Mesmo passo externo típico do jogo; o sub-step adaptativo é escolhido pela
+  // mesma função conforme a velocidade/altura da bola.
+  const frameDt = clamp(interceptOpts?.predictionFrameDt ?? (1 / 60), 1 / 240, 1 / 30);
 
-    // ── Full bounce simulation (mirrors handleGroundBounce exactly) ──
-    if (sim.pos.z <= PHYSICS.ballRadius && sim.vel.z < 0) {
-      sim.pos.z = PHYSICS.ballRadius;
-      const isSliceServeBounceSim = sim._servePhysType === 'SLICE' && !landPoint;
-      const isKickServeBounceSim = sim._servePhysType === 'KICK' && !landPoint;
-      // ── Signature overrides — 1º quique apenas, consumidos one-shot ──
-      let simRestitution = predRestitution;
-      if (!landPoint) { // landPoint ainda null = é o 1º quique
-        if (sim._sigBounce != null) {
-          simRestitution *= sim._sigBounce;
-          sim._sigBounce = null;
-        }
-        if (sim._sigBounceSpin != null) {
-          sim.spin.x *= sim._sigBounceSpin;
-          sim._sigBounceSpin = null;
-        }
-      }
-      const effSpin = sim.spin.x * (-(Math.sign(sim.vel.y) || 1));
-      const hSpdPreSim = Math.sqrt(sim.vel.x ** 2 + sim.vel.y ** 2);
-      // Capture incoming vz before bounce — guards dead-ball detection below.
-      const _incomingVzSim = sim.vel.z;
-      sim.vel.z = -sim.vel.z * simRestitution + effSpin * QUIQUE.coef_quique_spin;
-      if (isSliceServeBounceSim) {
-        sim.vel.z = Math.max(sim.vel.z * 1.28, 0.52);
-      } else if (isKickServeBounceSim) {
-        sim.vel.z = Math.max(sim.vel.z * 1.62 + Math.max(0, effSpin) * 0.045, 1.45);
-      } else if (effSpin < 0) {
-        const skidDampSim = clamp(1 - Math.abs(effSpin) * 0.10, QUIQUE.skid_damp_min, QUIQUE.skid_damp_max);
-        sim.vel.z *= skidDampSim;
-      }
-      const bounceFriction = Math.min(0.99, predGroundFriction + predHumidityFriction);
-      const friction = isSliceServeBounceSim
-        ? bounceFriction * QUIQUE.friccao_slice_serve
-        : isKickServeBounceSim
-          ? Math.min(0.96, bounceFriction * 1.04)
-        : effSpin > 0
-          ? bounceFriction * QUIQUE.friccao_topspin
-          : bounceFriction * QUIQUE.friccao_backspin;
-      sim.vel.x *= friction; sim.vel.y *= friction;
-      if (!isSliceServeBounceSim && !isKickServeBounceSim && hSpdPreSim > QUIQUE.pacebrake_inicio) {
-        const paceBrakeSim = clamp(
-          1 - (hSpdPreSim - QUIQUE.pacebrake_inicio) * QUIQUE.pacebrake_coef,
-          QUIQUE.pacebrake_min,
-          1.0
-        );
-        sim.vel.x *= paceBrakeSim;
-        sim.vel.y *= paceBrakeSim;
-      }
-      if (sim._isDropShot) {
-        sim.vel.x *= DROP_SHOT.vel_horizontal_mult;
-        sim.vel.y *= DROP_SHOT.vel_horizontal_mult;
-        sim.vel.z  = Math.min(sim.vel.z * DROP_SHOT.vel_vertical_mult, DROP_SHOT.vel_vertical_max);
-      } else if (!isSliceServeBounceSim && !isKickServeBounceSim && effSpin < QUIQUE.backspin_forte_min && Math.abs(_incomingVzSim) <= DROP_SHOT.dead_ball_incoming_vz_guard) {
-        // Guard: high-arc incoming ball (|vz| > 4.5 m/s) has enough energy to bounce
-        // normally even with heavy backspin — skip the extra kill.
-        sim.vel.x *= QUIQUE.backspin_forte_vel_mult;
-        sim.vel.y *= QUIQUE.backspin_forte_vel_mult;
-        sim.vel.z *= QUIQUE.backspin_forte_vz_mult;
-      }
-      // FIX: sidespin escala com velocidade horizontal pré-impacto — espelha handleGroundBounce.
-      // Coeficiente fixo 0.028 subestimava deflexão lateral de BANANA e slice serve rápidos.
-      const sideCoeffSim = QUIQUE.sidespin_coef_lento
-        + clamp((hSpdPreSim - 12) / 30, 0, 1) * (QUIQUE.sidespin_coef_rapido - QUIQUE.sidespin_coef_lento);
-      sim.vel.x += sim.spin.z * sideCoeffSim;  // sidespin deflection after bounce
-      if (isKickServeBounceSim) {
-        sim.vel.x += sim.spin.z * sideCoeffSim * 0.45;
-      }
-      sim.spin.x *= QUIQUE.decay_spinx_quique; sim.spin.z *= QUIQUE.decay_spinz_quique;
-      if (!landPoint) {
-        landPoint = { x: sim.pos.x, y: sim.pos.y, t: (i + 1) * dt };
-        // After first bounce in sim, tag so optimalHitPoint can be detected.
-        sim._postBounce = true;
-        if (sim._servePhysType === 'SLICE' || sim._servePhysType === 'KICK') sim._servePhysType = null;
-      }
+  const inspectSubstep = (state, subDt, bounced) => {
+    elapsed += subDt;
+    if (bounced && !landPoint) {
+      landPoint = {
+        x: state.pos.x,
+        y: state.pos.y,
+        t: elapsed,
+        uncertainty: trajectoryUncertainty,
+      };
+      state._postBounce = true;
     }
 
-    // ── Optimal hit point: ball in ideal height window NEAR targetY ────────────
-    // CRÍTICO: o ponto de contato deve ser detectado próximo ao Y do jogador,
-    // não no primeiro frame em que z entra na janela.
-    //
-    // HIERARQUIA DE PREFERÊNCIA (tênis real):
-    //   1. SWEET zone (0.85–1.35m) mais próxima do targetY → ideal ATP
-    //   2. HIP zone (0.55–0.85m) se bola não chegar ao SWEET → aceitável
-    //   3. ANKLE zone (0.45–0.55m) apenas se não houver outra opção (bolas lentas/slice)
-    //
-    // Isso garante que jogadores deixam a bola subir até o sweet spot,
-    // em vez de bater na primeira entrada da janela (0.45m) na subida.
-    if (sim._postBounce && sim.pos.z >= interceptProfile.minContactZ && sim.pos.z <= interceptProfile.maxContactZ) {
-      const distToTargetY = Math.abs(sim.pos.y - targetY);
-      const z = sim.pos.z;
-      const tNow = (i + 1) * dt;
-      const timeSinceBounce = landPoint ? Math.max(0, tNow - landPoint.t) : tNow;
+    if (state._postBounce && state.pos.z >= interceptProfile.minContactZ && state.pos.z <= interceptProfile.maxContactZ) {
+      const distToTargetY = Math.abs(state.pos.y - targetY);
+      const z = state.pos.z;
+      const timeSinceBounce = landPoint
+        ? Math.max(0, elapsed - landPoint.t)
+        : Math.max(0, state._timeSinceBounce ?? elapsed);
       const heightFit = 1 - clamp(Math.abs(z - interceptProfile.preferredContactZ) / Math.max(0.08, interceptProfile.contactBand), 0, 1);
       const yFit = 1 - clamp(distToTargetY / Math.max(0.5, interceptProfile.yTolerance), 0, 1);
       const timingFit = 1 - clamp(timeSinceBounce / Math.max(0.15, interceptProfile.delayBand), 0, 1);
-      const riseTerm = sim.vel.z >= 0 ? interceptProfile.riseBonus : -interceptProfile.fallPenalty;
+      const riseTerm = state.vel.z >= 0 ? interceptProfile.riseBonus : -interceptProfile.fallPenalty;
       const lowBallTerm = z <= interceptProfile.preferredContactZ ? interceptProfile.lowBallBonus : 0;
       const candidateScore = heightFit * 2.5 + yFit * 1.7 + timingFit * 1.3 + riseTerm + lowBallTerm;
-
-      if (!sim._optHitFound) {
-        sim._optHitFound   = true;
-        sim._optHitX       = sim.pos.x; sim._optHitY = sim.pos.y;
-        sim._optHitZ       = sim.pos.z; sim._optHitT = (i + 1) * dt;
-        sim._optHitDist    = distToTargetY;
-        sim._optHitScore   = candidateScore;
-      } else {
-        const betterScore = candidateScore > sim._optHitScore + 1e-6;
-        const sameScore = Math.abs(candidateScore - sim._optHitScore) <= 1e-6;
-        const closerToTarget = distToTargetY < sim._optHitDist;
-        if (betterScore || (sameScore && closerToTarget)) {
-          sim._optHitX      = sim.pos.x; sim._optHitY = sim.pos.y;
-          sim._optHitZ      = sim.pos.z; sim._optHitT = (i + 1) * dt;
-          sim._optHitDist   = distToTargetY;
-          sim._optHitScore  = candidateScore;
+      // Expor a janela inteira permite que a IA compare um contato baixo e
+      // imediato com outro, alguns décimos depois, já na altura ideal. Antes o
+      // preditor devolvia somente o primeiro máximo interno e frequentemente
+      // encerrava exatamente no quique.
+      if (hitCandidates.length < 96) {
+        const previous = hitCandidates[hitCandidates.length - 1];
+        if (!previous || elapsed - previous.t >= 1 / 90) {
+          hitCandidates.push({
+            x: state.pos.x,
+            y: state.pos.y,
+            z,
+            t: elapsed,
+            vz: state.vel.z,
+            speed: mag3(state.vel),
+            timeSinceBounce,
+            physicsScore: candidateScore,
+            uncertainty: trajectoryUncertainty,
+          });
         }
+      }
+      const betterScore = candidateScore > state._optHitScore + 1e-6;
+      const sameScore = Math.abs(candidateScore - state._optHitScore) <= 1e-6;
+      const closerToTarget = distToTargetY < (state._optHitDist ?? Infinity);
+      if (!state._optHitFound || betterScore || (sameScore && closerToTarget)) {
+        state._optHitFound = true;
+        state._optHitX = state.pos.x;
+        state._optHitY = state.pos.y;
+        state._optHitZ = state.pos.z;
+        state._optHitT = elapsed;
+        state._optHitDist = distToTargetY;
+        state._optHitScore = candidateScore;
       }
     }
 
-    // ── Find first crossing of targetY line ──────────────────────────
-    if (!crossPoint && Math.sign(lastPos.y - targetY) !== Math.sign(sim.pos.y - targetY)) {
-      const f = Math.abs(targetY - lastPos.y) / (Math.abs(sim.pos.y - lastPos.y) || 1e-9);
+    if (!crossPoint && Math.sign(previousPos.y - targetY) !== Math.sign(state.pos.y - targetY)) {
+      const segmentY = state.pos.y - previousPos.y;
+      const f = Math.abs(targetY - previousPos.y) / (Math.abs(segmentY) || 1e-9);
       crossPoint = {
-        x: lastPos.x + f * (sim.pos.x - lastPos.x), y: targetY,
-        z: lastPos.z + f * (sim.pos.z - lastPos.z),
-        t: (i + f) * dt,
+        x: previousPos.x + f * (state.pos.x - previousPos.x),
+        y: targetY,
+        z: previousPos.z + f * (state.pos.z - previousPos.z),
+        t: elapsed - subDt + f * subDt,
+        uncertainty: trajectoryUncertainty,
       };
-      // Once we have the crossing, simulate a little more for land point then stop
-      if (landPoint) break;
     }
+    previousPos = { ...state.pos };
+    // Preserva exatamente o ótimo que o consumidor antigo teria recebido no
+    // instante em que (crossPoint && landPoint) encerrava a previsão. Seguimos
+    // simulando apenas para a nova lista de candidatos, sem mudar silenciosamente
+    // todos os fallbacks de movimentação já calibrados.
+    if (!legacyWindowClosed && crossPoint && landPoint) {
+      legacyWindowClosed = true;
+      legacyOptimalHitPoint = state._optHitFound ? {
+        x: state._optHitX,
+        y: state._optHitY,
+        z: state._optHitZ,
+        t: state._optHitT,
+        uncertainty: trajectoryUncertainty,
+      } : null;
+    }
+    const timeAfterBounce = landPoint ? Math.max(0, elapsed - landPoint.t) : 0;
+    const sampledContactWindow = !!landPoint
+      && timeAfterBounce >= Math.max(0.62, interceptProfile.delayBand + 0.24);
+    stopped = sampledContactWindow || (landPoint && mag3(state.vel) < 0.4) || elapsed >= maxTime;
+    return !stopped;
+  };
 
-    // Stop simulation if ball is very slow after bouncing
-    if (landPoint && mag3(sim.vel) < 0.4) break;
+  while (!stopped && elapsed < maxTime && sim.inFlight) {
+    const dt = Math.min(frameDt, maxTime - elapsed);
+    advanceBallPhysics(sim, dt, {
+      environment,
+      courtPhysics: courtPhysForPred,
+      airDensity: airDensityForPred,
+      applyBounceVariance: false,
+      // 2 substeps a 60 fps = 120 Hz. Usa as mesmas forças e o mesmo quique
+      // da partida sem multiplicar por 3–5 o custo de toda decisão de movimento.
+      substepsOverride: 2,
+      onSubstep: inspectSubstep,
+    });
   }
-  const optimalHitPoint = sim._optHitFound ? {
-    x: sim._optHitX, y: sim._optHitY, z: sim._optHitZ, t: sim._optHitT,
+
+  const expandedOptimalHitPoint = sim._optHitFound ? {
+    x: sim._optHitX,
+    y: sim._optHitY,
+    z: sim._optHitZ,
+    t: sim._optHitT,
+    uncertainty: trajectoryUncertainty,
   } : null;
-  return { crossPoint, landPoint, optimalHitPoint };
+  const optimalHitPoint = legacyWindowClosed ? legacyOptimalHitPoint : expandedOptimalHitPoint;
+  return { crossPoint, landPoint, optimalHitPoint, hitCandidates, uncertainty: trajectoryUncertainty };
 }
 
 // ── Launch a ball toward a target ─────────────────────────────────
@@ -600,6 +639,86 @@ export function launchBall(ball, fromPos, targetX, targetY, spinType, power,
     const sm = chosen.hSpeed * 0.6;
     ball.spin.x = actualSpinX !== null ? actualSpinX : sm * 1.1 * Math.sign(ball.vel.y);
     ball.spin.z = actualSpinZ !== null ? actualSpinZ : sm * 0.02;
+    return;
+  }
+
+  if (flightProfile?.mode?.startsWith('return_')
+    && !flightProfile.mode.includes('rescue')
+    && !flightProfile.mode.includes('lobbed')) {
+    const dirX = dx / hDist;
+    const dirY = dy / hDist;
+    const minTime = flightProfile.minTime ?? 0.74;
+    const maxTime = flightProfile.maxTime ?? 1.16;
+    const netMinZ = flightProfile.netMinZ ?? (COURT.netHeight + 0.01);
+    const maxApex = flightProfile.maxApex ?? 2.35;
+    const targetSide = Math.sign(targetY || dy || 1);
+    const returnSimDt = 1 / 120;
+    const baseSpin = {
+      x: actualSpinX !== null ? actualSpinX : power * 0.18 * Math.sign(dirY || 1),
+      y: 0,
+      z: actualSpinZ !== null ? actualSpinZ : 0,
+    };
+
+    function simulateReturnCandidate(hSpeed, vzCandidate) {
+      const bsim = {
+        pos: { x: fromPos.x, y: fromPos.y, z: hitHeight },
+        vel: { x: dirX * hSpeed, y: dirY * hSpeed, z: vzCandidate },
+        spin: { ...baseSpin },
+      };
+      let zAtNet = null;
+      let maxZ = hitHeight;
+      for (let i = 0; i < 260; i++) {
+        const acc = computeAcceleration(bsim);
+        bsim.vel.x += acc.x * returnSimDt;
+        bsim.vel.y += acc.y * returnSimDt;
+        bsim.vel.z += acc.z * returnSimDt;
+        const prevY = bsim.pos.y;
+        const prevZ = bsim.pos.z;
+        bsim.pos.x += bsim.vel.x * returnSimDt;
+        bsim.pos.y += bsim.vel.y * returnSimDt;
+        bsim.pos.z += bsim.vel.z * returnSimDt;
+        maxZ = Math.max(maxZ, bsim.pos.z);
+        if (zAtNet === null && Math.sign(prevY) !== Math.sign(bsim.pos.y) && Math.sign(prevY) !== 0) {
+          const f = Math.abs(prevY) / (Math.abs(prevY) + Math.abs(bsim.pos.y) || 1e-9);
+          zAtNet = prevZ + f * (bsim.pos.z - prevZ);
+        }
+        if (bsim.pos.z <= PHYSICS.ballRadius && bsim.vel.z < 0) {
+          const clearsNet = zAtNet !== null && zAtNet >= netMinZ;
+          return { hSpeed, vz: vzCandidate, landY: bsim.pos.y, zAtNet, maxZ, clearsNet };
+        }
+      }
+      return { hSpeed, vz: vzCandidate, landY: bsim.pos.y, zAtNet, maxZ, clearsNet: false };
+    }
+
+    let best = null;
+    const speeds = [0.10, 0.16, 0.22, 0.30, 0.40, 0.52, 0.66, 0.82, 1.00];
+    const vzOffsets = [-0.70, -0.35, 0, 0.35, 0.70];
+    for (let ti = 0; ti <= 8; ti++) {
+      const t = minTime + (maxTime - minTime) * (ti / 8);
+      const baseHSpeed = hDist / Math.max(t, 1e-6);
+      const baseVz = (PHYSICS.ballRadius - hitHeight - 0.5 * PHYSICS.gravity * t * t) / t;
+      for (const speedScale of speeds) {
+        for (const vzOffset of vzOffsets) {
+          const probe = simulateReturnCandidate(baseHSpeed * speedScale, baseVz + vzOffset);
+          const ownCourtPenalty = Math.sign(probe.landY || targetSide) !== targetSide ? 80 : 0;
+          const outPenalty = Math.abs(probe.landY) > COURT.halfL - 0.08 ? 80 + (Math.abs(probe.landY) - (COURT.halfL - 0.08)) * 8 : 0;
+          const netPenalty = probe.clearsNet ? 0 : 80;
+          const arcPenalty = Math.max(0, probe.maxZ - maxApex) * 2.2;
+          const err = Math.abs(probe.landY - targetY);
+          const score = err + ownCourtPenalty + outPenalty + netPenalty + arcPenalty;
+          if (!best || score < best.score) best = { ...probe, score };
+        }
+      }
+    }
+
+    ball.vel.x = dirX * (best?.hSpeed ?? power);
+    ball.vel.y = dirY * (best?.hSpeed ?? power);
+    ball.vel.z = best?.vz ?? 1.2;
+    ball.inFlight = true;
+    ball.bounceCount = 0;
+    ball.spin.x = baseSpin.x;
+    ball.spin.y = baseSpin.y;
+    ball.spin.z = baseSpin.z;
     return;
   }
 

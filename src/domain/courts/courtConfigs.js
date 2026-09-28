@@ -20,6 +20,8 @@ export const SURFACE = Object.freeze({
   CLAY:    'CLAY',
   HARD:    'HARD',
   INDOOR:  'INDOOR',
+  STREET:  'STREET',
+  CARPET:  'CARPET',
 });
 
 // ── Catálogo completo de quadras ────────────────────────────────────────────
@@ -392,11 +394,97 @@ export const COURTS = {
       badgeColor:      '#CC66FF',
     },
   },
+
+  URBAN_COURT: {
+    meta: {
+      name:      'Urban Arena',
+      location:  'Urban Classic',
+      icon:      '🛣️',
+      surface:   SURFACE.STREET,
+      tier:      'GRAND_SLAM',
+      label:     'Asfalto',
+      desc:      'Concreto armado em arena aberta. Bounce altíssimo e firme. Potência e físico decidem. Calor extremo.',
+    },
+    physics: {
+      restitution:     0.88,
+      groundFriction:  0.68,
+      windFactor:      0.14,  // arena aberta, vento presente
+      altitudeFactor:  1.00,
+    },
+    style: {
+      favors:   ['POWER_BASELINER', 'BIG_SERVER', 'AGG_BASELINER', 'TAKEALLRISK'],
+      penalizes: ['CTR_PUNCHER', 'RETRIEVER', 'GRINDER'],
+      serveBonus:       0.06,
+      rallyLengthMult:  0.88,  // pontos mais curtos mas não tão curtos quanto grama
+      staminaDecayMult: 1.28,  // calor do asfalto — desgaste máximo
+      bounceVariance:   0.04,
+      adaptabilityMod:  0.12,
+      winnerMod:        1.08,
+      ueRiskMod:        1.12,  // asfalto quente aumenta erros
+    },
+    visual: {
+      surface:         SURFACE.STREET,
+      courtColor:      '#232323',  // asfalto cinza quase preto
+      courtDark:       '#171717',
+      runbackColor:    '#0D0D0D',
+      lineColor:       'rgba(255,255,255,0.92)',  // linhas brancas vibrantes
+      netColor:        '#BDBDBD',
+      stripeAlpha:     0,
+      turfPattern:     false,
+      asphaltPattern:  true,
+      badge:           '🛣️ ASFALTO',
+      badgeColor:      '#EF9F27',
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  CARPET COURT — Grand Slam do Veludo (Carpet)
+  // ═══════════════════════════════════════════════════════════════════════════
+  CARPET_COURT: {
+    meta: {
+      name:      'Velvet Palace',
+      location:  'Velvet Grand',
+      icon:      '🎭',
+      surface:   SURFACE.CARPET,
+      tier:      'GRAND_SLAM',
+      label:     'Veludo',
+      desc:      'Tapete têxtil clássico. A superfície mais rápida do circuito. Bounce quase nulo. Ace é moeda comum.',
+    },
+    physics: {
+      restitution:     0.52,
+      groundFriction:  0.62,
+      windFactor:      0.00,  // fechado
+      altitudeFactor:  1.00,
+    },
+    style: {
+      favors:   ['BIG_SERVER', 'SRV_VOL', 'NET_SPECIALIST', 'TAKEALLRISK'],
+      penalizes: ['CTR_PUNCHER', 'RETRIEVER', 'GRINDER'],
+      serveBonus:       0.16,   // saque é dominante — mais que grama
+      rallyLengthMult:  0.62,   // rallies curtíssimos
+      staminaDecayMult: 0.80,   // pontos rápidos — desgaste mínimo
+      bounceVariance:   0.01,   // bounce perfeitamente consistente
+      adaptabilityMod:  0.08,
+      winnerMod:        1.28,   // winners são muito fáceis de fazer
+      ueRiskMod:        0.88,
+    },
+    visual: {
+      surface:         SURFACE.CARPET,
+      courtColor:      '#D8C49A',  // veludo bege claro
+      courtDark:       '#B89D69',
+      runbackColor:    '#8A7047',
+      lineColor:       'rgba(55,42,28,0.82)',  // linhas escuras para contraste no bege
+      netColor:        '#6E5638',
+      stripeAlpha:     0.030,
+      carpetPattern:   true,
+      turfPattern:     false,
+      badge:           '🎭 VELUDO',
+      badgeColor:      '#D8C49A',
+    },
+  },
+
+
 };
 
-// ── Personalidade visual por torneio ─────────────────────────────────────────
-//
-// Cada entrada sobrescreve / complementa o visual do courtKey base.
 // O renderer lê isso via getVenueOverride(tournamentId).
 //
 // Campos disponíveis:
@@ -540,6 +628,99 @@ export const VENUE_OVERRIDES = {
     },
   },
 
+  // ── Calendário de seis Slams (IDs atuais) ───────────────────────────────
+  // O piso continua vindo de courtKey. Estes perfis cuidam somente da arena.
+  B1_GS_MERIDIAN: {
+    courtColor:'#1767bd', courtDark:'#0b3f86', runbackColor:'#071d3d', rbScale:1.20,
+    venueLabel:'MERIDIAN', labelAlpha:0.105, accentColor:'#7FDBFF', grandSlam:true,
+    cornerStyle:'diamond', baselineGlow:'rgba(110,220,255,0.22)', floodTint:'42,132,220',
+    arena:{ style:'coastal-modern', tiers:4, roof:'open', scoreboard:'panorama', density:0.96,
+      standPalette:['#06264b','#0b4b78','#117ca2','#e8f7ff'], aisleColor:'#d7edf5', vipColor:'#76d7ff',
+      lightTemperature:'daylight', signature:'sun-disc', trim:'#78ddff' },
+    personnel:{ primary:'#0d5c9d', secondary:'#ffffff', roleRing:'#79e5ff', lineJudge:'#12395c' },
+    surfaceFx:{ serviceContrast:0.14, wear:0.82, sheen:0.10 },
+    advertisingTheme:{ panels:[
+      {bg:'#052c58',text:'#7FDBFF',label:'MERIDIAN'}, {bg:'#eafaff',text:'#07558a',label:'OPEN'},
+      {bg:'#0879ae',text:'#ffffff',label:'HORIZON'}, {bg:'#073f70',text:'#7FDBFF',label:'MERIDIAN'},
+      {bg:'#f4c45e',text:'#092a45',label:'SOLAR'}, {bg:'#0b5686',text:'#ffffff',label:'PACIFIC'}
+    ], slamName:'MERIDIAN OPEN', slamColor:'#48cfff' },
+  },
+  B2_GS_TERRA: {
+    courtColor:'#c4511b', courtDark:'#96340e', runbackColor:'#5b210a', rbScale:0.91,
+    venueLabel:'TERRA MAGNA', labelAlpha:0.075, accentColor:'#f4cf9a', grandSlam:true,
+    cornerStyle:'arc', baselineGlow:'rgba(255,176,91,0.20)', floodTint:'116,48,15',
+    arena:{ style:'clay-terraces', tiers:3, roof:'terraced', scoreboard:'classic', density:0.94,
+      standPalette:['#264424','#3f622f','#7f2d13','#ead8b7'], aisleColor:'#c9b692', vipColor:'#f1c76f',
+      lightTemperature:'warm', signature:'clay-arches', trim:'#f1c28a', flowerBeds:true },
+    personnel:{ primary:'#315f35', secondary:'#f4e4c6', roleRing:'#ffb46a', lineJudge:'#693018' },
+    surfaceFx:{ serviceContrast:0.045, wear:1.30, sheen:0.00 },
+    advertisingTheme:{ panels:[
+      {bg:'#7f2b0c',text:'#f7d08b',label:'TERRA MAGNA'}, {bg:'#31542b',text:'#fff0d2',label:'OCCITANE'},
+      {bg:'#d05b20',text:'#ffffff',label:'MAGNA'}, {bg:'#f0c17d',text:'#54200b',label:'TERRE'},
+      {bg:'#243f22',text:'#f6c477',label:'PERRIER'}, {bg:'#99370e',text:'#fff1d9',label:'OCCITANE'}
+    ], slamName:'TERRA MAGNA', slamColor:'#e17131' },
+  },
+  B3_GS_HIGHLAND: {
+    courtColor:'#23733a', courtDark:'#155029', runbackColor:'#082a18', rbScale:1.14,
+    venueLabel:'THE HIGHLAND', labelAlpha:0.060, accentColor:'#f4f0df', grandSlam:true,
+    cornerStyle:'cross', baselineGlow:'rgba(224,255,220,0.15)', floodTint:'24,91,44',
+    arena:{ style:'heritage-garden', tiers:3, roof:'heritage-canopy', scoreboard:'manual', density:0.92,
+      standPalette:['#173f29','#265a37','#f1eee1','#58316f'], aisleColor:'#d7d1bd', vipColor:'#d6bf78',
+      lightTemperature:'soft-day', signature:'ivy-crown', trim:'#f0ead8', flowerBeds:true },
+    personnel:{ primary:'#f4f0e4', secondary:'#315c3b', roleRing:'#6d3f86', lineJudge:'#f1eee5' },
+    surfaceFx:{ serviceContrast:0.025, wear:1.45, sheen:0.00 },
+    advertisingTheme:{ panels:[
+      {bg:'#16482b',text:'#ffffff',label:'HIGHLAND'}, {bg:'#f5f2e7',text:'#204f31',label:'CHAMPIONSHIPS'},
+      {bg:'#573176',text:'#ffffff',label:'ALBION'}, {bg:'#1d5c35',text:'#e8f2e7',label:'HIGHLAND'},
+      {bg:'#f5f2e7',text:'#573176',label:'TRADITION'}, {bg:'#123b23',text:'#ffffff',label:'ALBION'}
+    ], slamName:'THE HIGHLAND', slamColor:'#f2eee2' },
+  },
+  B4_GS_URBAN: {
+    courtColor:'#30343b', courtDark:'#1a1d22', runbackColor:'#080a0d', rbScale:1.10,
+    venueLabel:'URBAN CLASSIC', labelAlpha:0.105, accentColor:'#ffde35', grandSlam:true,
+    cornerStyle:'cross', baselineGlow:'rgba(255,222,53,0.24)', floodTint:'45,60,88',
+    arena:{ style:'urban-industrial', tiers:4, roof:'steel-grid', scoreboard:'led-ribbon', density:0.98,
+      standPalette:['#111820','#26313b','#e5483f','#f4d735'], aisleColor:'#52606b', vipColor:'#ffdd35',
+      lightTemperature:'night', signature:'neon-grid', trim:'#ffdf35' },
+    personnel:{ primary:'#151a1f', secondary:'#ffdf35', roleRing:'#ff4f45', lineJudge:'#35424c' },
+    surfaceFx:{ serviceContrast:0.075, wear:1.10, sheen:0.04 },
+    advertisingTheme:{ panels:[
+      {bg:'#0d1116',text:'#ffdf35',label:'URBAN'}, {bg:'#ffdf35',text:'#11151a',label:'CLASSIC'},
+      {bg:'#e5433a',text:'#ffffff',label:'METRO'}, {bg:'#162938',text:'#63d8ff',label:'NIGHTLINE'},
+      {bg:'#222831',text:'#ffdf35',label:'URBAN'}, {bg:'#f1f1ed',text:'#171b20',label:'CITY'}
+    ], slamName:'URBAN CLASSIC', slamColor:'#ffdd35' },
+  },
+  B5_GS_VELVET: {
+    courtColor:'#c9af78', courtDark:'#967646', runbackColor:'#382815', rbScale:1.18,
+    venueLabel:'VELVET GRAND', labelAlpha:0.090, accentColor:'#f5dfaa', grandSlam:true,
+    cornerStyle:'arc', baselineGlow:'rgba(255,224,166,0.23)', floodTint:'112,77,34',
+    arena:{ style:'art-deco-palace', tiers:3, roof:'vaulted', scoreboard:'art-deco', density:0.91,
+      standPalette:['#321c27','#633447','#b28a55','#ead8aa'], aisleColor:'#a88758', vipColor:'#f1d48f',
+      lightTemperature:'amber', signature:'deco-fans', trim:'#e6c579' },
+    personnel:{ primary:'#5a2c3d', secondary:'#e7cd91', roleRing:'#f6dea2', lineJudge:'#40222f' },
+    surfaceFx:{ serviceContrast:0.055, wear:0.62, sheen:0.13 },
+    advertisingTheme:{ panels:[
+      {bg:'#3b1e2b',text:'#eacb88',label:'VELVET'}, {bg:'#d5b878',text:'#3a2028',label:'GRAND'},
+      {bg:'#704258',text:'#f8e8bd',label:'PALACE'}, {bg:'#24141c',text:'#dcbf80',label:'VELVET'},
+      {bg:'#b08d55',text:'#28151e',label:'ATELIER'}, {bg:'#4b2937',text:'#f3ddb0',label:'IMPERIAL'}
+    ], slamName:'VELVET GRAND', slamColor:'#d9bb78' },
+  },
+  B6_GS_CRYSTAL: {
+    courtColor:'#24246f', courtDark:'#101044', runbackColor:'#050517', rbScale:1.26,
+    venueLabel:'CRYSTAL EMPIRE', labelAlpha:0.115, accentColor:'#b5f2ff', grandSlam:true,
+    cornerStyle:'diamond', baselineGlow:'rgba(160,226,255,0.25)', floodTint:'47,35,130',
+    arena:{ style:'crystal-dome', tiers:5, roof:'crystal-dome', scoreboard:'halo', density:1.0,
+      standPalette:['#090927','#17175d','#3b2a82','#b9efff'], aisleColor:'#32307a', vipColor:'#d6f8ff',
+      lightTemperature:'cool-night', signature:'crystal-crown', trim:'#a9edff' },
+    personnel:{ primary:'#19185a', secondary:'#b8efff', roleRing:'#cb9cff', lineJudge:'#2f2d79' },
+    surfaceFx:{ serviceContrast:0.10, wear:0.50, sheen:0.18 },
+    advertisingTheme:{ panels:[
+      {bg:'#11104b',text:'#b9efff',label:'CRYSTAL'}, {bg:'#a8ecff',text:'#17144f',label:'EMPIRE'},
+      {bg:'#3a2480',text:'#ffffff',label:'CROWN'}, {bg:'#17155d',text:'#cb9cff',label:'CRYSTAL'},
+      {bg:'#5b38a0',text:'#dffaff',label:'AURORA'}, {bg:'#09082e',text:'#b9efff',label:'EMPIRE'}
+    ], slamName:'CRYSTAL EMPIRE', slamColor:'#a9edff' },
+  },
+
   // ════════════════════════════════════════════════
   //  MASTERS 1000 — personalidade sutil
   // ════════════════════════════════════════════════
@@ -639,14 +820,45 @@ export const VENUE_OVERRIDES = {
   },
 };
 
-/** Retorna o override visual do torneio, ou {} se não houver */
+const LEGACY_VENUE_ALIASES = Object.freeze({
+  JAN_GS_MERIDIAN:'B1_GS_MERIDIAN', MAI_GS_ROLAND:'B2_GS_TERRA',
+  JUN_GS_ALBION:'B3_GS_HIGHLAND', AGO_GS_EMPIRE:'B6_GS_CRYSTAL',
+});
+
+const GENERIC_VENUE_PROFILES = Object.freeze({
+  CLUB: { venueTier:'CLUB', rbScale:0.76, arena:{ tiers:1, density:0.38, style:'club', roof:'open', scoreboard:'compact', standPalette:['#17212a','#25333d','#53616a'], aisleColor:'#303a42', vipColor:'#78909c', trim:'#8aa0ad' }, personnel:{ primary:'#263746', secondary:'#d9e2e7', roleRing:'#78a7bd', lineJudge:'#334955' } },
+  CHALLENGER: { venueTier:'CHALLENGER', rbScale:0.88, arena:{ tiers:2, density:0.62, style:'regional', roof:'open', scoreboard:'compact', standPalette:['#10233c','#24486a','#6d7d89'], aisleColor:'#344858', vipColor:'#b3c4ce', trim:'#8eb3c7' }, personnel:{ primary:'#173c59', secondary:'#e8f0f4', roleRing:'#71b9dc', lineJudge:'#294b61' } },
+  TOUR: { venueTier:'TOUR', rbScale:1.0, arena:{ tiers:3, density:0.80, style:'tour', roof:'canopy', scoreboard:'panorama', standPalette:['#0d1f55','#6b1010','#252a31','#c6ccd0'], aisleColor:'#32383e', vipColor:'#d3ad58', trim:'#90a4ae' }, personnel:{ primary:'#143f72', secondary:'#f1f5f7', roleRing:'#60b8e8', lineJudge:'#263d50' } },
+  MAJOR: { venueTier:'MAJOR', rbScale:1.10, arena:{ tiers:4, density:0.92, style:'major', roof:'architectural', scoreboard:'ribbon', standPalette:['#11194a','#612034','#29333b','#d7dde0'], aisleColor:'#3c4650', vipColor:'#e0bd67', trim:'#b0c4cf' }, personnel:{ primary:'#182e63', secondary:'#ffffff', roleRing:'#e0bd67', lineJudge:'#2a3b4d' } },
+});
+
+function inferVenueTier(tournamentId = '') {
+  const id = String(tournamentId).toUpperCase();
+  if (id.includes('_GS_') || id.includes('ATP_FINALS') || id.includes('_M1000_')) return 'MAJOR';
+  if (id.includes('_500_') || id.includes('_250_') || id.includes('OLYMP')) return 'TOUR';
+  if (id.includes('_CH100_') || id.includes('_CH75_') || id.includes('_CH50_') || id.includes('_CH25_')) return 'CHALLENGER';
+  if (id.includes('_JR') || id.includes('JUNIOR') || id.includes('PROSPECT')) return 'CLUB';
+  return 'TOUR';
+}
+
+/** Retorna uma arena completa: base por categoria + identidade específica. */
 export function getVenueOverride(tournamentId) {
-  return VENUE_OVERRIDES[tournamentId] ?? {};
+  const id = String(tournamentId ?? '');
+  const resolvedId = LEGACY_VENUE_ALIASES[id] ?? id;
+  const specific = VENUE_OVERRIDES[resolvedId] ?? {};
+  const generic = GENERIC_VENUE_PROFILES[inferVenueTier(resolvedId)] ?? GENERIC_VENUE_PROFILES.TOUR;
+  return {
+    ...generic,
+    ...specific,
+    arena: { ...generic.arena, ...(specific.arena ?? {}) },
+    personnel: { ...generic.personnel, ...(specific.personnel ?? {}) },
+    surfaceFx: { ...(specific.surfaceFx ?? {}) },
+  };
 }
 
 // ── Ordem para display na UI ──────────────────────────────────────────────────
 export const COURT_KEYS = [
-  'WIMBLEDON', 'ROLAND_GARROS', 'US_OPEN', 'O2_ARENA',
+  'WIMBLEDON', 'ROLAND_GARROS', 'US_OPEN', 'O2_ARENA', 'URBAN_COURT', 'CARPET_COURT',
   'QUEENS_CLUB', 'MONTE_CARLO', 'INDIAN_WELLS', 'BERCY',
 ];
 
@@ -706,4 +918,3 @@ export function getCourtStyleMods(courtKey) {
 }
 
 export default COURTS;
-

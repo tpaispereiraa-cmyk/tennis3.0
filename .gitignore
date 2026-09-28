@@ -1,0 +1,9 @@
+node_modules/
+dist/
+tmp/
+tmp_*/
+src/src/
+src/systems/shotengine/*.exe
+*.tennis-save
+*.zip
+*.tar

@@ -15,10 +15,6 @@
  */
 
 import { releaseRetiredPhotos } from '../newgen/NewgenImagePool.js';
-import {
-  STYLE_TO_COACH_PHILOSOPHY,
-  coachFromRetiredPlayer,
-} from '../coaches/CoachingSystem.js';
 
 // ─────────────────────────────────────────────────────────────────
 // TIPOS DE APOSENTADORIA
@@ -119,6 +115,62 @@ function hadRepeatedGrade3(player, seasonYear) {
     byType[h.type] = (byType[h.type] ?? 0) + 1;
   }
   return Object.values(byType).some(c => c >= 2);
+}
+
+function chronicSportsInjuryRisk(player, age) {
+  if (age < 32) return null;
+
+  const criticalTypes = new Set(['CHRONIC_CONDITION', 'SYSTEMIC_ILLNESS']);
+  const history = (player.injuryHistory ?? [])
+    .filter(h => (h.grade ?? 0) >= 2 && !criticalTypes.has(h.type));
+
+  if (history.length < 3) return null;
+
+  const byType = {};
+  for (const injury of history) {
+    const key = injury.type ?? 'UNKNOWN';
+    if (!byType[key]) byType[key] = [];
+    byType[key].push(injury);
+  }
+
+  let strongest = null;
+  for (const [type, entries] of Object.entries(byType)) {
+    const grade3 = entries.filter(h => (h.grade ?? 0) >= 3).length;
+    if (entries.length < 3 || grade3 < 1) continue;
+    const score = entries.length + grade3 * 1.4;
+    if (!strongest || score > strongest.score) {
+      strongest = { type, entries, grade3, score };
+    }
+  }
+
+  if (!strongest) return null;
+
+  const count = strongest.entries.length;
+  const agePressure = Math.max(0, age - 32) * 0.035;
+  const recurrencePressure = Math.min(0.16, (count - 3) * 0.045);
+  const severePressure = Math.min(0.12, (strongest.grade3 - 1) * 0.06);
+  const probability = Math.min(0.42, 0.14 + agePressure + recurrencePressure + severePressure);
+
+  return {
+    type: strongest.type,
+    count,
+    grade3: strongest.grade3,
+    probability,
+  };
+}
+
+function eliteInjuryRetirementMultiplier(rankPos, psi = null) {
+  let mult = 1;
+  if (rankPos <= 1) mult *= 0.35;
+  else if (rankPos <= 5) mult *= 0.45;
+  else if (rankPos <= 15) mult *= 0.65;
+  else if (rankPos <= 30) mult *= 0.80;
+
+  const currentScore = psi?.currentScore ?? 0;
+  if (currentScore >= 80) mult *= 0.65;
+  else if (currentScore >= 50) mult *= 0.80;
+
+  return mult;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -289,20 +341,28 @@ export function evaluateRetirement(
   const grade2count = countSevereInjuries(player, 2);
   const repeatedGrade3 = hadRepeatedGrade3(player, seasonYear);
   const hasActiveGrade3 = player.injury?.grade === 3 && player.injury?.slotsRemaining > 0;
+  const chronicSportsRisk = chronicSportsInjuryRisk(player, age);
 
   const gsWins = countGsWins(player.id, tournamentResults);
 
-  // ── CASOS ESPECIAIS (flat probability, independe de idade) ────
+  // ── CASOS ESPECIAIS (lesao pesa muito, mas ainda respeita elite/forma) ────
 
-  // Lesão grave repetida na mesma região = muito provável parar
+  // Lesao cronica esportiva: mesma regiao acumulando lesoes medias/graves,
+  // normalmente no terco final da carreira.
+  if (chronicSportsRisk) {
+    const p = chronicSportsRisk.probability;
+    if (Math.random() < p) return { retires: true, type: 'FORCADA_LESAO', probability: p };
+  }
+
+  // Lesão grave repetida na mesma região = risco relevante, mas nao deve apagar elite sozinho
   if (repeatedGrade3 && age >= 30) {
-    const p = 0.65;
+    const p = Math.max(0.08, 0.45 * eliteInjuryRetirementMultiplier(rankPos, psi));
     if (Math.random() < p) return { retires: true, type: 'FORCADA_LESAO', probability: p };
   }
 
   // Grau 3 ativa + velho: alta chance de encerrar
   if (hasActiveGrade3 && age >= 34) {
-    const p = 0.50;
+    const p = Math.max(0.07, 0.32 * eliteInjuryRetirementMultiplier(rankPos, psi));
     if (Math.random() < p) return { retires: true, type: 'FORCADA_LESAO', probability: p };
   }
 
@@ -491,6 +551,58 @@ export function processSeasonRetirements(players, seasonYear, tournamentResults,
 }
 
 /**
+ * Atualiza a leitura mensal de saída sem remover ninguém no meio de uma chave.
+ * A decisão efetiva continua no fechamento do circuito; assim a aposentadoria
+ * passa a amadurecer ao longo do ano sem quebrar ranking, brackets ou contratos.
+ */
+export function refreshMonthlyRetirementOutlook(players = [], date = null, tournamentResults = {}, ovrSnapshot = {}) {
+  const year = Number(date?.year ?? 2025);
+  const month = Number(date?.month ?? 1);
+  const events = [];
+  const updatedPlayers = players.map(player => {
+    const ovrNow = player._ovrSnapshot ?? computeOvr(player);
+    // Outlook é leitura de cenário: não pode consumir uma rolagem aleatória.
+    // A rolagem pertence exclusivamente ao fechamento da temporada.
+    const annualChance = computeRetirementChance(
+      player,
+      year,
+      tournamentResults,
+      ovrNow,
+      ovrSnapshot[player.id] ?? ovrNow,
+    );
+    const level = annualChance >= 0.38 ? 'HIGH' : annualChance >= 0.16 ? 'WATCH' : 'STABLE';
+    const previous = player.retirementOutlook?.level;
+    const likelyReason = player.injury?.grade === 3
+      ? 'FORCADA_LESAO'
+      : (['VOLATILE', 'TAKEALLRISK'].includes(player.styleId) && (player.physicalCondition ?? 80) < 60)
+        ? 'BURNOUT'
+        : ((player._isNewgen || player.isNewgen) && (player.rankPosition ?? 999) > 180)
+          ? 'FORCADA_RANKING'
+          : annualChance > 0 ? 'DESGASTE_NATURAL' : null;
+    const retirementOutlook = {
+      level,
+      annualChance: Math.round(annualChance * 1000) / 10,
+      monthlyChance: Math.round((1 - Math.pow(1 - annualChance, 1 / 12)) * 1000) / 10,
+      assessedAt: { year, month },
+      likelyReason,
+    };
+    if (previous !== level && level !== 'STABLE') {
+      events.push({
+        type: 'RETIREMENT_OUTLOOK',
+        playerId: player.id,
+        playerName: player.name,
+        level,
+        year,
+        monthIndex: month,
+        date: { year, month },
+      });
+    }
+    return { ...player, retirementOutlook };
+  });
+  return { players: updatedPlayers, events };
+}
+
+/**
  * Versão do processSeasonRetirements que também gerencia o pool de imagens.
  * Substitua processSeasonRetirements por esta se quiser tudo junto,
  * ou chame releaseRetiredPhotos separadamente após processSeasonRetirements.
@@ -548,14 +660,16 @@ export function computeRetirementChance(player, seasonYear, tournamentResults = 
   const grade2count = countSevereInjuries(player, 2);
   const repeatedGrade3 = hadRepeatedGrade3(player, seasonYear);
   const hasActiveGrade3 = player.injury?.grade === 3 && player.injury?.slotsRemaining > 0;
+  const chronicSportsRisk = chronicSportsInjuryRisk(player, age);
   const isExplodingStyle = ['VOLATILE', 'TAKEALLRISK'].includes(style);
   const isVolatileDev = devStyle === 'VOLATILE';
   const gsWins = countGsWins(player.id, tournamentResults);
   const psi = calculatePerformanceScoreIndex(player.id, tournamentResults, seasonYear);
 
   // Casos especiais
-  if (repeatedGrade3 && age >= 30) return 0.65;
-  if (hasActiveGrade3 && age >= 34) return 0.50;
+  if (chronicSportsRisk) return chronicSportsRisk.probability;
+  if (repeatedGrade3 && age >= 30) return Math.max(0.08, 0.45 * eliteInjuryRetirementMultiplier(rankPos, psi));
+  if (hasActiveGrade3 && age >= 34) return Math.max(0.07, 0.32 * eliteInjuryRetirementMultiplier(rankPos, psi));
   if ((isExplodingStyle || isVolatileDev) && age >= 26 && cond < 52 && ovrDrop >= 5) return 0.22;
 
   let chance = baseProbability(age);
@@ -708,14 +822,6 @@ function deriveCoachSpecialty(retiredPlayer, philosophy) {
  * @returns {object|null}        - objeto coach (RETIRED_PLAYER) ou null
  */
 export function tryBecomeCoach(retiredPlayer, season) {
-  const retirementType = retiredPlayer.retirementInfo?.type ?? 'DESGASTE_NATURAL';
-  const prob = COACH_PROB_BY_RETIREMENT_TYPE[retirementType] ?? 0.10;
-
-  if (Math.random() > prob) return null;
-
-  const philosophy = deriveCoachPhilosophy(retiredPlayer);
-  const specialty  = deriveCoachSpecialty(retiredPlayer, philosophy);
-
-  return coachFromRetiredPlayer(retiredPlayer, season, philosophy, specialty);
+  return null;
 }
 

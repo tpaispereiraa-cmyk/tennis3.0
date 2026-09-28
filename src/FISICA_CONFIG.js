@@ -33,7 +33,7 @@ export const AMBIENTE = {
   densidade_ar_nivel_mar: 1.2,
   // Helper: subir a densidade reforça drag e Magnus; descer deixa o jogo mais
   // "rápido pelo ar", parecido com altitude alta.
-  coef_magnus_base: 0.25,
+  coef_magnus_base: 5.25,
   // Helper: subir este valor faz topspin/slice curvarem mais no ar; descer
   // deixa trajetórias mais retas e menos dependentes de spin.
 };
@@ -65,6 +65,18 @@ export const SUPERFICIE = {
     friccao_chao: 0.77,
     humidade_friccao: 0,
   },
+  // Asfalto: dureza máxima, bounce firme e alto, bola acelera após o quique
+  ASFALTO: {
+    restituicao: 0.88,   // bounce altíssimo — concreto armado
+    friccao_chao: 0.68,  // bola desliza mais que na dura (asfalto liso)
+    humidade_friccao: 0.04,
+  },
+  // Veludo (carpete): bounce quase nulo, bola rasteira, superfície ultra-rápida
+  VELUDO: {
+    restituicao: 0.52,   // bounce mínimo — bola fica rasteira
+    friccao_chao: 0.62,  // pouca aderência — bola corre muito
+    humidade_friccao: 0,
+  },
 };
 
 // ── Quique / spin no solo ──────────────────────────────────────────────────
@@ -84,7 +96,7 @@ export const QUIQUE = {
   friccao_topspin: 0.92,
   // Helper: subir dá mais retenção de velocidade ao topspin pós-quique; descer
   // faz a bola travar mais.
-  friccao_backspin: 0.54,
+  friccao_backspin: 0.65,
   // Helper: descer este valor faz slice/drop agarrar mais no chão; subir deixa
   // o backspin menos "morto".
 
@@ -95,7 +107,7 @@ export const QUIQUE = {
   // `pacebrake_inicio` adia o freio; subir `pacebrake_coef` intensifica a perda.
 
   backspin_forte_min: -0.75,
-  backspin_forte_vel_mult: 0.86,
+  backspin_forte_vel_mult: 0.93,
   backspin_forte_vz_mult: 0.74,
   // Helper: quando o slice entra na zona de backspin forte, esses multiplicadores
   // definem o quanto ele perde de pace e de altura de quique.
@@ -118,15 +130,15 @@ export const QUIQUE = {
 export const DROP_SHOT = {
   vel_horizontal_mult: 0.26,
   // Helper: descer mata mais a bola depois do quique; subir deixa o drop "vivo".
-  vel_vertical_mult: 0.44,
+  vel_vertical_mult: 1.23,
   // Helper: descer faz o drop quase não levantar; subir dá um quique mais jogável.
-  vel_vertical_max: 0.20,
+  vel_vertical_max: 4.46,
   // Helper: teto do quique do drop. Subir permite drop saltar um pouco mais.
 
   dead_ball_vel_x_mult: 0.12,
   dead_ball_vel_y_mult: 0.12,
-  dead_ball_vz_min: 0.03,
-  dead_ball_vz_max: 0.08,
+  dead_ball_vz_min: 2.05,
+  dead_ball_vz_max: 2.90,
   // Helper: controla o "morrer de vez" no 2º contato curto. Descer os mults
   // faz a bola parar quase na hora.
 
@@ -151,7 +163,7 @@ export const DROP_SHOT = {
 
 // ── Rede ───────────────────────────────────────────────────────────────────
 export const REDE = {
-  altura: 0.86,
+  altura: 0.75,
   tolerancia: 0.05,
   lip_zone: 0.04,
   // Helper: subir `lip_zone` aumenta a faixa em que a bola pode raspar a fita.
@@ -172,7 +184,7 @@ export const REDE = {
 // ── Perfis de interceptação para previsão da IA ────────────────────────────
 export const INTERCEPTACAO_PADRAO = Object.freeze({
   altura_contato_ideal: 0.75,
-  altura_contato_min: 0.45,
+  altura_contato_min: 0.58,   // era 0.45 — impedia busca de ponto na altura do tornozelo
   altura_contato_max: 1.20,
   faixa_contato: 0.32,
   tolerancia_y: 1.35,
@@ -185,7 +197,7 @@ export const INTERCEPTACAO_PADRAO = Object.freeze({
 export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
   GRAMA: Object.freeze({
     altura_contato_ideal: 0.58,
-    altura_contato_min: 0.32,
+    altura_contato_min: 0.38,   // grama: quique baixo, mas ainda não no chão
     altura_contato_max: 0.95,
     faixa_contato: 0.24,
     tolerancia_y: 1.05,
@@ -196,7 +208,7 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
   }),
   INDOOR: Object.freeze({
     altura_contato_ideal: 0.63,
-    altura_contato_min: 0.36,
+    altura_contato_min: 0.48,   // era 0.36
     altura_contato_max: 1.02,
     faixa_contato: 0.26,
     tolerancia_y: 1.10,
@@ -207,7 +219,7 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
   }),
   DURA: Object.freeze({
     altura_contato_ideal: 0.74,
-    altura_contato_min: 0.42,
+    altura_contato_min: 0.54,   // era 0.42 — permitia busca logo após o quique
     altura_contato_max: 1.16,
     faixa_contato: 0.30,
     tolerancia_y: 1.25,
@@ -218,7 +230,7 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
   }),
   SAIBRO: Object.freeze({
     altura_contato_ideal: 0.92,
-    altura_contato_min: 0.50,
+    altura_contato_min: 0.58,
     altura_contato_max: 1.34,
     faixa_contato: 0.36,
     tolerancia_y: 1.50,
@@ -226,6 +238,30 @@ export const INTERCEPTACAO_SUPERFICIE = Object.freeze({
     bonus_subida: 0.10,
     penalidade_descida: 0.10,
     bonus_bola_baixa: -0.04,
+  }),
+  // Asfalto: bounce altíssimo obriga o jogador a esperar a bola cair
+  ASFALTO: Object.freeze({
+    altura_contato_ideal: 1.10,  // bola sobe muito — contato no ombro
+    altura_contato_min: 0.72,
+    altura_contato_max: 1.55,
+    faixa_contato: 0.28,         // janela menor — timing crítico
+    tolerancia_y: 1.20,
+    janela_atraso: 0.52,
+    bonus_subida: 0.12,
+    penalidade_descida: 0.30,    // tarde demais = bola já passou alto demais
+    bonus_bola_baixa: -0.12,     // bola baixa é incomum aqui
+  }),
+  // Veludo: bounce rasteiro, bola chega cedo e rápido
+  VELUDO: Object.freeze({
+    altura_contato_ideal: 0.46,  // contato baixíssimo — quase ao nível da cintura
+    altura_contato_min: 0.32,
+    altura_contato_max: 0.78,
+    faixa_contato: 0.32,
+    tolerancia_y: 1.30,
+    janela_atraso: 0.38,         // janela curta — bola corre muito
+    bonus_subida: 0.34,          // pegar na subida é o correto aqui
+    penalidade_descida: 0.14,
+    bonus_bola_baixa: 0.22,      // bola baixa é o padrão no veludo
   }),
 });
 
@@ -242,6 +278,12 @@ export function normalizarSuperficie(nome) {
       return 'SAIBRO';
     case 'INDOOR':
       return 'INDOOR';
+    case 'STREET':
+    case 'ASFALTO':
+      return 'ASFALTO';
+    case 'CARPET':
+    case 'VELUDO':
+      return 'VELUDO';
     default:
       return 'DURA';
   }

@@ -34,7 +34,7 @@ export const PHYSICS = {
 
 // ── Timing (seconds unless noted) ───────────────────────────────
 export const TIMING = {
-  preServeDelay: 1.2, serveWindup: 0.4, pointPauseMs: 800,
+  preServeDelay: 0.75, serveWindup: 0.30, pointPauseMs: 800,
   hitCooldown: 0.25, swingDuration: 0.18,
 };
 
@@ -61,16 +61,16 @@ export const PLAYER_CFG = {
 
 // ── Stamina system ───────────────────────────────────────────────
 export const STAMINA = {
-  decayPerShot:      0.024,  // agora rally longo começa a morder de verdade
-  recoveryPerPoint:  0.014,  // entre pontos recupera um pouco, mas não apaga o desgaste recém sofrido
-  // RAZÃO: Em um 37º game, receptor com recovery=0.020 ficava com stamina ~0.15-0.20
-  // Isso causava effectiveReach ~ 0.65 * baseReach, gerando aces espúrios.
-  // Com 0.035, receptores respiram melhor entre pontos, mais realista com ATP.
-  recoveryPerGame:   0.082,  // game reset menor — cansaço passa a atravessar mais games
-  recoveryPerSet:    0.300,  // set reset importante, mas bem longe de zerar a conta
-  speedMinFactor:    0.72,   // pernas cansadas derrubam bem mais a locomoção
+  // Patch de balanceamento: o modelo cobra por golpe E por distância percorrida.
+  // A recuperação precisa ser generosa para uma partida longa não entrar numa
+  // espiral em que pernas lentas geram mais rallies, mais erros e mais desgaste.
+  decayPerShot:      0.021,
+  recoveryPerPoint:  0.028,
+  recoveryPerGame:   0.090,
+  recoveryPerSet:    0.360,
+  speedMinFactor:    0.76,   // fadiga ainda pesa, mas não transforma o atleta em alvo imóvel
   reachMinFactor:    0.79,   // alcance também cai, mas menos que a velocidade
-  errorBoostMax:     0.012,  // max extra error rate at 0 stamina — reduzido de 0.022: fadiga → movimento lento, não erros diretos
+  errorBoostMax:     0.015,  // erro extra existe, mas vem sobretudo de chegar e preparar pior
   logThreshold:      0.32,   // log fatigue warning when dropping below this
   // ── Sprint stamina drain (per second, scaled by intensity above jog threshold) ─
   sprintDecayRate:   0.042,  // perseguições fortes drenam mais claramente
@@ -102,7 +102,7 @@ export const INERTIA = {
   reversal180Dot:       -0.70,  // dot(vel,targetDir) below this = 180° reversal
   reversal180AccelMult:  0.55,  // accel fraction during 180° change (swap footwork)
   reversal180Frames:     3,     // frames the 180° penalty lasts
-  staminaAccelMin:       0.62,  // aceleração sofre bem mais com cansaço
+  staminaAccelMin:       0.58,  // fadiga derruba a primeira passada antes da velocidade de cruzeiro
   // ── Slide-stop / planta do pé ─────────────────────────────────────────────
   // Quando jogador está perto do target E em alta velocidade, aplica freada brusca
   // simulando o "slide" / deslizada de quadra — impede que passe direto pela bola.
@@ -128,6 +128,23 @@ export const MOVEMENT = {
   urgencySprint:     1.06,
 };
 
-export const SCORE_LABELS = ['0', '15', '30', '40', 'Ad'];
+// Formato compacto: mantém o saque e os games, sem vantagens infinitas.
+export const MATCH_RULES = Object.freeze({
+  pointsPerGame: 4,
+  gamesPerSet: 4,
+  // O set ainda pode terminar 4-2. Em 3-3 os jogadores disputam mais
+  // dois games; se chegarem a 4-4, o tiebreak entrega o 5-4 decisivo.
+  tiebreakAt: 4,
+  tiebreakSetWinnerGames: 5,
+  tiebreakPoints: 5,
+  tiebreakWinBy: 1, // no TB curto, o primeiro a 5 pontos fecha
+});
+
+export const SCORE_LABELS = ['0', '15', '30', '40'];
+
+export function isTiebreakSetScore(a, b) {
+  return (a === MATCH_RULES.tiebreakSetWinnerGames && b === MATCH_RULES.tiebreakAt)
+    || (b === MATCH_RULES.tiebreakSetWinnerGames && a === MATCH_RULES.tiebreakAt);
+}
 
 

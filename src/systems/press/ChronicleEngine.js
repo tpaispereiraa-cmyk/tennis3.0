@@ -919,7 +919,7 @@ function collectSeasonData(state) {
     totalMatches: 0,
     totalTournaments: 0,
     numChampions: 0,
-    surfaceBreakdown: { CLAY: 0, GRASS: 0, HARD: 0, INDOOR: 0 },
+    surfaceBreakdown: { CLAY: 0, GRASS: 0, HARD: 0, STREET: 0, CARPET: 0, INDOOR: 0 },
   };
 
   try {
@@ -1189,17 +1189,19 @@ function collectSeasonData(state) {
     yearCareerMoments.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
     if (yearCareerMoments.length > 0) data.yearCareerMoments = yearCareerMoments;
 
-    // ── FASE 6: Eventos de coaching ──────────────────────────────
+    // ── Banco Vivo: eventos de coaching ──────────────────────────
     const coachingEvents = [];
-    const coachPool      = state.coachPool ?? [];
+    const coachMarket = state.coachMarket ?? null;
     const allPlayersCoach = [...(state.tourPlayers ?? []), ...(state.prospects ?? [])];
 
     for (const p of allPlayersCoach) {
-      // PUPIL_SURPASSED_MASTER: pupilo tem mais Slams que o ex-jogador que o treina
-      const activeCoach = p.coach ? coachPool.find(c => c.id === p.coach.coachId) : null;
-      if (activeCoach?.origin === 'RETIRED_PLAYER') {
+      const activeCoach = p.coaching?.activeCoachId ? coachMarket?.coachesById?.[p.coaching.activeCoachId] : null;
+      const partnership = p.coaching?.partnershipId ? coachMarket?.partnershipsById?.[p.coaching.partnershipId] : null;
+      if (!activeCoach || !partnership) continue;
+
+      if (activeCoach?.originType === 'RETIRED_PLAYER') {
         const pupilSlams  = p._careerGrandSlams ?? 0;
-        const coachSlams  = activeCoach.careerSlams ?? 0;
+        const coachSlams  = activeCoach.careerRecord?.slams ?? 0;
         if (pupilSlams > coachSlams && pupilSlams >= 1 && coachSlams >= 1) {
           coachingEvents.push({
             type: 'PUPIL_SURPASSED_MASTER',
@@ -1207,28 +1209,28 @@ function collectSeasonData(state) {
             coachCareerSlams: coachSlams, pupilSlams, year,
           });
         }
-
-        // RIVAL_BECOMES_COACH: coach foi rival do pupilo e acabou de ser contratado este ano
-        const hist = p.coachHistory ?? [];
-        const latestHire = hist.length > 0 ? hist[hist.length - 1] : null;
-        const isNewThisYear = p.coach?.startSeason === year;
-        if (isNewThisYear && activeCoach.playerId && state.rivalrySystem?.rivalries) {
-          for (const [, r] of state.rivalrySystem.rivalries.entries()) {
-            const involves = (r.p1Id === p.id && r.p2Id === activeCoach.playerId) ||
-                             (r.p2Id === p.id && r.p1Id === activeCoach.playerId);
-            if (involves && r.totalMatches >= 3) {
-              coachingEvents.push({
-                type: 'RIVAL_BECOMES_COACH',
-                coachName: activeCoach.name, pupilName: p.name,
-                rivalryRecord: `${r.p1Wins}-${r.p2Wins}`, year,
-              });
-            }
-          }
-        }
       }
 
-      // SHADOW_CURED_BY_COACH: Sombra curada este ano com coach MENTAL
-      if (activeCoach?.philosophy === 'MENTAL') {
+      if (partnership.publicStatus === 'ERA') {
+        coachingEvents.push({
+          type: 'BANCO_ERA',
+          playerName: p.name,
+          coachName: activeCoach.name,
+          titlesTogether: partnership.titlesTogether ?? 0,
+          slamsTogether: partnership.slamsTogether ?? 0,
+          year,
+        });
+      }
+      if ((p.coaching?.friction ?? 0) >= 74) {
+        coachingEvents.push({
+          type: 'BANCO_TENSION',
+          playerName: p.name,
+          coachName: activeCoach.name,
+          friction: p.coaching.friction,
+          year,
+        });
+      }
+      if (activeCoach?.method === 'MENTAL') {
         const shadows = p._shadowMetrics ?? {};
         for (const [shadowId, sm] of Object.entries(shadows)) {
           if (sm.curedYear === year) {
@@ -1610,6 +1612,16 @@ function buildSubStory2(data, tone) {
 
   // FASE 6: coaching events como substory
   if (data.coachingEvents?.length > 0) {
+    const era = data.coachingEvents.find(e => e.type === 'BANCO_ERA');
+    if (era) {
+      parts.push(`No banco, **${era.playerName}** e **${era.coachName}** deixaram de parecer parceria comum: ${era.slamsTogether} Slam(s) e ${era.titlesTogether} titulo(s) juntos ja contam como era.`);
+      return parts.join(' ');
+    }
+    const tension = data.coachingEvents.find(e => e.type === 'BANCO_TENSION');
+    if (tension) {
+      parts.push(`Nem toda historia de banco e harmonia: **${tension.playerName}** e **${tension.coachName}** chegam ao fim do ano sob atrito alto (${tension.friction}/100), com resultado e confianca puxando em direcoes opostas.`);
+      return parts.join(' ');
+    }
     const surpassed = data.coachingEvents.find(e => e.type === 'PUPIL_SURPASSED_MASTER');
     if (surpassed) {
       parts.push(`**${surpassed.pupilName}** ultrapassou o mestre: com ${surpassed.pupilSlams} Grand Slam(s), já superou o legado de ${surpassed.coachName} (${surpassed.coachCareerSlams} GS).`);
@@ -1665,6 +1677,8 @@ function buildHighlightTags(data) {
   if (data.coachingEvents?.some(e => e.type === 'RIVAL_BECOMES_COACH')) {
     tags.push('⚔️🎓 Rival vira técnico');
   }
+  if (data.coachingEvents?.some(e => e.type === 'BANCO_ERA')) tags.push('Banco Vivo: era');
+  if (data.coachingEvents?.some(e => e.type === 'BANCO_TENSION')) tags.push('Banco Vivo: tensão');
   return tags.slice(0, 7);
 }
 

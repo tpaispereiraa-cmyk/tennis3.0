@@ -9,7 +9,6 @@
  *   - Títulos (tipo + flag "ganhou lesionado")
  *   - Lesões (grade, tipo, playedThrough)
  *   - Rivalidades que graduaram naquele ano
- *   - Mudanças de técnico
  *   - Declínio iniciado
  *   - Maior crescimento de atributo
  *
@@ -18,12 +17,15 @@
  *   sc             {string}  — accent color
  *   rivalrySystem  {object}  — RivalrySystem instance
  *   allPlayers     {Array}
- *   coachPool      {Array}
  *   year           {number}  — current season
  */
 
 import { useState, useMemo } from 'react';
 import { buildPlayerIdentity } from '../../domain/players/PlayerIdentity.js';
+import { buildPlayerMomentEvents } from '../../systems/history/PlayerTimelineEvents.js';
+import { ovrTier } from '../../systems/scouting/ScoutProfile.js';
+import { buildYouthOriginSummary } from '../../systems/youth/YouthOriginsSystem.js';
+import { describeYouthAcademy } from '../../systems/youth/YouthAcademySystem.js';
 
 // ─────────────────────────────────────────────────────────────────
 // TOKENS (match UnifiedPlayerProfile)
@@ -146,13 +148,8 @@ function Badge({ icon, label, color, small }) {
 // CARD DE DETALHE DO ANO (expandido ao clicar)
 // ─────────────────────────────────────────────────────────────────
 
-function YearDetail({ entry, allPlayers, rivalrySystem, coachPool, sponsorEvents }) {
+function YearDetail({ entry, allPlayers, rivalrySystem, sponsorEvents }) {
   const title  = entry.titleWon ? (TITLE_META[entry.titleWon] ?? { label: entry.titleWon, icon: '🏆', color: '#FFD700' }) : null;
-  const coachEntry = entry._coachAtYear ?? null;
-  const coachObj   = coachEntry && coachPool
-    ? coachPool.find(c => c.id === coachEntry.coachId)
-    : null;
-  const coachName = coachObj?.fullName ?? coachObj?.name ?? coachEntry?.name ?? null;
 
   // Eventos de patrocínio deste ano específico
   const yearSponsorEvents = (sponsorEvents ?? []).filter(e => e.year === entry.year);
@@ -369,21 +366,6 @@ function YearDetail({ entry, allPlayers, rivalrySystem, coachPool, sponsorEvents
         </div>
       )}
 
-      {/* Técnico */}
-      {coachName && (
-        <div>
-          <div style={{ fontFamily: RG.mono, fontSize: 7, color: RG.textFaint, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
-            Técnico
-          </div>
-          <div style={{ fontFamily: RG.cond, fontSize: 13, fontWeight: 700, color: RG.textDim }}>
-            {coachName}
-            {entry._coachAtYear?.isNew && (
-              <span style={{ fontFamily: RG.mono, fontSize: 7, color: '#22c55e', marginLeft: 8 }}>NOVO</span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Patrocínio — marcos do ano */}
       {yearSponsorEvents.length > 0 && (
         <div style={{ gridColumn: '1 / -1' }}>
@@ -420,7 +402,7 @@ function YearDetail({ entry, allPlayers, rivalrySystem, coachPool, sponsorEvents
 // FAIXA DE UMA TEMPORADA
 // ─────────────────────────────────────────────────────────────────
 
-function YearRow({ entry, sc, isFirst, isLast, isSelected, onClick, ovrMin, ovrMax, allPlayers, rivalrySystem, coachPool, sponsorEvents }) {
+function YearRow({ entry, sc, isFirst, isLast, isSelected, onClick, ovrMin, ovrMax, allPlayers, rivalrySystem, sponsorEvents }) {
   const title = entry.titleWon ? (TITLE_META[entry.titleWon] ?? { color: '#FFD700', icon: '🏆', label: '' }) : null;
   const hasInjury = entry.injuries?.length > 0;
   const hasRivalry = entry._rivalriesGraduated?.length > 0;
@@ -510,9 +492,6 @@ function YearRow({ entry, sc, isFirst, isLast, isSelected, onClick, ovrMin, ovrM
           {hasRivalry && (
             <Badge icon="⚔️" label="Rivalidade" color={RG.gold} small />
           )}
-          {entry._coachAtYear?.isNew && (
-            <Badge icon="🎓" label="Novo técnico" color="#4A90D9" small />
-          )}
         </div>
 
         {/* Expand arrow */}
@@ -530,7 +509,6 @@ function YearRow({ entry, sc, isFirst, isLast, isSelected, onClick, ovrMin, ovrM
           entry={entry}
           allPlayers={allPlayers}
           rivalrySystem={rivalrySystem}
-          coachPool={coachPool}
           sponsorEvents={sponsorEvents}
         />
       )}
@@ -588,14 +566,47 @@ function OvrSparkline({ history, sc, width = 300, height = 48 }) {
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────
 
-export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, coachPool, year, sponsorEvents }) {
+export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, year, sponsorEvents }) {
   const [selectedYear, setSelectedYear] = useState(null);
+  const [momentFilter, setMomentFilter] = useState('ALL');
   const identityProfile = useMemo(
     () => (np ? buildPlayerIdentity(np, { surfaceKey: np?.surfaceIdentity?.surface ?? null, year }) : null),
     [np, year]
   );
   const publicNarrative = np?.currentState?.publicNarrative ?? np?.publicNarrativeMemory?.publicNarrative?.line ?? null;
   const latestInterview = np?.latestInterview ?? null;
+  const youthJourney = useMemo(() => {
+    const youth = np?.youthProfile;
+    if (!youth) return null;
+    const junior = youth.junior ?? {};
+    return {
+      origin: buildYouthOriginSummary(youth),
+      academy: describeYouthAcademy(youth.academy),
+      junior: junior.status === 'ACTIVE'
+        ? `${junior.titles ?? 0} títulos · nível ${String(junior.peakTier ?? 'regional').replace(/_/g, ' ').toLowerCase()}`
+        : junior.status === 'GRADUATED'
+          ? `graduou-se do juvenil em ${junior.graduationYear ?? '—'}`
+          : null,
+      transition: youth.transition?.status === 'PRO_DEBUT'
+        ? `estreia profissional: ${String(youth.transition.route ?? 'graduação juvenil').replace(/_/g, ' ').toLowerCase()}`
+        : null,
+    };
+  }, [np]);
+  const momentEvents = useMemo(
+    () => buildPlayerMomentEvents(np, { sponsorEvents }),
+    [np, sponsorEvents]
+  );
+  const visibleMoments = useMemo(() => momentEvents.filter(event =>
+    momentFilter === 'ALL' || event.category === momentFilter
+  ), [momentEvents, momentFilter]);
+  const momentGroups = useMemo(() => {
+    const groups = new Map();
+    visibleMoments.forEach(event => {
+      if (!groups.has(event.year)) groups.set(event.year, []);
+      groups.get(event.year).push(event);
+    });
+    return [...groups.entries()];
+  }, [visibleMoments]);
 
   // ── Construir timeline enriquecida ──────────────────────────────
   const timeline = useMemo(() => {
@@ -619,22 +630,6 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
       }
     }
 
-    // Mapa de técnicos por temporada
-    const coachByYear = {};
-    const coachHistory = np.coachHistory ?? [];
-    for (const ch of coachHistory) {
-      if (ch.startSeason) {
-        coachByYear[ch.startSeason] = { ...ch, isNew: true };
-      }
-    }
-    // Técnico atual
-    if (np.coach?.coachId && year) {
-      const startSeason = np.coach.startSeason ?? year;
-      if (!coachByYear[startSeason]) {
-        coachByYear[startSeason] = { ...np.coach, isNew: true };
-      }
-    }
-
     // Detectar primeiro ano de declínio (flag para não repetir)
     let declineStarted = false;
 
@@ -645,7 +640,6 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
       return {
         ...entry,
         _rivalriesGraduated: rivalGradByYear[entry.year] ?? [],
-        _coachAtYear: coachByYear[entry.year] ?? null,
         _wasAlreadyDecline: entry.inDecline && !isDeclineYear,
         isDeclineYear,
       };
@@ -664,7 +658,7 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
   const seasonsPlayed = timeline.length;
 
   // Sem dados
-  if (!timeline.length) {
+  if (!timeline.length && !momentEvents.length && !youthJourney) {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -774,6 +768,71 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
         </div>
       </div>
 
+      {youthJourney && (
+        <div style={{ padding: '16px', borderBottom: `1px solid ${RG.border}`, background: 'linear-gradient(135deg, rgba(198,156,255,.09), transparent 68%)' }}>
+          <div style={{ fontFamily: RG.display, fontSize: 20, letterSpacing: 1.5, color: RG.white, textTransform: 'uppercase' }}>Antes do Tour</div>
+          <div style={{ fontFamily: RG.body, fontSize: 11, color: RG.textDim, lineHeight: 1.55, marginTop: 4 }}>A formação que explica o jogador antes da primeira temporada profissional.</div>
+          <div style={{ display: 'grid', gap: 7, marginTop: 12 }}>
+            {[
+              ['ORIGEM', youthJourney.origin, '#C69CFF'],
+              ['ACADEMIA', youthJourney.academy, '#76C7FF'],
+              ['JUVENIL', youthJourney.junior, '#78D6A6'],
+              ['TRANSIÇÃO', youthJourney.transition, '#F0C86A'],
+            ].filter(([, text]) => text).map(([label, text, color]) => (
+              <div key={label} style={{ borderLeft: `2px solid ${color}`, padding: '5px 9px', background: `${color}0A` }}>
+                <div style={{ fontFamily: RG.mono, fontSize: 6.5, letterSpacing: 1.5, color, textTransform: 'uppercase' }}>{label}</div>
+                <div style={{ fontFamily: RG.body, fontSize: 10.5, lineHeight: 1.45, color: RG.textDim, marginTop: 2 }}>{text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── LINHA DA VIDA: fatos que explicam quem este jogador se tornou ── */}
+      {momentEvents.length > 0 && (
+        <div style={{ padding: '18px 16px 8px', borderBottom: `1px solid ${RG.border}`, background: 'linear-gradient(180deg, rgba(255,255,255,.018), transparent)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontFamily: RG.display, fontSize: 21, letterSpacing: 1.4, color: RG.white, textTransform: 'uppercase' }}>Linha da vida</div>
+              <div style={{ fontFamily: RG.body, fontSize: 11, color: RG.textDim, marginTop: 2 }}>O que aconteceu dentro e fora da quadra.</div>
+            </div>
+            <span style={{ fontFamily: RG.mono, fontSize: 7, color: sc, letterSpacing: 1.5 }}>{momentEvents.length} MOMENTOS</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14 }}>
+            {[
+              ['ALL', 'Tudo'], ['FORMACAO', 'Formação'], ['QUADRA', 'Quadra'], ['PERSONAL', 'Vida'], ['SAUDE', 'Saúde'],
+              ['NEGOCIOS', 'Mídia'], ['EQUIPE', 'Equipe'],
+            ].map(([id, label]) => (
+              <button key={id} onClick={() => setMomentFilter(id)} style={{
+                border: `1px solid ${momentFilter === id ? sc : RG.borderMid}`,
+                color: momentFilter === id ? RG.white : RG.textDim,
+                background: momentFilter === id ? `${sc}22` : 'rgba(255,255,255,.015)',
+                padding: '4px 7px', cursor: 'pointer', fontFamily: RG.mono, fontSize: 6.5,
+                letterSpacing: 1, textTransform: 'uppercase',
+              }}>{label}</button>
+            ))}
+          </div>
+
+          <div style={{ position: 'relative', paddingLeft: 17 }}>
+            <div style={{ position: 'absolute', left: 3, top: 4, bottom: 16, width: 1, background: `linear-gradient(${sc}77, ${RG.border})` }} />
+            {momentGroups.map(([momentYear, events]) => (
+              <div key={momentYear} style={{ position: 'relative', paddingBottom: 14 }}>
+                <div style={{ position: 'absolute', left: -17, top: 3, width: 8, height: 8, borderRadius: '50%', background: RG.bgPanel, border: `2px solid ${events[0]?.color ?? sc}`, boxShadow: `0 0 12px ${events[0]?.color ?? sc}55` }} />
+                <div style={{ fontFamily: RG.mono, fontSize: 7, color: events[0]?.color ?? sc, letterSpacing: 1.8, marginBottom: 6 }}>{momentYear}</div>
+                {events.map((event, index) => (
+                  <div key={`${event.type}-${index}`} style={{ padding: '8px 10px', marginBottom: 5, borderLeft: `2px solid ${event.color}`, background: `${event.color}0B`, borderTop: `1px solid ${event.color}18`, borderRight: `1px solid ${event.color}18`, borderBottom: `1px solid ${event.color}18` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: RG.mono, fontSize: 6.5, color: event.color, letterSpacing: 1.2, textTransform: 'uppercase' }}><span>{event.icon}</span>{event.category}</div>
+                    <div style={{ fontFamily: RG.cond, fontWeight: 800, fontSize: 14, lineHeight: 1.1, color: RG.white, marginTop: 4, textTransform: 'uppercase' }}>{event.title}</div>
+                    {event.subtitle && <div style={{ fontFamily: RG.body, fontSize: 10.5, lineHeight: 1.45, color: RG.textDim, marginTop: 4 }}>{event.subtitle}</div>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── CABEÇALHO DA LISTA ── */}
       <div style={{
         display: 'grid',
@@ -805,7 +864,6 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
             ovrMax={ovrMax}
             allPlayers={allPlayers}
             rivalrySystem={rivalrySystem}
-            coachPool={coachPool}
             sponsorEvents={sponsorEvents}
           />
         ))}
@@ -823,7 +881,6 @@ export default function CarreiraTimeline({ np, sc, rivalrySystem, allPlayers, co
           { icon: '↘', label: 'Início do declínio', color: '#ef4444' },
           { icon: '↑', label: 'Avanço de nível', color: '#22c55e' },
           { icon: '⚔️', label: 'Rivalidade graduada', color: RG.gold },
-          { icon: '🎓', label: 'Novo técnico', color: '#4A90D9' },
           { icon: '🤝', label: 'Marco patrocínio', color: '#60C8FF' },
         ].map(({ icon, label, color }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: RG.mono, fontSize: 7, color: RG.textFaint }}>

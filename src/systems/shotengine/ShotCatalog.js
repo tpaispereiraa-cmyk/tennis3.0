@@ -8,7 +8,10 @@ export const SHOT_CATALOG = Object.freeze({
     primaryAttr: 'topspin',
     controlAttr: 'wingControl',
     powerAttr: 'wingPower',
-    intents: [ShotIntent.CONTROL, ShotIntent.BUILD, ShotIntent.PRESSURE, ShotIntent.DEFEND, ShotIntent.PASS],
+    // Topspin alto e profundo é a bola-padrão para sobreviver e reiniciar
+    // uma troca moderna. RESET não pode empurrar o motor automaticamente
+    // para slice; slice é uma ferramenta situacional, não a troca inteira.
+    intents: [ShotIntent.CONTROL, ShotIntent.BUILD, ShotIntent.RESET, ShotIntent.REDIRECT, ShotIntent.PRESSURE, ShotIntent.DEFEND, ShotIntent.PASS],
     baseRisk: 0.34,
     netClearance: 0.78,
     depthBias: 0.72,
@@ -24,7 +27,7 @@ export const SHOT_CATALOG = Object.freeze({
     primaryAttr: 'wingPower',
     controlAttr: 'wingControl',
     powerAttr: 'wingPower',
-    intents: [ShotIntent.PRESSURE, ShotIntent.FINISH, ShotIntent.BUILD, ShotIntent.PASS],
+    intents: [ShotIntent.REDIRECT, ShotIntent.PRESSURE, ShotIntent.FINISH, ShotIntent.BUILD, ShotIntent.PASS],
     baseRisk: 0.56,
     netClearance: 0.46,
     depthBias: 0.80,
@@ -40,11 +43,11 @@ export const SHOT_CATALOG = Object.freeze({
     primaryAttr: 'slice',
     controlAttr: 'wingControl',
     powerAttr: 'wingPower',
-    intents: [ShotIntent.RESET, ShotIntent.DEFEND, ShotIntent.APPROACH],
+    intents: [ShotIntent.RESET, ShotIntent.DEFEND, ShotIntent.REDIRECT, ShotIntent.APPROACH],
     baseRisk: 0.30,
     netClearance: 0.42,
     depthBias: 0.64,
-    paceBias: 0.42,
+    paceBias: 0.50,
     topspinBias: 0,
     backspinBias: 0.88,
     marginProfile: RiskProfile.SAFE,
@@ -56,7 +59,7 @@ export const SHOT_CATALOG = Object.freeze({
     primaryAttr: 'touch',
     controlAttr: 'wingControl',
     powerAttr: 'wingPower',
-    intents: [ShotIntent.DEFEND, ShotIntent.RESET, ShotIntent.PRESSURE],
+    intents: [ShotIntent.DEFEND, ShotIntent.RESET, ShotIntent.PRESSURE, ShotIntent.PASS],
     baseRisk: 0.50,
     netClearance: 2.85,
     depthBias: 0.86,
@@ -210,7 +213,13 @@ export function getFamiliesForPhase(phase) {
     return [ShotFamily.BLOCK_RETURN, ShotFamily.CHIP_RETURN, ShotFamily.TOPSPIN, ShotFamily.FLAT_DRIVE, ShotFamily.SLICE];
   }
   if (phase === 'NET') {
-    return [ShotFamily.VOLLEY, ShotFamily.SMASH, ShotFamily.DROP, ShotFamily.LOB];
+    return [ShotFamily.VOLLEY, ShotFamily.SMASH];
+  }
+  if (phase === 'PASSING') {
+    return [ShotFamily.TOPSPIN, ShotFamily.FLAT_DRIVE, ShotFamily.LOB, ShotFamily.SLICE];
+  }
+  if (phase === 'APPROACH') {
+    return [ShotFamily.SLICE, ShotFamily.FLAT_DRIVE, ShotFamily.TOPSPIN, ShotFamily.DROP];
   }
   return [ShotFamily.TOPSPIN, ShotFamily.FLAT_DRIVE, ShotFamily.SLICE, ShotFamily.LOB, ShotFamily.DROP];
 }

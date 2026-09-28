@@ -50,53 +50,31 @@ import { isJuniorEligible } from '../progression/OOutroMundo.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROBABILIDADE DE ENTRADA — 250 / 500
-// Substitui o sistema de slots obrigatórios/opcionais.
-// Base por ranking × multiplicador de preferência pessoal, com cap anual.
+// Intenção por faixa de ranking. Preferência pessoal ainda existe como bônus
+// de performance, mas não decide o fill dos torneios paralelos.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _base250(rank) {
-  return rank <= 5  ? 0.10 :
-         rank <= 8  ? 0.15 :
-         rank <= 20 ? 0.35 :
-         rank <= 40 ? 0.60 :
-         rank <= 70 ? 0.82 : 0.95;
+  return rank <= 10 ? 0.25 :
+         rank <= 30 ? 0.55 : 1.00;
 }
 
 function _base500(rank) {
-  return rank <= 8  ? 0.40 :
-         rank <= 20 ? 0.60 :
-         rank <= 40 ? 0.78 :
-         rank <= 70 ? 0.90 : 0.95;
-}
-
-function _prefMultiplier(player, tournament) {
-  const prefs = player.tournamentPreferences;
-  if (!prefs?.length) return 1.0;
-  const catIds   = CALENDAR.filter(t => t.category === tournament.category).map(t => t.id);
-  const catPrefs = prefs.filter(id => catIds.includes(id));
-  const pos      = catPrefs.indexOf(tournament.id);
-  const total    = catPrefs.length;
-  if (pos === -1 || total <= 1) return 1.0;
-  const rel = pos / (total - 1); // 0 = favorito, 1 = pior
-  if (pos <= 2)    return 2.8;
-  if (pos <= 5)    return 1.8;
-  if (rel <= 0.50) return 1.0;
-  if (rel <= 0.70) return 0.35;
-  return 0.08;
+  return rank <= 10 ? 0.50 :
+         rank <= 30 ? 0.75 : 1.00;
 }
 
 function _entryProb(player, tournament) {
   const rank = player.rankPosition ?? 999;
   const base = tournament.category === 'ATP_250' ? _base250(rank) : _base500(rank);
-  return Math.min(base * _prefMultiplier(player, tournament), 0.96);
+  return Math.min(base, 1.0);
 }
 
 function _entryWeight(player, tournament) {
   const rank = player.rankPosition ?? 999;
   const base = tournament.category === 'ATP_250' ? _base250(rank) : _base500(rank);
-  const pref = _prefMultiplier(player, tournament);
   const tiebreakNoise = ((_hashSeed(`${player?.id ?? 'P'}|${tournament?.id ?? 'T'}`) % 1000) / 1000) * 0.025;
-  return base * pref + tiebreakNoise;
+  return base + tiebreakNoise;
 }
 
 function _seasonCap(rank, category) {
@@ -136,88 +114,146 @@ const _50      = { draw:128, directSlots:128, qualDirectIn:0,  preQualIn:0,  qua
 const _25      = { draw:32,  directSlots:32,  qualDirectIn:0,  preQualIn:0,  qualifyOut:0,  bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isATP25:true, isBaseCircuit:true };
 const _PROS    = { draw:64, directSlots:64, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isProspects:true, isJuniors:true };
 const _PROS_FINALS = { draw:8, directSlots:8, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isProspects:true, isProspectsFinals:true, isJuniors:true };
+const _JR50     = { draw:32, directSlots:32, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isProspects:true, isJuniors:true, juniorTier:'REGIONAL' };
+const _JR100    = { draw:48, directSlots:48, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isProspects:true, isJuniors:true, juniorTier:'INTERNATIONAL' };
+const _JR_SLAM  = { draw:64, directSlots:64, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:true, isSlam:false, isMasters:false, isProspects:true, isJuniors:true, isJuniorSlam:true, juniorTier:'SLAM' };
 const _SLAM_CLASH = { draw:128, directSlots:128, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:1, isMandatory:false, isSlam:false, isMasters:false, isSlamClash:true, format:'SUPER_TB_10' };
 // Olimpíadas: 64 draw, entrada por nacionalidade, sem pontos ATP, MD3
 const _OLYMPIC = { draw:64, directSlots:64, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isOlympic:true };
 
 const RAW_BASE_CALENDAR = [
-  // ── HARD — Janeiro · Fevereiro · Março ────────────────────────────────────
-  { id:'JAN_SLAM_CLASH_HARD',  name:'Clash Slam Hard',           category:'SLAM_CLASH',   surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:0,  icon:'⚔️', location:'Aurelia Prime', ..._SLAM_CLASH },
-  { id:'JAN_250_AURELIA',      name:'Open de Aurelia',           category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:1,  icon:'🌅', location:'Aurelia',      ..._250_500 },
-  { id:'JAN_250_INDICO',       name:'Copa do Índico',             category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:2,  icon:'🌊', location:'Índico',       ..._250_500 },
-  { id:'JAN_100_CHALLENGER',   name:'Challenger de Janeiro',     category:'ATP_100',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:2,  icon:'🥈', location:'Nova Côrtes',  ..._100 },
-  { id:'JAN_PROSPECTS_OPEN',   name:'Junior Open de Meridian',   category:'ATP_PROSPECTS',surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:2,  icon:'🌱', location:'Meridian',     ..._PROS },
-  { id:'JAN_M1000_GOLD_COAST', name:'Gold Coast Masters',        category:'MASTERS_1000', surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:3,  icon:'🏆', location:'Gold Coast',   ..._M1000 },
-  { id:'FEV_500_CASABLANCA',   name:'Torneio de Casablanca',     category:'ATP_500',      surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:4,  icon:'🌴', location:'Casablanca',   ..._250_500 },
-  { id:'FEV_250_PACIFICO',     name:'Open do Pacífico Sul',      category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:5,  icon:'🐚', location:'Pacífico Sul', ..._250_500 },
-  { id:'FEV_100_CHALLENGER',   name:'Challenger de Inverno',     category:'ATP_100',      surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:5,  icon:'🥈', location:'Nova Côrtes',  ..._100 },
-  { id:'MAR_M1000_DESERT',     name:'Desert Masters',            category:'MASTERS_1000', surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:7,  icon:'🏜️', location:'Desert',       ..._M1000 },
-  { id:'MAR_M1000_BAY',        name:'Bay Masters',               category:'MASTERS_1000', surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:8,  icon:'🌁', location:'Bay City',     ..._M1000 },
-  { id:'MAR_250_VALENCIA',     name:'Open de Valência',          category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:9,  icon:'🍊', location:'Valência',     ..._250_500 },
-  { id:'MAR_100_PRIMAVERA',    name:'Challenger de Primavera',   category:'ATP_100',      surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:10, icon:'🥈', location:'Nova Côrtes',  ..._100 },
-  { id:'MAR_PROSPECTS_SUN',    name:'Junior Sunshine Cup',       category:'ATP_PROSPECTS',surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:10, icon:'🌱', location:'Sun Bay',      ..._PROS },
-  { id:'JAN_GS_MERIDIAN',      name:'Open de Meridian',          category:'GRAND_SLAM',   surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:11, icon:'⭐', location:'Meridian',     ..._GS },
 
-  // ── CLAY — Abril · Maio · Junho ───────────────────────────────────────────
-  { id:'ABR_SLAM_CLASH_CLAY',  name:'Clash Slam Clay',           category:'SLAM_CLASH',   surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:12, icon:'⚔️', location:'Monte Ferro',  ..._SLAM_CLASH },
-  { id:'ABR_500_PROVENCA',     name:'Open de Provença',          category:'ATP_500',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:12, icon:'🌺', location:'Provença',     ..._250_500 },
-  { id:'ABR_100_TERRA',        name:'Copa de Terra Vermelha',    category:'ATP_100',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:13, icon:'🥈', location:'Florença',     ..._100 },
-  { id:'ABR_PROSPECTS_CLAY',   name:'Junior Clay Crown',         category:'ATP_PROSPECTS',surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:13, icon:'🌱', location:'Monte Ferro',  ..._PROS },
-  { id:'ABR_250_ADRIATICA',    name:'Copa Adriática',            category:'ATP_250',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:13, icon:'⚓', location:'Adriática',    ..._250_500 },
-  { id:'MAI_M1000_MONTE',      name:'Monte Rosso Masters',       category:'MASTERS_1000', surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Maio',     monthNum:5,  weekIndex:15, icon:'🔴', location:'Monte Rosso',  ..._M1000 },
-  { id:'MAI_100_SAIBRO',       name:'Copa do Saibro',            category:'ATP_100',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Maio',     monthNum:5,  weekIndex:16, icon:'🥈', location:'Valência',     ..._100 },
-  { id:'MAI_500_CATALUNHA',    name:'ATP 500 da Catalunha',      category:'ATP_500',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Maio',     monthNum:5,  weekIndex:16, icon:'🏴', location:'Catalunha',    ..._250_500 },
-  { id:'MAI_M1000_ETERNAL',    name:'Eternal City Masters',      category:'MASTERS_1000', surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Maio',     monthNum:5,  weekIndex:17, icon:'🏟️', location:'Eternal City', ..._M1000 },
-  { id:'JUN_500_QUEENS',       name:"Queen's Cup",               category:'ATP_500',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Junho',    monthNum:6,  weekIndex:18, icon:'👑', location:"Queen's",      ..._250_500 },
-  { id:'JUN_100_CHALLENGER',   name:'Challenger de Junho',       category:'ATP_100',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Junho',    monthNum:6,  weekIndex:19, icon:'🥈', location:'Brighton',     ..._100 },
-  { id:'JUN_PROSPECTS_PARIS',  name:'Junior Roland Path',        category:'ATP_PROSPECTS',surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Junho',    monthNum:6,  weekIndex:19, icon:'🌱', location:'Occitane',     ..._PROS },
-  { id:'JUN_250_HALLE',        name:'Open de Halle',             category:'ATP_250',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Junho',    monthNum:6,  weekIndex:19, icon:'🌿', location:'Halle',        ..._250_500 },
-  { id:'MAI_GS_ROLAND',        name:"Roland d'Occitane",         category:'GRAND_SLAM',   surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Junho',    monthNum:6,  weekIndex:20, icon:'⭐', location:'Occitane',     ..._GS },
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B1 — DURA  (W1–W9)
+  // Ciclo: Apex → 250 → 500 → M1000 → 250 → 250 → 500 → M1000 → GS
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B1_APEX_DURA',         name:'Apex Dura',              category:'SLAM_CLASH',   surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:1,  location:'Aurelia Prime',  ..._SLAM_CLASH },
+  { id:'B1_250_PACIFIC',       name:'Pacific Coast Classic',  category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:2,  location:'Pacific Coast',  ..._250_500 },
+  { id:'B1_500_CASABLANCA',    name:'Casablanca Open',        category:'ATP_500',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:3,  location:'Casablanca',     ..._250_500 },
+  { id:'B1_M1000_BAY',         name:'Bay Masters',            category:'MASTERS_1000', surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:4,  location:'Bay City',       ..._M1000 },
+  { id:'B1_250_GOLDEN',        name:'Golden Gate Classic',    category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:2,  weekIndex:5,  location:'Golden Gate',    ..._250_500 },
+  { id:'B1_250_HARBOR',        name:'Harbor Cup',             category:'ATP_250',      surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:6,  location:'Harbor Bay',     ..._250_500 },
+  { id:'B1_500_PACIFIC2',      name:'Pacific 500',            category:'ATP_500',      surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:7,  location:'Pacific',        ..._250_500 },
+  { id:'B1_M1000_RIVIERA',     name:'Riviera Masters',        category:'MASTERS_1000', surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:8,  location:'Riviera',        ..._M1000 },
+  { id:'B1_GS_MERIDIAN',       name:'Meridian Open',          category:'GRAND_SLAM',   surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:9,  location:'Meridian',       ..._GS },
+  // Challengers B1
+  { id:'B1_CH100_AURELIA',     name:'Challenger Aurelia',     category:'ATP_100',      surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:4,  location:'Aurelia',        ..._100 },
+  { id:'B1_CH75_PACIFIC',      name:'Pacific Pro 75',         category:'ATP_75',       surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:3,  location:'Sun Coast',      ..._75 },
+  { id:'B1_CH50_COAST',        name:'Coast Open 50',          category:'ATP_50',       surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:2,  location:'Coastal',        ..._50 },
+  { id:'B1_CH25_HARD',         name:'Hard Court 25',          category:'ATP_25',       surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro',  monthNum:1,  weekIndex:5,  location:'Sun Bay',        ..._25 },
+  { id:'B1_JR50_COAST',        name:'Junior Coast 50',        category:'JUNIOR_50',    surface:'HARD',   courtKey:'US_OPEN',       month:'Janeiro', monthNum:1, weekIndex:3, location:'Sun Coast', ..._JR50 },
+  { id:'B1_JR100_BAY',         name:'Junior Bay 100',         category:'JUNIOR_100',   surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro', monthNum:2, weekIndex:7, location:'Bay City', ..._JR100 },
+  { id:'B1_JR_SLAM_MERIDIAN',  name:'Meridian Junior Slam',    category:'JUNIOR_SLAM',  surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:9,  location:'Meridian',       ..._JR_SLAM },
 
-  // ── GRASS — Julho · Agosto · Setembro ─────────────────────────────────────
-  { id:'JUL_SLAM_CLASH_GRASS', name:'Clash Slam Grass',          category:'SLAM_CLASH',   surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:21, icon:'⚔️', location:'Albion Park',  ..._SLAM_CLASH },
-  { id:'JUL_500_HAMBURGO',     name:'Open de Hamburgo',          category:'ATP_500',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:21, icon:'⚓', location:'Hamburgo',     ..._250_500 },
-  { id:'JUL_100_NORDICO',      name:'Challenger Nórdico',        category:'ATP_100',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:22, icon:'🥈', location:'Estocolmo',    ..._100 },
-  { id:'JUL_PROSPECTS_GRASS',  name:'Junior Albion Cup',         category:'ATP_PROSPECTS',surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:22, icon:'🌱', location:'Albion Park',  ..._PROS },
-  { id:'JUL_250_MEDITERRANEO', name:'Copa do Mediterrâneo',      category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:22, icon:'🚢', location:'Mediterrâneo', ..._250_500 },
-  { id:'JUL_250_LAGOS',        name:'Open de Lagos',             category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:23, icon:'🌍', location:'Lagos',        ..._250_500 },
-  // ── OLIMPÍADAS (apenas em anos olímpicos: year % 4 === 0) ──────────────────
-  { id:'JUL_OLYMPICS',         name:'Jogos Olímpicos — Tênis',   category:'OLYMPICS',     surface:'HARD',   courtKey:'US_OPEN',       month:'Julho',    monthNum:7,  weekIndex:24, icon:'🥇', location:'Sede Olímpica', ..._OLYMPIC },
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B2 — TERRA  (W10–W18)
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B2_APEX_TERRA',        name:'Apex Terra',             category:'SLAM_CLASH',   surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:10,  location:'Monte Ferro',    ..._SLAM_CLASH },
+  { id:'B2_250_VALENCIA',      name:'Valencia Classic',       category:'ATP_250',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:11, location:'Valencia',       ..._250_500 },
+  { id:'B2_500_PROVENCA',      name:'Provença Open',          category:'ATP_500',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:12, location:'Provença',       ..._250_500 },
+  { id:'B2_M1000_MONTE',       name:'Monte Rosso Masters',    category:'MASTERS_1000', surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:13, location:'Monte Rosso',    ..._M1000 },
+  { id:'B2_250_COSTA',         name:'Costa Brava Open',       category:'ATP_250',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:14, location:'Costa Brava',    ..._250_500 },
+  { id:'B2_250_VENETIAN',      name:'Venetian Cup',           category:'ATP_250',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:15, location:'Venetia',        ..._250_500 },
+  { id:'B2_500_CATALUNHA',     name:'Catalunha 500',          category:'ATP_500',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:16, location:'Catalunha',      ..._250_500 },
+  { id:'B2_M1000_ETERNAL',     name:'Eternal City Masters',   category:'MASTERS_1000', surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:17, location:'Eternal City',   ..._M1000 },
+  { id:'B2_GS_TERRA',          name:'Terra Magna',            category:'GRAND_SLAM',   surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:18, location:'Occitane',       ..._GS },
+  // Challengers B2
+  { id:'B2_CH100_CLAY',        name:'Challenger de Saibro',   category:'ATP_100',      surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:13, location:'Florença',       ..._100 },
+  { id:'B2_CH75_TERRA',        name:'Terra Pro 75',           category:'ATP_75',       surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:12, location:'Forja',          ..._75 },
+  { id:'B2_CH50_TERRA',        name:'Open do Saibro 50',      category:'ATP_50',       surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março',    monthNum:3,  weekIndex:11, location:'Toscana',        ..._50 },
+  { id:'B2_CH25_CLAY',         name:'Saibro 25',              category:'ATP_25',       surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:14, location:'Adriática',      ..._25 },
+  { id:'B2_JR50_FORJA',        name:'Junior Forja 50',        category:'JUNIOR_50',    surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Março', monthNum:3, weekIndex:12, location:'Forja', ..._JR50 },
+  { id:'B2_JR100_TOSCANA',     name:'Junior Toscana 100',     category:'JUNIOR_100',   surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril', monthNum:4, weekIndex:16, location:'Toscana', ..._JR100 },
+  { id:'B2_JR_SLAM_TERRA',     name:'Terra Magna Junior Slam',category:'JUNIOR_SLAM',  surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:18, location:'Occitane',       ..._JR_SLAM },
 
-  { id:'AGO_M1000_LAKESHORE',  name:'Lakeshore Masters',         category:'MASTERS_1000', surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Agosto',   monthNum:8,  weekIndex:25, icon:'🏙️', location:'Lakeshore',    ..._M1000 },
-  { id:'AGO_100_VERAO',        name:'Challenger de Verão',       category:'ATP_100',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Agosto',   monthNum:8,  weekIndex:26, icon:'🥈', location:'Atlantic',     ..._100 },
-  { id:'AGO_M1000_ATLANTIC',   name:'Atlantic Masters',          category:'MASTERS_1000', surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Agosto',   monthNum:8,  weekIndex:26, icon:'🌊', location:'Atlantic',     ..._M1000 },
-  { id:'AGO_500_COSTA_LESTE',  name:'Open da Costa Leste',       category:'ATP_500',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Agosto',   monthNum:8,  weekIndex:27, icon:'🗽', location:'Costa Leste',  ..._250_500 },
-  { id:'SET_500_TOQUIO',       name:'Open de Tóquio',            category:'ATP_500',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:28, icon:'🗼', location:'Tóquio',       ..._250_500 },
-  { id:'SET_100_OUTONO',       name:'Open de Outono',            category:'ATP_100',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:29, icon:'🥈', location:'Porto mbar',  ..._100 },
-  { id:'SET_PROSPECTS_NA',     name:'Junior North America',      category:'ATP_PROSPECTS',surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:29, icon:'🌱', location:'Lakeshore',    ..._PROS },
-  { id:'SET_250_AMERICAS',     name:'Copa das Américas',         category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:29, icon:'🌎', location:'Américas',     ..._250_500 },
-  { id:'JUN_GS_ALBION',        name:'Championships of Albion',   category:'GRAND_SLAM',   surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:30, icon:'⭐', location:'Albion',       ..._GS },
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B3 — PRADO  (W19–W27)
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B3_APEX_PRADO',        name:'Apex Prado',             category:'SLAM_CLASH',   surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:19, location:'Albion Park',    ..._SLAM_CLASH },
+  { id:'B3_250_CELTIC',        name:'Celtic Open',            category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:20, location:'Edinburgh',      ..._250_500 },
+  { id:'B3_500_QUEENS',        name:"Queen's Cup",            category:'ATP_500',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:21, location:"Queen's",        ..._250_500 },
+  { id:'B3_M1000_ATLANTIC',    name:'Atlantic Masters',       category:'MASTERS_1000', surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:22, location:'Atlantic City',  ..._M1000 },
+  { id:'B3_250_WINDSOR',       name:'Windsor Open',           category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:23, location:'Windsor',        ..._250_500 },
+  { id:'B3_250_THAMES',        name:'Thames Cup',             category:'ATP_250',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:24, location:'Thames',         ..._250_500 },
+  { id:'B3_500_EMERALD',       name:'Emerald 500',            category:'ATP_500',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:25, location:'Emerald Isle',   ..._250_500 },
+  { id:'B3_M1000_ISLE',        name:'Isle Masters',           category:'MASTERS_1000', surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:26, location:'Isle',           ..._M1000 },
+  { id:'B3_GS_HIGHLAND',       name:'The Highland',           category:'GRAND_SLAM',   surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:27, location:'Albion',         ..._GS },
+  // Challengers B3
+  { id:'B3_CH100_GRASS',       name:'Challenger de Grama',    category:'ATP_100',      surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:22, location:'Nottingham',     ..._100 },
+  { id:'B3_CH75_GRASS',        name:'Grass Pro 75',           category:'ATP_75',       surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:21, location:'Devonshire',     ..._75 },
+  { id:'B3_CH50_MEADOW',       name:'Meadow 50',              category:'ATP_50',       surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Maio',     monthNum:5,  weekIndex:20, location:'Meadow',         ..._50 },
+  { id:'B3_CH25_HIGHLAND',     name:'Highland 25',            category:'ATP_25',       surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:23, location:'Frontier',       ..._25 },
+  { id:'B3_JR50_DEVON',        name:'Junior Devon 50',        category:'JUNIOR_50',    surface:'GRASS',  courtKey:'WIMBLEDON', month:'Maio', monthNum:5, weekIndex:21, location:'Devonshire', ..._JR50 },
+  { id:'B3_JR100_WINDSOR',     name:'Junior Windsor 100',     category:'JUNIOR_100',   surface:'GRASS',  courtKey:'WIMBLEDON', month:'Junho', monthNum:6, weekIndex:25, location:'Windsor', ..._JR100 },
+  { id:'B3_JR_SLAM_HIGHLAND',  name:'Highland Junior Slam',   category:'JUNIOR_SLAM',  surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Junho',    monthNum:6,  weekIndex:27, location:'Albion',         ..._JR_SLAM },
 
-  // ── INDOOR — Outubro · Novembro · Dezembro ────────────────────────────────
-  { id:'OUT_SLAM_CLASH_INDOOR',name:'Clash Slam Indoor',         category:'SLAM_CLASH',   surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:31, icon:'⚔️', location:'Empire Dome',  ..._SLAM_CLASH },
-  { id:'OUT_M1000_DRAGON',     name:'Dragon Cup Masters',        category:'MASTERS_1000', surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:31, icon:'🐉', location:'Dragon City',  ..._M1000 },
-  { id:'OUT_500_SEUL',         name:'Open de Seul',              category:'ATP_500',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:32, icon:'🌸', location:'Seul',         ..._250_500 },
-  { id:'OUT_100_INDOOR',       name:'Challenger Indoor',         category:'ATP_100',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:33, icon:'🥈', location:'Dragon City',  ..._100 },
-  { id:'OUT_PROSPECTS_INDOOR', name:'Junior Indoor Lab',         category:'ATP_PROSPECTS',surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:33, icon:'🌱', location:'Empire Dome',  ..._PROS },
-  { id:'OUT_250_XANGAI',       name:'Open de Xangai',            category:'ATP_250',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:33, icon:'🏮', location:'Xangai',       ..._250_500 },
-  { id:'NOV_250_VIENA',        name:'Open de Viena',             category:'ATP_250',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:35, icon:'🎼', location:'Viena',        ..._250_500 },
-  { id:'NOV_100_ENCERRAMENTO', name:'Challenger de Encerramento',category:'ATP_100',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:36, icon:'🥈', location:'Berlim',       ..._100 },
-  { id:'NOV_PROSPECTS_FINALE', name:'Junior Closing Cup',        category:'ATP_PROSPECTS',surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:36, icon:'🌱', location:'Capital',      ..._PROS },
-  { id:'NOV_500_PARIS',        name:'Open de Paris',             category:'ATP_500',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:36, icon:'🗼', location:'Paris',        ..._250_500 },
-  { id:'NOV_M1000_CAPITAL',    name:'Capital Indoor Masters',    category:'MASTERS_1000', surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:37, icon:'🏟️', location:'Capital',      ..._M1000 },
-  { id:'AGO_GS_EMPIRE',        name:'Empire Open',               category:'GRAND_SLAM',   surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:38, icon:'⭐', location:'Empire City',  ..._GS },
-  { id:'DEZ_100_DEZEMBRO',     name:'Challenger de Dezembro',    category:'ATP_100',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:39, icon:'🥈', location:'Grand Arena',  ..._100 },
-  { id:'DEZ_PROSPECTS_FINALS', name:'Junior Finals',             category:'PROSPECTS_FINALS',surface:'INDOOR', courtKey:'O2_ARENA',    month:'Dezembro', monthNum:12, weekIndex:39, icon:'🌟', location:'Grand Arena',  ..._PROS_FINALS },
-  { id:'DEZ_ATP_FINALS',       name:'ATP Finals',                category:'FINALS',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:40, icon:'🏆', location:'Grand Arena',  draw:8, directSlots:8, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isFinals:true },
-  { id:'FEV_75_SATELLITE',     name:'Circuit 75 Aurora',         category:'ATP_75',       surface:'HARD',   courtKey:'US_OPEN',       month:'Fevereiro',monthNum:2,  weekIndex:6,  icon:'🥉', location:'Aurora',       ..._75 },
-  { id:'MAR_50_BREAKTHROUGH',  name:'Breakthrough 50',           category:'ATP_50',       surface:'HARD',   courtKey:'US_OPEN',       month:'Março',    monthNum:3,  weekIndex:10, icon:'🥉', location:'Sun Bay',      ..._50 },
-  { id:'ABR_75_FORGE',         name:'Forge 75',                  category:'ATP_75',       surface:'CLAY',   courtKey:'ROLAND_GARROS', month:'Abril',    monthNum:4,  weekIndex:14, icon:'🥉', location:'Forja',        ..._75 },
-  { id:'JUL_50_MEADOW',        name:'Meadow 50',                 category:'ATP_50',       surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Julho',    monthNum:7,  weekIndex:23, icon:'🥉', location:'Meadow',       ..._50 },
-  { id:'SET_25_FRONTIER',      name:'Frontier 25',               category:'ATP_25',       surface:'GRASS',  courtKey:'WIMBLEDON',     month:'Setembro', monthNum:9,  weekIndex:29, icon:'🥉', location:'Frontier',     ..._25 },
-  { id:'OUT_75_FACTORY',       name:'Factory 75',                category:'ATP_75',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Outubro',  monthNum:10, weekIndex:34, icon:'🥉', location:'Factory',      ..._75 },
-  { id:'DEZ_25_LAST_MILE',     name:'Last Mile 25',              category:'ATP_25',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:39, icon:'🥉', location:'Last Mile',    ..._25 },
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B4 — ASFALTO / STREET  (W28–W36)
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B4_APEX_ASFALTO',      name:'Apex Asfalto',           category:'SLAM_CLASH',   surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:28, location:'Metro Arena',    ..._SLAM_CLASH },
+  { id:'B4_250_NEON',          name:'Neon City Open',         category:'ATP_250',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:29, location:'Neon City',      ..._250_500 },
+  { id:'B4_500_HARBOR',        name:'Harbor Flash',           category:'ATP_500',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:30, location:'Harbor',         ..._250_500 },
+  { id:'B4_M1000_HARBOR',      name:'Harbor Night Masters',   category:'MASTERS_1000', surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:31, location:'Harbor City',    ..._M1000 },
+  { id:'B4_250_METRO',         name:'Metro Open',             category:'ATP_250',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:32, location:'Metro',          ..._250_500 },
+  { id:'B4_250_CITYLIGHTS',    name:'City Lights Cup',        category:'ATP_250',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:33, location:'City Lights',    ..._250_500 },
+  { id:'B4_500_URBAN',         name:'Urban Rush',             category:'ATP_500',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:34, location:'Urban Arena',    ..._250_500 },
+  { id:'B4_M1000_DESERT',      name:'Desert Heat Masters',    category:'MASTERS_1000', surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:35, location:'Desert City',    ..._M1000 },
+  { id:'B4_GS_URBAN',          name:'Urban Classic',          category:'GRAND_SLAM',   surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:36, location:'Urban City',     ..._GS },
+  // Challengers B4 + Olimpíadas (anos olímpicos)
+  { id:'B4_OLYMPICS',          name:'Jogos Olímpicos — Tênis',category:'OLYMPICS',     surface:'HARD',   courtKey:'US_OPEN',       month:'Julho',    monthNum:7,  weekIndex:31, location:'Sede Olímpica',  ..._OLYMPIC },
+  { id:'B4_CH100_STREET',      name:'Challenger Urbano',      category:'ATP_100',      surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:31, location:'Las Vegas',      ..._100 },
+  { id:'B4_CH75_STREET',       name:'Street Pro 75',          category:'ATP_75',       surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:30, location:'Miami Night',    ..._75 },
+  { id:'B4_CH50_ASPHALT',      name:'Asphalt 50',             category:'ATP_50',       surface:'STREET', courtKey:'URBAN_COURT',   month:'Julho',    monthNum:7,  weekIndex:29, location:'Downtown',       ..._50 },
+  { id:'B4_CH25_STREET',       name:'Street 25',              category:'ATP_25',       surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:32, location:'Street Arena',   ..._25 },
+  { id:'B4_JR50_DOWNTOWN',     name:'Junior Downtown 50',     category:'JUNIOR_50',    surface:'STREET', courtKey:'URBAN_COURT', month:'Julho', monthNum:7, weekIndex:30, location:'Downtown', ..._JR50 },
+  { id:'B4_JR100_METRO',       name:'Junior Metro 100',       category:'JUNIOR_100',   surface:'STREET', courtKey:'URBAN_COURT', month:'Agosto', monthNum:8, weekIndex:34, location:'Metro', ..._JR100 },
+  { id:'B4_JR_SLAM_URBAN',     name:'Urban Junior Slam',      category:'JUNIOR_SLAM',  surface:'STREET', courtKey:'URBAN_COURT',   month:'Agosto',   monthNum:8,  weekIndex:36, location:'Urban City',     ..._JR_SLAM },
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B5 — VELUDO / CARPET  (W37–W45)
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B5_APEX_VELUDO',       name:'Apex Veludo',            category:'SLAM_CLASH',   surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:37, location:'Velvet Palace',  ..._SLAM_CLASH },
+  { id:'B5_250_SILK',          name:'Silk Road Open',         category:'ATP_250',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:38, location:'Silk Road',      ..._250_500 },
+  { id:'B5_500_SILKCUP',       name:'Silk Cup',               category:'ATP_500',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:39, location:'Silk City',      ..._250_500 },
+  { id:'B5_M1000_SILKROAD',    name:'Silk Road Masters',      category:'MASTERS_1000', surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:40, location:'Silk Road',      ..._M1000 },
+  { id:'B5_250_ROYAL',         name:'Royal Open',             category:'ATP_250',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:41, location:'Royal Palace',   ..._250_500 },
+  { id:'B5_250_BAROQUE',       name:'Baroque Cup',            category:'ATP_250',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:42, location:'Baroque Hall',   ..._250_500 },
+  { id:'B5_500_VELVET',        name:'Velvet 500',             category:'ATP_500',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:43, location:'Velvet Arena',   ..._250_500 },
+  { id:'B5_M1000_ROYAL',       name:'Royal Velvet Masters',   category:'MASTERS_1000', surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:44, location:'Royal City',     ..._M1000 },
+  { id:'B5_GS_VELVET',         name:'Velvet Grand',           category:'GRAND_SLAM',   surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:45, location:'Velvet Palace',  ..._GS },
+  // Challengers B5
+  { id:'B5_CH100_CARPET',      name:'Challenger de Veludo',   category:'ATP_100',      surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:40, location:'Brussels',       ..._100 },
+  { id:'B5_CH75_CARPET',       name:'Carpet Pro 75',          category:'ATP_75',       surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:39, location:'Vienna Classic',  ..._75 },
+  { id:'B5_CH50_VELVET',       name:'Velvet 50',              category:'ATP_50',       surface:'CARPET', courtKey:'CARPET_COURT',  month:'Setembro', monthNum:9,  weekIndex:38, location:'Heritage Hall',  ..._50 },
+  { id:'B5_CH25_CARPET',       name:'Carpet 25',              category:'ATP_25',       surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:41, location:'Manor Cup',      ..._25 },
+  { id:'B5_JR50_SILK',         name:'Junior Silk 50',         category:'JUNIOR_50',    surface:'CARPET', courtKey:'CARPET_COURT', month:'Setembro', monthNum:9, weekIndex:39, location:'Silk City', ..._JR50 },
+  { id:'B5_JR100_ROYAL',       name:'Junior Royal 100',       category:'JUNIOR_100',   surface:'CARPET', courtKey:'CARPET_COURT', month:'Outubro', monthNum:10, weekIndex:43, location:'Royal Palace', ..._JR100 },
+  { id:'B5_JR_SLAM_VELVET',    name:'Velvet Junior Slam',     category:'JUNIOR_SLAM',  surface:'CARPET', courtKey:'CARPET_COURT',  month:'Outubro',  monthNum:10, weekIndex:45, location:'Velvet Palace',  ..._JR_SLAM },
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // B6 — CRISTAL / INDOOR  (W46–W54)
+  // ══════════════════════════════════════════════════════════════════════════════
+  { id:'B6_APEX_CRISTAL',      name:'Apex Cristal',           category:'SLAM_CLASH',   surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:46, location:'Crystal Arena',  ..._SLAM_CLASH },
+  { id:'B6_250_AURORA',        name:'Aurora Open',            category:'ATP_250',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:47, location:'Aurora',         ..._250_500 },
+  { id:'B6_500_CRYSTAL',       name:'Crystal 500',            category:'ATP_500',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:48, location:'Crystal City',   ..._250_500 },
+  { id:'B6_M1000_CAPITAL',     name:'Capital Masters',        category:'MASTERS_1000', surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:49, location:'Capital',        ..._M1000 },
+  { id:'B6_250_FROST',         name:'Frost Open',             category:'ATP_250',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:50, location:'Frost City',     ..._250_500 },
+  { id:'B6_250_GLACIER',       name:'Glacier Cup',            category:'ATP_250',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:51, location:'Glacier',        ..._250_500 },
+  { id:'B6_500_NORDIC',        name:'Nordic 500',             category:'ATP_500',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:52, location:'Nordic Arena',   ..._250_500 },
+  { id:'B6_M1000_EMPIRE',      name:'Empire Masters',         category:'MASTERS_1000', surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:53, location:'Empire City',    ..._M1000 },
+  { id:'B6_GS_CRYSTAL',        name:'Crystal Empire',         category:'GRAND_SLAM',   surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:54, location:'Empire City',    ..._GS },
+  // Challengers B6 + Finals
+  { id:'B6_CH100_INDOOR',      name:'Challenger Indoor',      category:'ATP_100',      surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:49, location:'Stockholm',      ..._100 },
+  { id:'B6_CH75_INDOOR',       name:'Indoor Pro 75',          category:'ATP_75',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:48, location:'Helsinki Pro',   ..._75 },
+  { id:'B6_CH50_WINTER',       name:'Winter 50',              category:'ATP_50',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:47, location:'Nordic Hall',    ..._50 },
+  { id:'B6_CH25_CRYSTAL',      name:'Crystal 25',             category:'ATP_25',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Novembro', monthNum:11, weekIndex:50, location:'Winter Arena',   ..._25 },
+  { id:'B6_JR50_NORDIC',       name:'Junior Nordic 50',       category:'JUNIOR_50',    surface:'INDOOR', courtKey:'O2_ARENA', month:'Novembro', monthNum:11, weekIndex:48, location:'Nordic Hall', ..._JR50 },
+  { id:'B6_JR100_AURORA',      name:'Junior Aurora 100',      category:'JUNIOR_100',   surface:'INDOOR', courtKey:'O2_ARENA', month:'Dezembro', monthNum:12, weekIndex:52, location:'Aurora', ..._JR100 },
+  { id:'B6_JR_SLAM_CRYSTAL',   name:'Crystal Junior Slam',    category:'JUNIOR_SLAM',  surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:54, location:'Empire City',    ..._JR_SLAM },
+  { id:'B6_JR_FINALS',         name:'Junior Finals',          category:'PROSPECTS_FINALS',surface:'INDOOR', courtKey:'O2_ARENA',  month:'Dezembro', monthNum:12, weekIndex:53, location:'Grand Arena',    ..._PROS_FINALS },
+  { id:'B6_ATP_FINALS',        name:'ATP Finals',             category:'FINALS',       surface:'INDOOR', courtKey:'O2_ARENA',      month:'Dezembro', monthNum:12, weekIndex:54, location:'Grand Arena',    draw:8, directSlots:8, qualDirectIn:0, preQualIn:0, qualifyOut:0, bestOf:3, isMandatory:false, isSlam:false, isMasters:false, isFinals:true },
 ];
+
 
 const BASE_CALENDAR = RAW_BASE_CALENDAR.map((t) => (
   t.category === 'ATP_250' || t.category === 'ATP_500'
@@ -231,27 +267,37 @@ const BASE_CALENDAR = RAW_BASE_CALENDAR.map((t) => (
 ));
 
 const ATP_PARALLEL_VARIANTS = {
-  JAN_250_AURELIA:      { id: 'JAN_250_SOLARIA',       name: 'Open de Solaria',              location: 'Solaria',        icon: '☀️' },
-  JAN_250_INDICO:       { id: 'JAN_250_CORAIS',        name: 'Troféu dos Corais',            location: 'Costa Coral',    icon: '🪸' },
-  FEV_500_CASABLANCA:   { id: 'FEV_500_MARRAKECH',     name: 'Grande Prêmio de Marrakech',   location: 'Marrakech',      icon: '🌺' },
-  FEV_250_PACIFICO:     { id: 'FEV_250_AZURA',         name: 'Open de Azura',                location: 'Azura',          icon: '🐬' },
-  MAR_250_VALENCIA:     { id: 'MAR_250_SEVILHA',       name: 'Copa de Sevilha',              location: 'Sevilha',        icon: '🍋' },
-  ABR_500_PROVENCA:     { id: 'ABR_500_MONACO',        name: 'Masters da Riviera',           location: 'Riviera',        icon: '🛥️' },
-  ABR_250_ADRIATICA:    { id: 'ABR_250_DALMACIA',      name: 'Open da Dalmácia',             location: 'Dalmácia',       icon: '🌊' },
-  MAI_500_CATALUNHA:    { id: 'MAI_500_ANDALUZIA',     name: 'ATP 500 da Andaluzia',         location: 'Andaluzia',      icon: '🟥' },
-  JUN_500_QUEENS:       { id: 'JUN_500_OXFORD',        name: 'Oxford Championships',         location: 'Oxford',         icon: '🎩' },
-  JUN_250_HALLE:        { id: 'JUN_250_STUTTGART',     name: 'Open de Stuttgart',            location: 'Stuttgart',      icon: '🌱' },
-  JUL_500_HAMBURGO:     { id: 'JUL_500_BREMEN',        name: 'Troféu de Bremen',             location: 'Bremen',         icon: '⛵' },
-  JUL_250_MEDITERRANEO: { id: 'JUL_250_SARDENHA',      name: 'Copa da Sardenha',             location: 'Sardenha',       icon: '🏝️' },
-  JUL_250_LAGOS:        { id: 'JUL_250_ACCRA',         name: 'Open de Accra',                location: 'Accra',          icon: '🌍' },
-  AGO_500_COSTA_LESTE:  { id: 'AGO_500_SUNSET',        name: 'Sunset Coast Open',            location: 'Sunset Coast',   icon: '🌇' },
-  SET_500_TOQUIO:       { id: 'SET_500_OSAKA',         name: 'Open de Osaka',                location: 'Osaka',          icon: '🎌' },
-  SET_250_AMERICAS:     { id: 'SET_250_CARIBE',        name: 'Taça do Caribe',               location: 'Caribe',         icon: '🌴' },
-  OUT_500_SEUL:         { id: 'OUT_500_BUSAN',         name: 'Busan Indoor Open',            location: 'Busan',          icon: '🌃' },
-  OUT_250_XANGAI:       { id: 'OUT_250_HONGKONG',      name: 'Hong Kong Indoor Cup',         location: 'Hong Kong',      icon: '🏙️' },
-  NOV_250_VIENA:        { id: 'NOV_250_PRAGA',         name: 'Open de Praga',                location: 'Praga',          icon: '🏛️' },
-  NOV_500_PARIS:        { id: 'NOV_500_LYON',          name: 'Lyon Indoor Championships',    location: 'Lyon',           icon: '🍷' },
-};
+  B1_250_PACIFIC:      { id:'B1_250_DESERT_ROSE',    name:'Desert Rose Open',         location:'Desert Rose',     icon:'🌹' },
+  B1_250_GOLDEN:       { id:'B1_250_SUNRISE',        name:'Sunrise Open',             location:'Sunrise Bay',     icon:'🌅' },
+  B1_250_HARBOR:       { id:'B1_250_BAY_CITY',       name:'Bay City Classic',         location:'Bay City',        icon:'⚓' },
+  B1_500_CASABLANCA:   { id:'B1_500_OCEANIC',        name:'Oceanic Cup',              location:'Oceanic',         icon:'🌊' },
+  B1_500_PACIFIC2:     { id:'B1_500_RIVIERA2',       name:'Riviera Open',             location:'Riviera Coast',   icon:'🌴' },
+  B2_250_VALENCIA:     { id:'B2_250_ADRIATIC',       name:'Adriatic Open',            location:'Adriática',       icon:'⚓' },
+  B2_250_COSTA:        { id:'B2_250_TUSCANY',        name:'Tuscany Classic',          location:'Toscana',         icon:'🍷' },
+  B2_250_VENETIAN:     { id:'B2_250_ROMAN',          name:'Roman Open',               location:'Roma',            icon:'🏛️' },
+  B2_500_PROVENCA:     { id:'B2_500_MONACO',         name:'Masters da Riviera',       location:'Riviera',         icon:'🛥️' },
+  B2_500_CATALUNHA:    { id:'B2_500_ANDALUZIA',      name:'Andaluzia 500',            location:'Andaluzia',       icon:'🟥' },
+  B3_250_CELTIC:       { id:'B3_250_EDINBURGH',      name:'Edinburgh Classic',        location:'Edinburgh',       icon:'🏰' },
+  B3_250_WINDSOR:      { id:'B3_250_CANTERBURY',     name:'Canterbury Classic',       location:'Canterbury',      icon:'⛪' },
+  B3_250_THAMES:       { id:'B3_250_OXFORD',         name:'Oxford Open',              location:'Oxford',          icon:'🎓' },
+  B3_500_QUEENS:       { id:'B3_500_HALLE',          name:'Halle Classic',            location:'Halle',           icon:'🌿' },
+  B3_500_EMERALD:      { id:'B3_500_HIGHLAND',       name:'Highland Open',            location:'Highlands',       icon:'🏔️' },
+  B4_250_NEON:         { id:'B4_250_DOWNTOWN',       name:'Downtown Classic',         location:'Downtown',        icon:'🏙️' },
+  B4_250_METRO:        { id:'B4_250_STREETBEAT',     name:'Street Beat Classic',      location:'Street Arena',    icon:'🎸' },
+  B4_250_CITYLIGHTS:   { id:'B4_250_MIDNIGHT',       name:'Midnight Open',            location:'Midnight City',   icon:'🌃' },
+  B4_500_HARBOR:       { id:'B4_500_BOULEVARD',      name:'Boulevard 500',            location:'Boulevard',       icon:'🛣️' },
+  B4_500_URBAN:        { id:'B4_500_SUNSET',         name:'Sunset 500',               location:'Sunset Strip',    icon:'🌇' },
+  B5_250_SILK:         { id:'B5_250_HERITAGE',       name:'Heritage Classic',         location:'Heritage City',   icon:'🏯' },
+  B5_250_ROYAL:        { id:'B5_250_MANOR',          name:'Manor Classic',            location:'Manor House',     icon:'🏡' },
+  B5_250_BAROQUE:      { id:'B5_250_TAPESTRY',       name:'Tapestry Open',            location:'Tapestry Hall',   icon:'🖼️' },
+  B5_500_SILKCUP:      { id:'B5_500_IVORY',          name:'Ivory 500',                location:'Ivory Tower',     icon:'🗼' },
+  B5_500_VELVET:       { id:'B5_500_ROYAL2',         name:'Royal Classic 500',        location:'Royal Arena',     icon:'👑' },
+  B6_250_AURORA:       { id:'B6_250_NORDIC',         name:'Nordic Classic',           location:'Nordic',          icon:'❄️' },
+  B6_250_FROST:        { id:'B6_250_ARCTIC',         name:'Arctic Classic',           location:'Arctic City',     icon:'🧊' },
+  B6_250_GLACIER:      { id:'B6_250_DIAMOND',        name:'Diamond Open',             location:'Diamond Arena',   icon:'💎' },
+  B6_500_CRYSTAL:      { id:'B6_500_WINTER',         name:'Winter Cup',               location:'Winter Palace',   icon:'🏔️' },
+  B6_500_NORDIC:       { id:'B6_500_CRYSTAL_PALACE', name:'Crystal Palace Open',      location:'Crystal Palace',  icon:'🏛️' },
+}
 
 function buildParallelATPEvents(calendar) {
   return calendar
@@ -275,6 +321,7 @@ function buildParallelATPEvents(calendar) {
 }
 
 function validateParallelATPCalendar(calendar) {
+  // ── Validação 1: pares de 250/500 ────────────────────────────────
   const groups = new Map();
   for (const tournament of calendar) {
     if (tournament?.category !== 'ATP_250' && tournament?.category !== 'ATP_500') continue;
@@ -291,10 +338,60 @@ function validateParallelATPCalendar(calendar) {
       const ids = tournaments.map(t => t.id).join(', ');
       throw new Error(`[TournamentSystem] Grupo paralelo ${groupId} inválido (${tournaments.length} torneios: ${ids}). ATP 250/500 precisam formar pares fixos por semana.`);
     }
-
     const [first, second] = tournaments;
     if (first.weekIndex !== second.weekIndex || first.category !== second.category) {
       throw new Error(`[TournamentSystem] Grupo paralelo ${groupId} desalinhado. Os pares ATP 250/500 precisam compartilhar semana e categoria.`);
+    }
+  }
+
+  // ── Validação 2: regras estruturais de semana ─────────────────────
+  // GS, M1000 e SLAM_CLASH têm semana exclusiva — não podem dividir com outros
+  // eventos de nível major (GS / M1000 / SLAM_CLASH / ATP_500 / ATP_250).
+  // Challengers (ATP_100, ATP_75, ATP_50, ATP_25, ATP_PROSPECTS) podem compartilhar.
+  const MAJOR_CATS = new Set(['GRAND_SLAM', 'MASTERS_1000', 'SLAM_CLASH', 'ATP_500', 'ATP_250']);
+  const EXCLUSIVE_CATS = new Set(['GRAND_SLAM', 'MASTERS_1000', 'SLAM_CLASH']); // não dividem semana com nenhum major
+  const weekMajors = new Map(); // weekIndex → [tournament]
+
+  for (const t of calendar) {
+    if (!MAJOR_CATS.has(t.category)) continue;
+    const list = weekMajors.get(t.weekIndex) ?? [];
+    list.push(t);
+    weekMajors.set(t.weekIndex, list);
+  }
+
+  for (const [week, tournaments] of weekMajors.entries()) {
+    const cats = tournaments.map(t => t.category);
+    const hasExclusive = cats.some(cat => EXCLUSIVE_CATS.has(cat));
+    const hasOtherMajor = cats.some(cat => MAJOR_CATS.has(cat));
+
+    if (hasExclusive && tournaments.length > 1) {
+      const ids = tournaments.map(t => `${t.id}(${t.category})`).join(', ');
+      throw new Error(
+        `[TournamentSystem] Semana W${week} tem conflito de major exclusivo: ${ids}.\n` +
+        `GS, M1000 e SLAM_CLASH precisam de semana exclusiva (sem outros GS/M1000/SLAM_CLASH/ATP_500/ATP_250).`
+      );
+    }
+
+    // ATP_500 ou ATP_250 devem estar em pares de mesma categoria, nunca misturados
+    const has500 = cats.includes('ATP_500');
+    const has250 = cats.includes('ATP_250');
+    if (has500 && has250) {
+      const ids = tournaments.map(t => `${t.id}(${t.category})`).join(', ');
+      throw new Error(
+        `[TournamentSystem] Semana W${week} mistura ATP_500 e ATP_250: ${ids}.\n` +
+        `500 e 250 devem ser paralelos apenas dentro da mesma categoria.`
+      );
+    }
+
+    // Cada ATP_500 deve ter exatamente 2 por semana (par gerado por buildParallelATPEvents)
+    if (has500 && cats.filter(c => c === 'ATP_500').length !== 2) {
+      const ids = tournaments.filter(t => t.category === 'ATP_500').map(t => t.id).join(', ');
+      throw new Error(`[TournamentSystem] Semana W${week} tem ${cats.filter(c => c === 'ATP_500').length} ATP_500 (esperado: 2): ${ids}`);
+    }
+
+    if (has250 && cats.filter(c => c === 'ATP_250').length !== 2) {
+      const ids = tournaments.filter(t => t.category === 'ATP_250').map(t => t.id).join(', ');
+      throw new Error(`[TournamentSystem] Semana W${week} tem ${cats.filter(c => c === 'ATP_250').length} ATP_250 (esperado: 2): ${ids}`);
     }
   }
 
@@ -332,8 +429,12 @@ function chooseParallelTournamentForPlayer(player, tournament) {
  * Usado para filtrar qualifying/preQualifying e refillMainDrawField.
  * Retorna true se o jogador deveria jogar em outro torneio do mesmo grupo.
  */
-function isParallelExcluded(player, tournament) {
+function isParallelExcluded(player, tournament, enrolledIds = null) {
   if (!tournament?.parallelGroup) return false;
+  // Hard exclusion via enrolledIds Map — sem acesso a variáveis externas
+  if (enrolledIds && tournament?.isAlternateEvent && tournament?.sourceTournamentId) {
+    if (enrolledIds.get(player?.id)?.has(tournament.sourceTournamentId)) return true;
+  }
   const chosen = chooseParallelTournamentForPlayer(player, tournament);
   return chosen !== tournament.id;
 }
@@ -659,12 +760,22 @@ function selectOlympicPlayers(allPlayers, injured = new Set(), draw = 64) {
 }
 
 export function selectTournamentPlayers(tournament, allPlayers, prospects = [], injured = new Set(), playerSeasonSlots = {}, _legacySeasonPlans = {}) {
+  // Map<playerId, Set<tournamentId>> para hard exclusion nos paralelos
+  const enrolledIds = new Map(
+    Object.entries(playerSeasonSlots).map(([pid, s]) => [pid, new Set(s?.enrolledTournaments ?? [])])
+  );
   const { category, draw, directSlots, qualDirectIn = 0, preQualIn = 0, isFinals, isATP100, isATP75, isATP50, isATP25, isSlam, isMasters, isOlympic, isSlamClash, isProspects, isProspectsFinals } = tournament;
   const isFinalsCategory = isFinals || category === 'FINALS';
   const isBaseCircuitCategory = isATP100 || isATP75 || isATP50 || isATP25
     || category === 'ATP_100' || category === 'ATP_75' || category === 'ATP_50' || category === 'ATP_25';
   const isProspectsCategory = isProspects || category === 'ATP_PROSPECTS';
   const isProspectsFinalsCategory = isProspectsFinals || category === 'PROSPECTS_FINALS';
+  const alreadyEnrolledThisWeek = (player) => {
+    if (tournament.weekIndex == null || !player?.id) return false;
+    const slots = playerSeasonSlots[player.id] ?? createSeasonSlots();
+    return (slots.enrolledWeeks ?? []).includes(tournament.weekIndex);
+  };
+  const shouldBlockWeekOverlap = category === 'ATP_250' || category === 'ATP_500';
 
   // ── OLIMPÍADAS: entrada por nacionalidade, máx 4 por país ──────────
   if (isOlympic) {
@@ -722,12 +833,31 @@ export function selectTournamentPlayers(tournament, allPlayers, prospects = [], 
 
   // ── GRAND SLAM: todos os 128 diretos, sem qualify ──────────────────
   // Lesionados são substituídos pelos prospects mais bem classificados.
-  if (isSlam || isSlamClash) {
+  if (isSlam) {
     const avail = allPlayers.filter(p => !injured.has(p.id) && !isPlayerUnavailableForTournament(p));
     let mainDraw = avail.slice(0, draw);
     const shortfall = draw - mainDraw.length;
     if (shortfall > 0) {
       const fills = prospects.filter(p => !injured.has(p.id) && !isPlayerUnavailableForTournament(p)).slice(0, shortfall);
+      mainDraw = [...mainDraw, ...fills];
+    }
+    return { mainDraw, qualifying: [], preQualifying: [] };
+  }
+  // Fix paralelo: SLAM_CLASH exclui jogadores já inscritos noutra competição da mesma semana
+  if (isSlamClash) {
+    const avail = allPlayers.filter(p => {
+      if (injured.has(p.id) || isPlayerUnavailableForTournament(p)) return false;
+      const slots = playerSeasonSlots[p.id] ?? createSeasonSlots();
+      const alreadyThisWeek = tournament.weekIndex != null
+        && (slots.enrolledWeeks ?? []).includes(tournament.weekIndex);
+      return !alreadyThisWeek;
+    });
+    let mainDraw = avail.slice(0, draw);
+    const shortfall = draw - mainDraw.length;
+    if (shortfall > 0) {
+      const fills = prospects
+        .filter(p => !injured.has(p.id) && !isPlayerUnavailableForTournament(p))
+        .slice(0, shortfall);
       mainDraw = [...mainDraw, ...fills];
     }
     return { mainDraw, qualifying: [], preQualifying: [] };
@@ -746,14 +876,18 @@ export function selectTournamentPlayers(tournament, allPlayers, prospects = [], 
   // o pool de qualify, pois esses sempre querem jogar para acumular pontos.
 
   const notInjured = allPlayers
-    .filter(p => !injured.has(p.id) && !isPlayerUnavailableForTournament(p))
+    .filter(p => !injured.has(p.id) && !isPlayerUnavailableForTournament(p) && (!shouldBlockWeekOverlap || !alreadyEnrolledThisWeek(p)))
     .sort((a, b) => getPlayerRankPosition(a) - getPlayerRankPosition(b));
 
   // Para M1000: todos entram sem filtro de probabilidade (isMasters já retorna true em shouldPlayerEnter)
-  // Para 250/500: só filtra probabilidade
+  // Para 250/500: filtra probabilidade + exclusão de paralelo (CRÍTICO).
+  // Sem o filtro de paralelo aqui, o mesmo jogador era selecionado no main draw
+  // de AMBOS os torneios da semana — bug grave que permitia dupla participação.
   const wantToPlay = notInjured.filter(p => {
     const slots = playerSeasonSlots[p.id] ?? createSeasonSlots();
-    return shouldPlayerEnter(p, tournament, slots);
+    if (!shouldPlayerEnter(p, tournament, slots)) return false;
+    if (isParallelExcluded(p, tournament, enrolledIds)) return false;
+    return true;
   });
   const mainDraw = wantToPlay.slice(0, directSlots);
 
@@ -769,14 +903,14 @@ export function selectTournamentPlayers(tournament, allPlayers, prospects = [], 
   // Qualify: próximos qualDirectIn por rank, excluindo main draw, pool de candidatos
   // e jogadores que escolheram o torneio paralelo (parallelGroup)
   const qualifying = notInjured
-    .filter(p => !inMainIds.has(p.id) && !mainDrawPool.has(p.id) && !isParallelExcluded(p, tournament))
+    .filter(p => !inMainIds.has(p.id) && !mainDrawPool.has(p.id) && !isParallelExcluded(p, tournament, enrolledIds))
     .slice(0, qualDirectIn);
 
   // Pré-Qualify (M1000 apenas): próximos preQualIn, excluindo main, qualifying e paralelo
   const inQualIds = new Set(qualifying.map(p => p.id));
   const preQualifying = preQualIn > 0
     ? notInjured
-        .filter(p => !inMainIds.has(p.id) && !mainDrawPool.has(p.id) && !inQualIds.has(p.id) && !isParallelExcluded(p, tournament))
+        .filter(p => !inMainIds.has(p.id) && !mainDrawPool.has(p.id) && !inQualIds.has(p.id) && !isParallelExcluded(p, tournament, enrolledIds))
         .slice(0, preQualIn)
     : [];
 
@@ -870,7 +1004,11 @@ function refillMainDrawField({
   allPlayers = [],
   prospects = [],
   injuryWithdrawals = new Set(),
+  playerSeasonSlots: _slotMap = {},
 }) {
+  const enrolledIds = new Map(
+    Object.entries(_slotMap).map(([pid, s]) => [pid, new Set(s?.enrolledTournaments ?? [])])
+  );
   const drawSize = tournament?.draw ?? 0;
   if (drawSize <= 0) return [];
 
@@ -912,7 +1050,7 @@ function refillMainDrawField({
     candidatePool = [
       ...allPlayers,
       ...prospects,
-    ].filter(player => !isBlocked(player) && !usedIds.has(player.id) && !isParallelExcluded(player, tournament));
+    ].filter(player => !isBlocked(player) && !usedIds.has(player.id) && !isParallelExcluded(player, tournament, enrolledIds));
   }
 
   const filledField = [...currentField];
@@ -961,6 +1099,12 @@ export function generateBracket(tournament, mainDrawPlayers, rng = Math.random) 
   return {
     tournamentId: tournament.id,
     tournamentName: tournament.name,
+    // Snapshot imutável da entrada. O ranking oficial pode mudar assim que a
+    // final distribui pontos; guardar apenas a referência do jogador fazia a
+    // tela pós-torneio esquecer de onde cada campanha realmente começou.
+    entryRanks: Object.fromEntries(capped
+      .filter(player => player?.id)
+      .map(player => [player.id, Number.isFinite(player.rankPosition) ? player.rankPosition : null])),
     draw: capped.length,
     totalSlots,
     byeCount: byes.size,
@@ -1316,6 +1460,88 @@ export function advanceQualifyingRound(qBracket) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SORTEIO CONJUNTO DE PARES PARALELOS
+// Divide o pool de jogadores entre dois torneios da mesma semana de uma vez,
+// garantindo que nenhum jogador apareça nos dois.
+// ═══════════════════════════════════════════════════════════════════
+export function selectParallelPairPlayers(tournamentA, tournamentB, allPlayers, prospects = [], injured = new Set(), playerSeasonSlots = {}) {
+  const isAvailable = (player) => {
+    if (!player || injured.has(player.id) || isPlayerUnavailableForTournament(player)) return false;
+    if (tournamentA.weekIndex == null) return true;
+    return !(playerSeasonSlots[player.id]?.enrolledWeeks ?? []).includes(tournamentA.weekIndex);
+  };
+  const canEnterPair = (player) => {
+    const rank = getPlayerRankPosition(player);
+    const category = tournamentA.category;
+    if (category !== 'ATP_250' && category !== 'ATP_500') return false;
+    const slots = playerSeasonSlots[player.id] ?? createSeasonSlots();
+    const countKey = category === 'ATP_250' ? 'count250' : 'count500';
+    if ((slots?.[countKey] ?? 0) >= _seasonCap(rank, category)) return false;
+    return Math.random() < _entryProb(player, tournamentA);
+  };
+
+  const shuffled = (players) => {
+    const copy = [...players];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+  const byRank = (players) => [...players].sort((a, b) => getPlayerRankPosition(a) - getPlayerRankPosition(b));
+  const splitRandomly = (players, capA, capB) => {
+    const forA = [];
+    const forB = [];
+    for (const player of shuffled(players)) {
+      const canA = forA.length < capA;
+      const canB = forB.length < capB;
+      if (!canA && !canB) break;
+      if (!canA) { forB.push(player); continue; }
+      if (!canB) { forA.push(player); continue; }
+      (forA.length < forB.length ? forA : forB).push(player);
+    }
+    return { forA, forB };
+  };
+
+  const interested = allPlayers
+    .filter(p => {
+      if (!isAvailable(p)) return false;
+      return canEnterPair(p);
+    });
+
+  const drawA = tournamentA.draw ?? 32;
+  const drawB = tournamentB.draw ?? 32;
+  const directA = tournamentA.directSlots ?? drawA;
+  const directB = tournamentB.directSlots ?? drawB;
+  const qualAIn = tournamentA.qualDirectIn ?? 0;
+  const qualBIn = tournamentB.qualDirectIn ?? 0;
+  const capA = directA + qualAIn;
+  const capB = directB + qualBIn;
+
+  const { forA, forB } = splitRandomly(interested, capA, capB);
+  const rankedA = byRank(forA);
+  const rankedB = byRank(forB);
+
+  const mainA = rankedA.slice(0, directA);
+  const mainB = rankedB.slice(0, directB);
+  const qualA = rankedA.slice(directA, directA + qualAIn);
+  const qualB = rankedB.slice(directB, directB + qualBIn);
+  const assignedIds = new Set([...forA, ...forB].map(player => player.id));
+  const fillerCapA = drawA + qualAIn;
+  const fillerCapB = drawB + qualBIn;
+
+  const fillerCandidates = [...allPlayers, ...prospects]
+    .filter(player => isAvailable(player) && !assignedIds.has(player.id))
+    .sort((a, b) => getPlayerRankPosition(a) - getPlayerRankPosition(b));
+  const { forA: fillerA, forB: fillerB } = splitRandomly(fillerCandidates, fillerCapA, fillerCapB);
+
+  return {
+    A: { mainDraw: mainA, qualifying: qualA, preQualifying: [], fillerPool: byRank(fillerA) },
+    B: { mainDraw: mainB, qualifying: qualB, preQualifying: [], fillerPool: byRank(fillerB) },
+  };
+}
+
 export function prepareTournamentPackageSync({
   tournament,
   tourPlayers = [],
@@ -1334,6 +1560,8 @@ export function prepareTournamentPackageSync({
   const courtKey = tournament.courtKey ?? (
     surface === 'CLAY' ? 'ROLAND_GARROS' :
     surface === 'GRASS' ? 'WIMBLEDON' :
+    surface === 'STREET' ? 'URBAN_COURT' :
+    surface === 'CARPET' ? 'CARPET_COURT' :
     surface === 'INDOOR' ? 'O2_ARENA' :
     'US_OPEN'
   );
@@ -1417,6 +1645,7 @@ export function prepareTournamentPackageSync({
     allPlayers: sortedTourPlayers.map(getPreparedPlayer).filter(Boolean),
     prospects: sortedProspects.map(getPreparedPlayer).filter(Boolean),
     injuryWithdrawals,
+    playerSeasonSlots: slotsClone,
   });
 
   return {
@@ -1572,7 +1801,10 @@ export function generateFinalsSchedule(players) {
  * Cria contagem zerada para a temporada de um jogador.
  */
 export function createSeasonSlots() {
-  return { count250: 0, count500: 0 };
+  // enrolledWeeks: Set de weekIndex onde o jogador já está inscrito.
+  // Usado para bloquear inscrição em QUALQUER torneio da mesma semana,
+  // independente de categoria (fix do bug SLAM_CLASH + ATP_500 na mesma semana).
+  return { count250: 0, count500: 0, enrolledWeeks: [], enrolledTournaments: [] };
 }
 
 /**
@@ -1581,6 +1813,20 @@ export function createSeasonSlots() {
 export function updateSeasonSlots(slots, _player, tournament) {
   if (tournament.category === 'ATP_500') slots.count500 = (slots.count500 ?? 0) + 1;
   if (tournament.category === 'ATP_250') slots.count250 = (slots.count250 ?? 0) + 1;
+  // Registrar semana ocupada — bloqueia qualquer outro torneio da mesma semana
+  if (tournament.weekIndex != null) {
+    if (!slots.enrolledWeeks) slots.enrolledWeeks = [];
+    if (!slots.enrolledWeeks.includes(tournament.weekIndex)) {
+      slots.enrolledWeeks.push(tournament.weekIndex);
+    }
+  }
+  // Registrar torneio específico — usado pelo isParallelExcluded para exclusão hard
+  if (tournament.id) {
+    if (!slots.enrolledTournaments) slots.enrolledTournaments = [];
+    if (!slots.enrolledTournaments.includes(tournament.id)) {
+      slots.enrolledTournaments.push(tournament.id);
+    }
+  }
   return slots;
 }
 
@@ -1604,7 +1850,15 @@ export function shouldPlayerEnter(player, tournament, seasonCounts) {
   const isProspectsCategory = isProspects || category === 'ATP_PROSPECTS' || isProspectsFinals || category === 'PROSPECTS_FINALS';
 
   if (isOlympic) return true; // seleção feita em selectOlympicPlayers
-  if (isSlam || isSlamClash) return true;
+  if (isSlam) return true;
+  // Fix paralelo: SLAM_CLASH entra todos os jogadores top — mas não se já estiverem
+  // inscritos num torneio da mesma semana (ex: ATP_500 paralelo no mesmo weekIndex).
+  // Antes retornava true sem checar conflito de semana.
+  if (isSlamClash) {
+    const alreadyThisWeek = tournament.weekIndex != null
+      && (seasonCounts?.enrolledWeeks ?? []).includes(tournament.weekIndex);
+    return !alreadyThisWeek;
+  }
   if (isMasters) return rank <= 128;
   if (isBaseCircuitCategory) {
     const band = getBaseCircuitBand(tournament);

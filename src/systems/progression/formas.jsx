@@ -7,38 +7,40 @@
  *   Cada jogador tem um valor de pontos de forma que flutua entre
  *   -100 (Fundo do Poço) e +100 (Imparável).
  *   Vencer sobe os pontos. Perder baixa.
- *   A régua tem 7 zonas, cada uma com modificador % em todos os atributos.
- *   Ao fim de cada temporada, os pontos sofrem reset de 50% em direção ao 0.
+ *   A régua tem 7 zonas, mas forma não reescreve talento: ela mexe de modo
+ *   moderado em execução, confiança, leitura e capacidade física imediata.
+ *   Há regressão mensal para impedir sequências autorreforçadas.
  *
  * RÉGUA
- *   -100 ──── Fundo do Poço (-15%) ─ Fase Ruim (-10%) ─ Perf. Mal (-5%) ─ NORMAL ─ Boa Forma (+5%) ─ Grande Forma (+10%) ─ Imparável (+15%) ──── +100
+ *   -100 ──── Fundo do Poço (-4) ─ Fase Ruim (-3) ─ Perf. Mal (-1.5)
+ *              NORMAL ─ Boa Forma (+1.5) ─ Grande Forma (+3) ─ Imparável (+4)
  *
  * THRESHOLDS
- *   IMPARÁVEL       ≥  75  → +15%
- *   GRANDE_FORMA    ≥  40  → +10%
- *   BOA_FORMA       ≥  15  →  +5%
+ *   IMPARÁVEL       ≥  75  → impacto +4
+ *   GRANDE_FORMA    ≥  40  → impacto +3
+ *   BOA_FORMA       ≥  15  → impacto +1.5
  *   NORMAL          -14…14 →   0%
- *   PERFORMANDO_MAL ≤ -15  →  -5%
- *   FASE_RUIM       ≤ -40  → -10%
- *   FUNDO_POCO      ≤ -75  → -15%
+ *   PERFORMANDO_MAL ≤ -15  → impacto -1.5
+ *   FASE_RUIM       ≤ -40  → impacto -3
+ *   FUNDO_POCO      ≤ -75  → impacto -4
  *
  * PONTOS POR ROUND
- *   Win R32 +6  / Loss R32 -8
- *   Win R16 +10 / Loss R16 -6
- *   Win QF  +14 / Loss QF  -4
- *   Win SF  +18 / Loss SF  -3
- *   Win FIN +26 / Loss FIN -2   (finalista ainda performou bem)
+ *   Win R32 +2 / Loss R32 -3
+ *   Win R16 +3 / Loss R16 -2
+ *   Win QF  +4 / Loss QF  -2
+ *   Win SF  +5 / Loss SF  -1
+ *   Win FIN +7 / Loss FIN  0
  *
  * SEASON RESET
- *   formPoints = Math.round(formPoints * 0.5)
- *   Ex: +100 → +50 / -80 → -40 / +20 → +10
+ *   Mensalmente, 18% da forma regressa em direção ao normal.
+ *   No fim da temporada, resta apenas 25% do saldo.
  *
  * Exports:
  *   FORM_STATES            — array de 7 estados ordenados (melhor→pior)
  *   getFormState(pts)      — retorna o estado atual dado os pontos
  *   applyFormModifier(attrs, pts) — retorna cópia de attrs com modificador aplicado
  *   calcFormDelta(roundIdx, isWinner) — pontos ganhos/perdidos num match
- *   applySeasonReset(pts)  — aplica reset 50% no fim da temporada
+ *   applySeasonReset(pts)  — preserva 25% no fim da temporada
  *   clampFormPoints(pts)   — mantém em [-100, +100]
  *   FormaTab               — componente React da aba de forma
  */
@@ -61,7 +63,8 @@ export const FORM_STATES = [
     shortLabel:'IMPARÁVEL',
     icon:      '⚡',
     threshold: 75,
-    modifier:  0.15,
+    modifier:  0.04,
+    attributeImpact: 4,
     color:     '#00E5FF',
     colorDim:  'rgba(0,229,255,.18)',
     colorGlow: 'rgba(0,229,255,.40)',
@@ -73,7 +76,8 @@ export const FORM_STATES = [
     shortLabel:'GRANDE FORMA',
     icon:      '🔥',
     threshold: 40,
-    modifier:  0.10,
+    modifier:  0.03,
+    attributeImpact: 3,
     color:     '#69F0AE',
     colorDim:  'rgba(105,240,174,.15)',
     colorGlow: 'rgba(105,240,174,.30)',
@@ -85,7 +89,8 @@ export const FORM_STATES = [
     shortLabel:'BOA FORMA',
     icon:      '📈',
     threshold: 15,
-    modifier:  0.05,
+    modifier:  0.015,
+    attributeImpact: 1.5,
     color:     '#B9F6CA',
     colorDim:  'rgba(185,246,202,.12)',
     colorGlow: 'rgba(185,246,202,.20)',
@@ -98,6 +103,7 @@ export const FORM_STATES = [
     icon:      '➡️',
     threshold: -14,  // min -14 / max +14
     modifier:  0,
+    attributeImpact: 0,
     color:     '#90A4AE',
     colorDim:  'rgba(144,164,174,.12)',
     colorGlow: 'rgba(144,164,174,.20)',
@@ -109,7 +115,8 @@ export const FORM_STATES = [
     shortLabel:'PERF. MAL',
     icon:      '📉',
     threshold: -15,
-    modifier:  -0.05,
+    modifier:  -0.015,
+    attributeImpact: -1.5,
     color:     '#FFAB40',
     colorDim:  'rgba(255,171,64,.12)',
     colorGlow: 'rgba(255,171,64,.25)',
@@ -121,7 +128,8 @@ export const FORM_STATES = [
     shortLabel:'FASE RUIM',
     icon:      '🌧️',
     threshold: -40,
-    modifier:  -0.10,
+    modifier:  -0.03,
+    attributeImpact: -3,
     color:     '#FF6E40',
     colorDim:  'rgba(255,110,64,.12)',
     colorGlow: 'rgba(255,110,64,.25)',
@@ -133,7 +141,8 @@ export const FORM_STATES = [
     shortLabel:'FUNDO DO POÇO',
     icon:      '💀',
     threshold: -75,
-    modifier:  -0.15,
+    modifier:  -0.04,
+    attributeImpact: -4,
     color:     '#FF1744',
     colorDim:  'rgba(255,23,68,.12)',
     colorGlow: 'rgba(255,23,68,.30)',
@@ -146,12 +155,33 @@ export const FORM_STATE_MAP = Object.fromEntries(FORM_STATES.map(s => [s.id, s])
 
 // Pontos ganhos/perdidos por rodada (índice 0=R32, 1=R16, 2=QF, 3=SF, 4=Final)
 export const FORM_POINTS_TABLE = [
-  { win: 6,  loss: -8  }, // R32
-  { win: 10, loss: -6  }, // R16
-  { win: 14, loss: -4  }, // QF
-  { win: 18, loss: -3  }, // SF
-  { win: 26, loss: -2  }, // Final (finalista não perde muito)
+  { win: 2, loss: -3 }, // R32 e rodadas anteriores
+  { win: 3, loss: -2 }, // R16
+  { win: 4, loss: -2 }, // QF
+  { win: 5, loss: -1 }, // SF
+  { win: 7, loss:  0 }, // Finalista já teve uma campanha positiva
 ];
+
+export const MAX_TOURNAMENT_FORM_GAIN = 25;
+export const MAX_TOURNAMENT_FORM_LOSS = -12;
+
+// Forma afeta principalmente o que realmente oscila de semana para semana.
+// Potência bruta, velocidade máxima, técnica de volley e talento de golpe
+// permanecem essencialmente estruturais.
+export const FORM_ATTRIBUTE_WEIGHTS = Object.freeze({
+  mentalidade:  1.00,
+  regularidade: 1.00,
+  recuperacao:  0.80,
+  adaptacao:    0.75,
+  explosividade:0.50,
+  resistencia:  0.45,
+  leitura:      0.40,
+  visaoTatica:  0.40,
+  devolucao:    0.30,
+  saquePrecisao:0.25,
+  fhControle:   0.25,
+  bhControle:   0.25,
+});
 
 // Labels legíveis das rodadas
 export const ROUND_LABELS = ['R32', 'R16', 'Quartas', 'Semifinal', 'Final'];
@@ -217,16 +247,44 @@ export function pointsToPrevState(pts) {
  */
 export function applyFormModifier(attrs, pts) {
   if (!attrs) return attrs;
-  const { modifier } = getFormState(pts);
-  if (modifier === 0) return attrs;
+  const { attributeImpact = 0 } = getFormState(pts);
+  return applyCompetitiveAttributeImpact(attrs, attributeImpact);
+}
+
+export function applyCompetitiveAttributeImpact(attrs, impact = 0) {
+  if (!attrs || !Number.isFinite(Number(impact)) || Number(impact) === 0) return attrs;
 
   const result = {};
   for (const [key, val] of Object.entries(attrs)) {
     if (typeof val !== 'number') { result[key] = val; continue; }
-    // Aplica modificador e faz clamp em [1, 99]
-    result[key] = Math.max(1, Math.min(99, Math.round(val * (1 + modifier))));
+    const weight = FORM_ATTRIBUTE_WEIGHTS[key] ?? 0;
+    const delta = Number(impact) * weight;
+    result[key] = Math.max(1, Math.min(99, Math.round(val + delta)));
   }
   return result;
+}
+
+/**
+ * Impede que chaves longas transformem uma campanha em meses de domínio
+ * automático. O teto é por torneio, não por partida.
+ */
+export function capTournamentFormDelta(delta) {
+  return Math.max(
+    MAX_TOURNAMENT_FORM_LOSS,
+    Math.min(MAX_TOURNAMENT_FORM_GAIN, Number(delta) || 0),
+  );
+}
+
+/**
+ * Regressão mensal em direção ao nível normal.
+ * A forma continua contando histórias, mas precisa ser renovada em quadra.
+ */
+export function applyMonthlyFormRegression(pts, rate = 0.18) {
+  const current = clampFormPoints(Number(pts) || 0);
+  if (current === 0) return 0;
+  const safeRate = Math.max(0, Math.min(1, Number(rate) || 0));
+  const next = Math.round(current * (1 - safeRate));
+  return Math.abs(next) <= 1 ? 0 : clampFormPoints(next);
 }
 
 /**
@@ -242,13 +300,13 @@ export function calcFormDelta(roundIdx, isWinner) {
 }
 
 /**
- * Aplica o reset de fim de temporada: 50% em direção ao zero.
- * +100 → +50 / -80 → -40 / +20 → +10 / -3 → -2 (arredonda)
+ * Aplica o reset de fim de temporada: preserva 25% do saldo.
+ * A regressão mensal já fez a maior parte da normalização durante o ano.
  * @param {number} pts
  * @returns {number}
  */
 export function applySeasonReset(pts) {
-  return Math.round(pts * 0.5);
+  return Math.round(pts * 0.25);
 }
 
 /**
@@ -570,10 +628,10 @@ export default function FormaTab({ np, sc, formPoints = 0, formHistory = [] }) {
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, 6);
 
-  const modSign  = state.modifier > 0 ? '+' : '';
-  const modLabel = state.modifier === 0
+  const modSign  = state.attributeImpact > 0 ? '+' : '';
+  const modLabel = state.attributeImpact === 0
     ? 'Sem modificação'
-    : `${modSign}${Math.round(state.modifier * 100)}% em todos os atributos`;
+    : `${modSign}${state.attributeImpact} de impacto competitivo focalizado`;
 
   const hasHistory = formHistory.length > 0;
 
@@ -632,7 +690,7 @@ export default function FormaTab({ np, sc, formPoints = 0, formHistory = [] }) {
             </div>
             <div style={{
               fontFamily: F.mono, fontSize: 11, letterSpacing: '.15em',
-              color: state.modifier === 0 ? F.textFaint : state.color,
+                color: state.attributeImpact === 0 ? F.textFaint : state.color,
             }}>
               {modLabel}
             </div>
@@ -790,7 +848,7 @@ export default function FormaTab({ np, sc, formPoints = 0, formHistory = [] }) {
                 fontFamily: F.mono, fontSize: 9, letterSpacing: '.3em',
                 color: F.textFaint, textTransform: 'uppercase', marginBottom: 4,
               }}>
-                🔄 Reset de Temporada (−50%)
+                🔄 Reset de Temporada (preserva 25%)
               </div>
               <div style={{ fontFamily: F.display, fontSize: 16, color: F.textDim }}>
                 {pts > 0 ? `+${pts}` : `${pts}`}
@@ -819,7 +877,7 @@ export default function FormaTab({ np, sc, formPoints = 0, formHistory = [] }) {
               Impacto nos Atributos
             </div>
 
-            {state.modifier === 0 ? (
+            {state.attributeImpact === 0 ? (
               <div style={{
                 fontFamily: F.body, fontSize: 14, color: F.textFaint,
                 textAlign: 'center', padding: '24px 0',
@@ -843,13 +901,13 @@ export default function FormaTab({ np, sc, formPoints = 0, formHistory = [] }) {
                     fontFamily: F.display, fontSize: 28, fontWeight: 700,
                     color: state.color,
                   }}>
-                    {modSign}{Math.round(state.modifier * 100)}%
+                    {modSign}{state.attributeImpact}
                   </div>
                   <div style={{
                     fontFamily: F.mono, fontSize: 9, letterSpacing: '.25em',
                     color: F.textFaint, lineHeight: 1.6,
                   }}>
-                    EM TODOS OS<br/>ATRIBUTOS
+                    EXECUÇÃO E<br/>CONFIANÇA
                   </div>
                 </div>
 

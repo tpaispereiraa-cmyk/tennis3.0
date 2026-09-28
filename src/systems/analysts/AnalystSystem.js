@@ -400,19 +400,19 @@ const SURFACE_LABELS = {
 
 const STYLE_SURFACE_AFFINITY = {
   // [style]: { surface: advantage (positive = good, negative = bad) }
-  AGG_BASELINER:    { CLAY: +1, GRASS: 0,  HARD: +1, INDOOR: +1 },
-  CTR_PUNCHER:      { CLAY: +2, GRASS: -1, HARD:  0, INDOOR: 0  },
-  SRV_VOL:          { CLAY: -1, GRASS: +2, HARD:  0, INDOOR: +1 },
-  BIG_SERVER:       { CLAY: -1, GRASS: +1, HARD: +1, INDOOR: +2 },
-  RETRIEVER:        { CLAY: +1, GRASS: -1, HARD:  0, INDOOR: 0  },
-  ALL_COURT:        { CLAY:  0, GRASS: +1, HARD: +1, INDOOR: +1 },
-  GRINDER:          { CLAY: +2, GRASS: -2, HARD: -1, INDOOR: -1 },
-  POWER_BASELINER:  { CLAY: -1, GRASS: 0,  HARD: +1, INDOOR: +2 },
-  PWR_BASE:         { CLAY: -1, GRASS: 0,  HARD: +1, INDOOR: +2 },
-  TAKEALLRISK:      { CLAY: -1, GRASS: +1, HARD: +1, INDOOR: +1 },
-  MOMENTUM_PLAYER:  { CLAY:  0, GRASS:  0, HARD:  0, INDOOR: 0  },
-  TACT_TEC:         { CLAY: +1, GRASS:  0, HARD: +1, INDOOR: +1 },
-  NET_SPEC:         { CLAY: -1, GRASS: +2, HARD:  0, INDOOR: +1 },
+  AGG_BASELINER:    { CLAY: +1, GRASS: 0,  HARD: +1, STREET: +1, CARPET: 0,  INDOOR: +1 },
+  CTR_PUNCHER:      { CLAY: +2, GRASS: -1, HARD:  0, STREET: +1, CARPET: 0,  INDOOR: 0  },
+  SRV_VOL:          { CLAY: -1, GRASS: +2, HARD:  0, STREET: +1, CARPET: +2, INDOOR: +1 },
+  BIG_SERVER:       { CLAY: -1, GRASS: +1, HARD: +1, STREET: +1, CARPET: +2, INDOOR: +2 },
+  RETRIEVER:        { CLAY: +1, GRASS: -1, HARD:  0, STREET: +1, CARPET: -1, INDOOR: 0  },
+  ALL_COURT:        { CLAY:  0, GRASS: +1, HARD: +1, STREET: 0,  CARPET: 0,  INDOOR: +1 },
+  GRINDER:          { CLAY: +2, GRASS: -2, HARD: -1, STREET: 0,  CARPET: -2, INDOOR: -1 },
+  POWER_BASELINER:  { CLAY: -1, GRASS: 0,  HARD: +1, STREET: +2, CARPET: +1, INDOOR: +2 },
+  PWR_BASE:         { CLAY: -1, GRASS: 0,  HARD: +1, STREET: +2, CARPET: +1, INDOOR: +2 },
+  TAKEALLRISK:      { CLAY: -1, GRASS: +1, HARD: +1, STREET: +2, CARPET: +1, INDOOR: +1 },
+  MOMENTUM_PLAYER:  { CLAY:  0, GRASS:  0, HARD:  0, STREET: 0,  CARPET: 0,  INDOOR: 0  },
+  TACT_TEC:         { CLAY: +1, GRASS:  0, HARD: +1, STREET: 0,  CARPET: +1, INDOOR: +1 },
+  NET_SPEC:         { CLAY: -1, GRASS: +2, HARD:  0, STREET: +1, CARPET: +2, INDOOR: +1 },
 };
 
 function getSurfaceAffinity(styleId, surface) {

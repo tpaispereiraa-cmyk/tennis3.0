@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { overallRating, getPlayerPhoto } from '../../domain/players/players.js';
 import { buildIdentityDuel, buildPlayerIdentity } from '../../domain/players/PlayerIdentity.js';
 import { ovrTier } from '../../systems/scouting/ScoutProfile.js';
-import { generatePrefs, getArchetype } from '../../domain/players/playerPrefs.js';
+import { generatePrefs, getArchetype, getRallyIntentMeta } from '../../domain/players/playerPrefs.js';
 import { narrateMatch } from '../../systems/press/MatchNarrator.js';
 import {
   selectTournamentPlayers,
@@ -23,6 +23,7 @@ import HeadlessOverlay from '../game/HeadlessOverlay.jsx';
 import { rollPreTournamentInjury, shouldWithdraw, applyInjuryToPlayer, ensurePhysicalCondition, applyPreTournamentInjuries } from '../../systems/health/InjurySystem.js';
 import { getPlayerTraits } from '../../systems/traits/TraitSystem.js';
 import { BROADCAST_THEME as T, SURFACE_THEME } from '../theme/uiTheme.js';
+import { isTiebreakSetScore } from '../../core/constants.js';
 
 // ── Tokens ────────────────────────────────────────────────────────────
 const SURFACE_CLR = {
@@ -45,7 +46,7 @@ const CAT_CLR = {
 
 const CAT_LABEL = {
   GRAND_SLAM:       'Grand Slam',
-  SLAM_CLASH:       'Clash Slam',
+  SLAM_CLASH:       'Apex Major',
   MASTERS_1000:     'Masters 1000',
   ATP_500:          'ATP 500',
   ATP_250:          'ATP 250',
@@ -416,12 +417,22 @@ function compactBracketResult(result) {
   };
 }
 
-// Seleciona engine de acordo com tamanho do draw e rodada atual.
-// QF/SF/Final (<=8 jogadores) -> 1/120 (maxima fidelidade)
-// Draw >=128 (outras rodadas) -> 1/30  (slim, mais rapido)
-// Draw 64/32/16 (outras)      -> 1/60  (mid, equilibrio)
-function getAutoEngine(drawSize, playersInRound) {
-  if (playersInRound <= 8) return runSingleMatch;
+// Seleciona engine de acordo com categoria e rodada atual.
+// Qualifying fica fast. ATP 250/500 usam fastsim antes da QF e mid depois.
+// Masters/GS usam fastsim antes da R16 e mid depois.
+function getAutoEngine(drawSize, playersInRound, tournament = null, phase = 'main') {
+  if (phase === 'qualifying') return runSingleMatchFast;
+  const category = tournament?.category ?? null;
+  if (category === 'SLAM_CLASH') {
+    return playersInRound <= 8 ? runSingleMatch : runSingleMatchSlim;
+  }
+  if (category === 'ATP_250' || category === 'ATP_500') {
+    return playersInRound > 8 ? runSingleMatchFast : runSingleMatchMid;
+  }
+  if (category === 'MASTERS_1000' || category === 'GRAND_SLAM') {
+    return playersInRound > 16 ? runSingleMatchFast : runSingleMatchMid;
+  }
+  if (playersInRound <= 16) return runSingleMatchMid;
   if (drawSize >= 128)     return runSingleMatchSlim;
   return runSingleMatchMid;
 }
@@ -783,8 +794,7 @@ function getPlayerStyleSnapshot(player) {
     archetype,
     prefs,
     buildStyle: prefs?.buildStyle ?? '--',
-    cadence: prefs?.rallyCadence ?? '--',
-    risk: prefs?.riskProfile ?? '--',
+    intent: getRallyIntentMeta(prefs)?.label ?? '--',
     net: prefs?.netGame ?? '--',
   };
 }
@@ -1232,7 +1242,7 @@ function MatchCard({ match, ri, mi, isCurrent, simulating, onSim, onWatch, seedM
     return (
       <div className="mc-scores" style={{ paddingRight: 2 }}>
         {scores.map((s, si) => {
-          const isTb = s.mine === 7 || s.opp === 7;
+          const isTb = isTiebreakSetScore(s.mine, s.opp);
           return (
             <span key={si} className={`mc-set${won ? ' w' : ''}${isTb ? ' tb' : ''}`}>
               {s.mine}-{s.opp}
@@ -1734,7 +1744,7 @@ function MatchResumeModal({ match, surface, roundLabel, onClose, historicalTourn
                 <div style={{ border:'1px solid rgba(242,237,228,.06)', background:'rgba(255,255,255,.018)', padding:'10px 14px' }}>
                   <div style={{ fontFamily:T.mono, fontSize:6.5, color:'rgba(242,237,228,.28)', letterSpacing:'.22em', textTransform:'uppercase', marginBottom:7 }}>identidade</div>
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {[side.style.archetype?.label ?? side.style.archetype?.abbr, side.style.buildStyle, side.style.cadence, side.style.risk, side.style.net].filter(Boolean).map(tag => (
+                    {[side.style.archetype?.label ?? side.style.archetype?.abbr, side.style.buildStyle, side.style.intent, side.style.net].filter(Boolean).map(tag => (
                       <span key={tag} style={{ fontFamily:T.mono, fontSize:7, color:`${side.color}CC`, border:`1px solid ${side.color}2E`, padding:'4px 7px', textTransform:'uppercase', letterSpacing:'.12em' }}>{String(tag).replaceAll('_', ' ')}</span>
                     ))}
                     {(side.traits.length ? side.traits : ['sem traits expostos']).map(trait => (
@@ -1954,7 +1964,7 @@ function MatchResumeModal({ match, surface, roundLabel, onClose, historicalTourn
                   <div style={{ padding: '12px 13px', background: 'rgba(255,255,255,.018)', border: '1px solid rgba(242,237,228,.06)' }}>
                     <div style={{ fontFamily: T.mono, fontSize: 6.5, color: 'rgba(242,237,228,.28)', letterSpacing: '.24em', textTransform: 'uppercase', marginBottom: 7 }}>Identidade e traits</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                      {[side.style.archetype?.label ?? side.style.archetype?.abbr ?? '--', side.style.buildStyle, side.style.cadence, side.style.risk, side.style.net].filter(Boolean).map(tag => (
+                      {[side.style.archetype?.label ?? side.style.archetype?.abbr ?? '--', side.style.buildStyle, side.style.intent, side.style.net].filter(Boolean).map(tag => (
                         <span key={tag} style={{ fontFamily: T.mono, fontSize: 7, color: `${side.color}CC`, border: `1px solid ${side.color}2E`, padding: '4px 7px', textTransform: 'uppercase', letterSpacing: '.12em' }}>{String(tag).replaceAll('_', ' ')}</span>
                       ))}
                     </div>
@@ -2497,7 +2507,7 @@ export default function TournamentBracket({
           if (m.winner || !m.playerA || !m.playerB || m.isBye) continue;
           any = true;
           const resolvedFnQ = engineFn === 'auto'
-            ? getAutoEngine(tournament?.draw ?? 32, cur.rounds[ri].length * 2)
+            ? getAutoEngine(tournament?.draw ?? 32, cur.rounds[ri].length * 2, tournament, 'qualifying')
             : engineFn;
           const { winner, result } = resolvedFnQ(m.playerA, m.playerB, courtKey, bestOf, tournament);
           if (isHeadless) {
@@ -2566,7 +2576,7 @@ export default function TournamentBracket({
           if (m.winner || !m.playerA || !m.playerB || m.isBye) continue;
           any = true;
           const resolvedFnM = engineFn === 'auto'
-            ? getAutoEngine(tournament?.draw ?? 32, cur.rounds[ri].length * 2)
+            ? getAutoEngine(tournament?.draw ?? 32, cur.rounds[ri].length * 2, tournament, 'main')
             : engineFn;
           const { winner, result } = resolvedFnM(m.playerA, m.playerB, courtKey, bestOf, tournament);
           if (isHeadless) {

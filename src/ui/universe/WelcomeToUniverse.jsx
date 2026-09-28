@@ -21,10 +21,18 @@ const T = {
 
 const CATEGORY_META = {
   GRAND_SLAM: { label: 'Grand Slam', accent: '#E8C84A', short: 'GS' },
+  SLAM_CLASH: { label: 'Apex Major', accent: '#FF8A3D', short: 'APEX' },
   MASTERS_1000: { label: 'Masters 1000', accent: '#D956FF', short: 'M1000' },
   ATP_500: { label: 'ATP 500', accent: '#51C2E8', short: '500' },
   ATP_250: { label: 'ATP 250', accent: '#57D38C', short: '250' },
+  ATP_100: { label: 'Challenger 100', accent: '#FF8C5A', short: 'CH100' },
+  ATP_75: { label: 'Challenger 75', accent: '#C5A58A', short: 'CH75' },
+  ATP_50: { label: 'Challenger 50', accent: '#B7B3B0', short: 'CH50' },
+  ATP_25: { label: 'Challenger 25', accent: '#E2D7CB', short: 'CH25' },
   ATP_PROSPECTS: { label: 'Juniors', accent: '#FF8C5A', short: 'JR' },
+  JUNIOR_50: { label: 'Junior 50', accent: '#B7B3B0', short: 'J50' },
+  JUNIOR_100: { label: 'Junior 100', accent: '#FFB067', short: 'J100' },
+  JUNIOR_SLAM: { label: 'Junior Slam', accent: '#FFD166', short: 'J-SLAM' },
   FINALS: { label: 'Finals', accent: '#FF6464', short: 'FIN' },
   PROSPECTS_FINALS: { label: 'Junior Finals', accent: '#FFB067', short: 'J-FIN' },
 };
@@ -33,6 +41,8 @@ const SURFACE_META = {
   CLAY: { label: 'Saibro', accent: '#D4561E' },
   HARD: { label: 'Dura', accent: '#68B6FF' },
   GRASS: { label: 'Grama', accent: '#57D38C' },
+  STREET: { label: 'Asfalto', accent: '#EF9F27' },
+  CARPET: { label: 'Veludo', accent: '#C4426A' },
   INDOOR: { label: 'Indoor', accent: '#9B8CFF' },
 };
 
@@ -50,7 +60,7 @@ function buildWelcomeSnapshot() {
 
   const featuredStretch = [...CALENDAR]
     .sort((a, b) => {
-      const weight = { GRAND_SLAM: 0, FINALS: 1, MASTERS_1000: 2, ATP_500: 3, ATP_250: 4, ATP_PROSPECTS: 5, PROSPECTS_FINALS: 6 };
+      const weight = { GRAND_SLAM: 0, FINALS: 1, MASTERS_1000: 2, ATP_500: 3, ATP_250: 4, JUNIOR_SLAM: 5, JUNIOR_100: 6, JUNIOR_50: 7, ATP_PROSPECTS: 8, PROSPECTS_FINALS: 9 };
       return (weight[a.category] ?? 99) - (weight[b.category] ?? 99);
     })
     .slice(0, 5);

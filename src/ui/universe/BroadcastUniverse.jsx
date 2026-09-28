@@ -1,6 +1,6 @@
 ﻿/**
  * BroadcastUniverse.jsx
- * ”€
+ * —”€—
  * Broadcast Hub visual para o Modo Universo
  * Recebe { state, dispatch, onBack } direto do UniverseManager
  */
@@ -14,32 +14,48 @@ import { TOURNAMENT_POINTS } from '../../systems/ranking/RankingSystem.js';
 import { getPlayerTraits } from '../../systems/traits/TraitSystem.js';
 import DefinitivePlayerProfile from '../players/DefinitivePlayerProfile.jsx';
 import ChronicleView from '../press/ChronicleView.jsx';
-import TecnicosView from '../coaches/TecnicosView.jsx';
 import JornalView from '../press/JornalView.jsx';
 import PressCenter from '../press/PressCenter.jsx';
 import AnalystView from '../press/AnalystView.jsx';
 import HallOfFameView from '../history/HallOfFameView.jsx';
+import ErasView from '../history/ErasView.jsx';
+import { computeCoachRecords } from '../../systems/coaching/CoachNarrativeSystem.js';
+import { COACH_METHODS } from '../../systems/coaching/CoachIdentitySystem.js';
 import InterviewView from '../press/InterviewView.jsx';
 import { BROADCAST_THEME as T, SURFACE_THEME } from '../theme/uiTheme.js';
+import { isTiebreakSetScore } from '../../core/constants.js';
+import { roundLabelCopy } from '../../systems/radar/RadarSystem.js';
+import RadarTrajectory from '../analytics/RadarTrajectory.jsx';
+import { buildFollowedPlayerTimeline } from '../../systems/radar/PlayerLifeTimeline.js';
+import CompaniesView from '../sponsors/CompaniesView.jsx';
+import { repairLegacyArticle } from '../../core/textEncoding.js';
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// HISTRIA VIVA  DESIGN TOKENS
+// HIST—RIA VIVA — DESIGN TOKENS
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 const SURFACE = {
-  CLAY:   { ...SURFACE_THEME.CLAY, icon: 'x' },
-  GRASS:  { ...SURFACE_THEME.GRASS, icon: 'xR' },
-  HARD:   { ...SURFACE_THEME.HARD, icon: 'x"️' },
-  INDOOR: { ...SURFACE_THEME.INDOOR, icon: 'xx️' },
+  CLAY:   { ...SURFACE_THEME.CLAY, icon: '🟫' },
+  GRASS:  { ...SURFACE_THEME.GRASS, icon: '🌿' },
+  HARD:   { ...SURFACE_THEME.HARD, icon: '🔷' },
+  INDOOR: { ...SURFACE_THEME.INDOOR, icon: '🏟️' },
 };
 
 const CAT = {
   GRAND_SLAM:      { main: '#E8C84A', label: 'Grand Slam',     icon: '⭐', pts: 2000 },
-  MASTERS_1000:    { main: '#E040FB', label: 'Masters 1000',   icon: 'xS', pts: 1000 },
-  ATP_500:         { main: '#00BCD4', label: 'ATP 500',        icon: 'x', pts: 500  },
-  ATP_250:         { main: '#66BB6A', label: 'ATP 250',        icon: 'xx', pts: 250  },
-  ATP_PROSPECTS:   { main: '#FF7043', label: 'Juniors',      icon: 'xR', pts: 150  },
-  FINALS:          { main: '#F44336', label: 'ATP Finals',     icon: 'x', pts: 1500 },
-  PROSPECTS_FINALS:{ main: '#FF7043', label: 'Junior Finals',  icon: 'xRx', pts: 500  },
+  SLAM_CLASH:      { main: '#FF8A3D', label: 'Apex Major',     icon: '✦', pts: 1250 },
+  ATP_100:         { main: '#FF7043', label: 'Challenger 100', icon: '●', pts: 100 },
+  ATP_75:          { main: '#A1887F', label: 'Challenger 75',  icon: '●', pts: 75 },
+  ATP_50:          { main: '#BCAAA4', label: 'Challenger 50',  icon: '●', pts: 50 },
+  ATP_25:          { main: '#D7CCC8', label: 'Challenger 25',  icon: '●', pts: 25 },
+  MASTERS_1000:    { main: '#E040FB', label: 'Masters 1000',   icon: '◆', pts: 1000 },
+  ATP_500:         { main: '#00BCD4', label: 'ATP 500',        icon: '◇', pts: 500  },
+  ATP_250:         { main: '#66BB6A', label: 'ATP 250',        icon: '●', pts: 250  },
+  ATP_PROSPECTS:   { main: '#FF7043', label: 'Juniors',        icon: '✦', pts: 150  },
+  JUNIOR_50:       { main: '#B7B3B0', label: 'Junior 50',    icon: '●', pts: 50 },
+  JUNIOR_100:      { main: '#FFB067', label: 'Junior 100',   icon: '●', pts: 100 },
+  JUNIOR_SLAM:     { main: '#FFD166', label: 'Junior Slam',  icon: '★', pts: 500 },
+  FINALS:          { main: '#F44336', label: 'ATP Finals',     icon: '★', pts: 1500 },
+  PROSPECTS_FINALS:{ main: '#FF7043', label: 'Junior Finals',  icon: '✶', pts: 500  },
 };
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
@@ -73,6 +89,7 @@ function injectStyles() {
     @keyframes bu-shimmer   { 0%{transform:translateX(-120%)} 100%{transform:translateX(220%)} }
     @keyframes bu-countup   { from{filter:blur(6px);opacity:0;transform:scaleY(1.2) translateY(4px)} to{filter:blur(0);opacity:1;transform:scaleY(1) translateY(0)} }
     @keyframes bu-pop       { 0%{transform:scale(0.84);opacity:0} 65%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+    .bu-reduce-motion *, .bu-reduce-motion *::before, .bu-reduce-motion *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; }
     @keyframes bu-slide-up  { from{opacity:0;transform:translateY(32px)} to{opacity:1;transform:translateY(0)} }
     @keyframes bu-orb-drift { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(60px,-40px) scale(1.1)} 66%{transform:translate(-30px,30px) scale(.93)} }
     @keyframes bu-orb-drift2{ 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(-70px,30px) scale(.9)} 66%{transform:translate(40px,-50px) scale(1.08)} }
@@ -273,7 +290,7 @@ function SurfacePill({ surface, small }) {
 }
 
 function CatPill({ category, small }) {
-  const c = CAT[category] ?? { main:'#888', label:category, icon:'x}' };
+  const c = CAT[category] ?? { main:'#888', label:category, icon:'•' };
   return (
     <span style={{
       background:`${c.main}15`, border:`1px solid ${c.main}40`, color:c.main,
@@ -308,7 +325,7 @@ function PlayerAvatar({ player, size = 32, showRank, rank, highlight }) {
   );
 }
 
-//  Foto do jogador com fallback para iniciais 
+// — Foto do jogador com fallback para iniciais —
 function PlayerFace({ player, size = 28, borderColor, shadow }) {
   const photo = getPlayerPhoto(player?.namedPlayerKey || player);
   const [imgOk, setImgOk] = React.useState(!!photo);
@@ -340,9 +357,9 @@ function TournamentIcon({ tournament, size = 28 }) {
 }
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// CONSTRU!ÒO VIEW (reutilizável)
+// CONSTRUÇÃO VIEW (reutilizável)
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-function ConstructionView({ label, icon = 'x' }) {
+function ConstructionView({ label, icon = '🛠️' }) {
   return (
     <div className="bu-construction">
       <div style={{ fontSize:48, filter:'grayscale(.5)' }}>{icon}</div>
@@ -353,27 +370,27 @@ function ConstructionView({ label, icon = 'x' }) {
 }
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// WAR ROOM  sub-components
+// WAR ROOM — sub-components
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 
 // Mapeia tipo de artigo para cor e ícone (fallback seguro)
 const NEWS_COLOR = {
-  BREAKING:        { c: '#FF5252', i: 'xa', label: 'Breaking News'  },
-  PREVIEW:         { c: '#5CB8E4', i: 'x~️', label: 'Prҩ-Torneio'     },
-  PREDICTION:      { c: '#26C6DA', i: 'x}', label: 'Palpite'        },
-  CHAMPION:        { c: '#E8C84A', i: 'x ', label: 'Campeão'        },
-  UPSET:           { c: '#FF6B35', i: 'a',  label: 'Zebra'          },
-  EPIC_MATCH:      { c: '#EF5350', i: 'x',  label: 'Duelo 0pico'   },
-  RIVALRY:         { c: '#E040FB', i: 'a️',  label: 'Rivalidade'    },
-  RECORD:          { c: '#2ECC71', i: 'x',  label: 'Recorde'        },
-  INJURY:          { c: '#F44336', i: 'x',  label: 'Lesão'          },
-  COMEBACK:        { c: '#00BCD4', i: 'x',  label: 'Retorno'        },
-  PROSPECT:        { c: '#66BB6A', i: 'xR',  label: 'Revelação'      },
-  RETIREMENT:      { c: '#90A4AE', i: 'xR&',  label: 'Aposentadoria'  },
-  ANALYSIS:        { c: '#4A90D9', i: 'x9',  label: 'Análise'        },
-  COLUMN:          { c: '#D4A017', i: 'S️',  label: 'Coluna'         },
-  RUMOR:           { c: '#AB47BC', i: 'x',  label: 'Rumor'          },
-  TOURNAMENT_WRAP: { c: '#5CB8E4', i: 'x',  label: 'Balanço'        },
+  BREAKING:        { c: '#FF5252', i: '⚠',  label: 'Breaking News' },
+  PREVIEW:         { c: '#5CB8E4', i: '🗓️', label: 'Pré-Torneio'   },
+  PREDICTION:      { c: '#26C6DA', i: '◎',  label: 'Palpite'       },
+  CHAMPION:        { c: '#E8C84A', i: '🏆', label: 'Campeão'       },
+  UPSET:           { c: '#FF6B35', i: '⚡', label: 'Zebra'         },
+  EPIC_MATCH:      { c: '#EF5350', i: '🔥', label: 'Duelo Épico'   },
+  RIVALRY:         { c: '#E040FB', i: '⚔️', label: 'Rivalidade'    },
+  RECORD:          { c: '#2ECC71', i: '◆',  label: 'Recorde'       },
+  INJURY:          { c: '#F44336', i: '✚',  label: 'Lesão'         },
+  COMEBACK:        { c: '#00BCD4', i: '↩',  label: 'Retorno'       },
+  PROSPECT:        { c: '#66BB6A', i: '🌱', label: 'Revelação'     },
+  RETIREMENT:      { c: '#90A4AE', i: '◼',  label: 'Aposentadoria' },
+  ANALYSIS:        { c: '#4A90D9', i: '◫',  label: 'Análise'       },
+  COLUMN:          { c: '#D4A017', i: '✎',  label: 'Coluna'        },
+  RUMOR:           { c: '#AB47BC', i: '◌',  label: 'Rumor'         },
+  TOURNAMENT_WRAP: { c: '#5CB8E4', i: '▣',  label: 'Balanço'       },
 };
 
 function getEditorialWeight(article) {
@@ -404,13 +421,13 @@ function getEditorialWeight(article) {
 function buildCircuitBriefs({ nextT, leader, seasonLeaders, latestBreakingArticle, bySurface, year }) {
   const briefs = [];
   if (latestBreakingArticle) briefs.push({ key:'breaking-case', kicker:'caso em andamento', text:latestBreakingArticle.headline, accent:'#FF5252' });
-  if (nextT) briefs.push({ key:'next-tournament', kicker:'janela do prҳximo torneio', text:`${nextT.name} abre o prҳximo ciclo em ${nextT.location ?? 'local indefinido'}.`, accent:(SURFACE[nextT.surface] ?? SURFACE.HARD).light });
-  if (leader) briefs.push({ key:'leader', kicker:'lҭder do mundo', text:`${leader.name} segue como referҪncia principal da temporada ${year}.`, accent:T.gold });
-  if (seasonLeaders[0]?.player) briefs.push({ key:'titles', kicker:'caҧa aos tҭtulos', text:`${seasonLeaders[0].player.name} lidera a corrida com ${seasonLeaders[0].titles} tҭtulo${seasonLeaders[0].titles > 1 ? 's' : ''}.`, accent:T.clayLight });
+  if (nextT) briefs.push({ key:'next-tournament', kicker:'janela do próximo torneio', text:`${nextT.name} abre o próximo ciclo em ${nextT.location ?? 'local indefinido'}.`, accent:(SURFACE[nextT.surface] ?? SURFACE.HARD).light });
+  if (leader) briefs.push({ key:'leader', kicker:'líder do mundo', text:`${leader.name} segue como referência principal da temporada ${year}.`, accent:T.gold });
+  if (seasonLeaders[0]?.player) briefs.push({ key:'titles', kicker:'caça aos títulos', text:`${seasonLeaders[0].player.name} lidera a corrida com ${seasonLeaders[0].titles} título${seasonLeaders[0].titles > 1 ? 's' : ''}.`, accent:T.clayLight });
   const dominantSurface = Object.entries(bySurface ?? {}).sort((a, b) => b[1] - a[1])[0];
   if (dominantSurface) {
     const surf = SURFACE[dominantSurface[0]] ?? SURFACE.HARD;
-    briefs.push({ key:'surface', kicker:'temperatura da temporada', text:`${surf.label} jҡ recebeu ${dominantSurface[1]} torneio${dominantSurface[1] > 1 ? 's' : ''} e comeҧa a desenhar a cara do ano.`, accent:surf.light });
+    briefs.push({ key:'surface', kicker:'temperatura da temporada', text:`${surf.label} já recebeu ${dominantSurface[1]} torneio${dominantSurface[1] > 1 ? 's' : ''} e começa a desenhar a cara do ano.`, accent:surf.light });
   }
   return briefs.slice(0, 5);
 }
@@ -617,11 +634,11 @@ function BreakingNewsOverlay({ article, onDismiss, onOpen }) {
           </div>
           {article.deck && <div style={{ fontFamily:T.cond, fontSize:20, color:T.dim, lineHeight:1.5, marginBottom:18 }}>{article.deck}</div>}
           <div style={{ fontFamily:T.body, fontSize:15, color:'rgba(242,237,228,.6)', lineHeight:1.8, marginBottom:20 }}>
-            {article.body?.split('\n').slice(0, 2).join(' ') ?? 'O circuito inteiro reage. A cobertura completa jҡ domina a redaҧңo do dia.'}
+            {article.body?.split('\n').slice(0, 2).join(' ') ?? 'O circuito inteiro reage. A cobertura completa já domina a redação do dia.'}
           </div>
           <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-            <button className="bu-cta bu-cta-primary" onClick={onOpen}><span>xS</span><span>Abrir cobertura</span></button>
-            <button className="bu-cta bu-cta-fast" onClick={onDismiss}><span></span><span>Continuar</span></button>
+            <button className="bu-cta bu-cta-primary" onClick={onOpen}><span>▶</span><span>Abrir cobertura</span></button>
+            <button className="bu-cta bu-cta-fast" onClick={onDismiss}><span>→</span><span>Continuar</span></button>
             <button className="bu-cta bu-cta-back" onClick={onDismiss}>Fechar alerta</button>
           </div>
         </div>
@@ -645,10 +662,10 @@ function NewsTypePill({ type, small }) {
   );
 }
 
-// Artigo hero  ocupa posição de destaque
+// Artigo hero — ocupa posição de destaque
 function NewsHero({ article, onClick }) {
   if (!article) return null;
-  const cfg = NEWS_COLOR[article.type] ?? { c: T.gold, i: 'x', label: '' };
+  const cfg = NEWS_COLOR[article.type] ?? { c: T.gold, i: '•', label: '' };
   const sc = article.tournament?.surface ? (SURFACE[article.tournament.surface] ?? SURFACE.HARD) : null;
 
   return (
@@ -687,10 +704,10 @@ function NewsHero({ article, onClick }) {
   );
 }
 
-// Artigo card  versão compacta para o grid
+// Artigo card — versão compacta para o grid
 function NewsCard({ article, onClick, accent }) {
   if (!article) return null;
-  const cfg = NEWS_COLOR[article.type] ?? { c: T.faint, i: 'x', label: '' };
+  const cfg = NEWS_COLOR[article.type] ?? { c: T.faint, i: '•', label: '' };
   const color = accent ?? cfg.c;
 
   return (
@@ -723,7 +740,7 @@ function NewsCard({ article, onClick, accent }) {
   );
 }
 
-// Rivalry flash  banner de rivalidade
+// Rivalry flash — banner de rivalidade
 function RivalryFlash({ rivalry, allPlayers }) {
   if (!rivalry) return null;
   const p1 = allPlayers?.find(p => p.id === rivalry.p1Id);
@@ -736,13 +753,13 @@ function RivalryFlash({ rivalry, allPlayers }) {
       background:'rgba(224,64,251,.04)', border:'1px solid rgba(224,64,251,.15)',
       borderLeft:'2px solid rgba(224,64,251,.6)',
     }}>
-      <span style={{ fontSize:12 }}>a️</span>
+      <span style={{ fontSize:12 }}>⚔️</span>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontFamily:T.cond, fontSize:12, fontWeight:700, color:'rgba(242,237,228,.8)', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {p1.name.split(' ').pop()} <span style={{ color:'#E040FB', opacity:.7 }}>vs</span> {p2.name.split(' ').pop()}
         </div>
         <div style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.14em' }}>
-          {rivalry.wins1}{rivalry.wins2} · {rivalry.label ?? rivalry.type}
+          {rivalry.wins1}–{rivalry.wins2} · {rivalry.label ?? rivalry.type}
         </div>
       </div>
       <div style={{ fontFamily:T.disp, fontSize:18, color:'#E040FB', lineHeight:1 }}>{rivalry.total}</div>
@@ -752,9 +769,39 @@ function RivalryFlash({ rivalry, allPlayers }) {
 }
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// GERAL VIEW  War Room
+// GERAL VIEW — War Room
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-function GeralView({ state, onViewBracket, onSimulate, onFastSimulate, simulating, simProgress, onOpenTab }) {
+function NewsroomCommandDeck({ year, calendarIndex, total, pct, heroArticle, orderedFeed, leader, leaderPts, top8, seasonLeaders, nextT, nextSurf, onViewBracket, onSimulate, simulating, simProgress, onOpenArticle, onOpenTab, onOpenProfile }) {
+  const metrics = [
+    ['cobertura', orderedFeed.length, 'peças no arquivo'],
+    ['líder', leader ? `#1` : '—', leader?.name ?? 'ranking em formação'],
+    ['títulos', seasonLeaders[0]?.titles ?? 0, seasonLeaders[0]?.player?.name ?? 'ninguém isolado'],
+  ];
+  return <div style={{ padding:'24px 28px 30px', maxWidth:1540, margin:'0 auto', animation:'bu-slide-up .35s ease both' }}>
+    <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.55fr) minmax(310px,.58fr)', gap:14, alignItems:'stretch' }}>
+      <section style={{ minHeight:390, padding:'clamp(24px,3vw,42px)', position:'relative', overflow:'hidden', border:'1px solid rgba(232,200,74,.22)', background:'linear-gradient(140deg, rgba(232,200,74,.10), rgba(255,255,255,.018) 48%, rgba(0,0,0,.18))' }}>
+        <div style={{ position:'absolute', inset:'auto -8% -42% auto', width:440, height:440, borderRadius:'50%', background:`radial-gradient(circle, ${(nextSurf?.main ?? T.gold)}22, transparent 68%)`, pointerEvents:'none' }} />
+        <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, alignItems:'center', fontFamily:T.mono, fontSize:8, letterSpacing:'.25em', color:T.gold, textTransform:'uppercase' }}><span className="bu-onair"><span className="bu-onair-dot" />redação ao vivo</span> temporada {year} · {calendarIndex}/{total}</div>
+        <div style={{ position:'relative', zIndex:1, fontFamily:T.mono, fontSize:8, letterSpacing:'.3em', color:T.faint, textTransform:'uppercase', marginTop:36 }}>a pauta que organiza o circuito</div>
+        <h1 style={{ position:'relative', zIndex:1, fontFamily:T.disp, fontSize:'clamp(42px,5.4vw,80px)', lineHeight:.9, letterSpacing:'.02em', textTransform:'uppercase', color:T.white, maxWidth:940, margin:'12px 0 14px' }}>{heroArticle?.headline ?? 'O circuito aguarda a primeira história grande.'}</h1>
+        <div style={{ position:'relative', zIndex:1, maxWidth:790, fontFamily:T.body, fontSize:16, color:T.dim, lineHeight:1.65 }}>{heroArticle?.deck ?? 'Simule o próximo torneio para a redação transformar resultados em uma história viva, comparável e com memória.'}</div>
+        {heroArticle?.statLine && <div style={{ position:'relative', zIndex:1, marginTop:20, padding:'12px 14px', maxWidth:750, borderLeft:`3px solid ${T.gold}`, background:'rgba(232,200,74,.08)', fontFamily:T.mono, fontSize:8, lineHeight:1.65, letterSpacing:'.1em', color:'rgba(242,237,228,.72)' }}>{heroArticle.statLine}</div>}
+        {heroArticle && <button onClick={() => onOpenArticle(heroArticle)} style={{ position:'relative', zIndex:1, marginTop:22, padding:'11px 15px', fontFamily:T.mono, fontWeight:700, fontSize:8, letterSpacing:'.16em', textTransform:'uppercase', border:`1px solid ${T.gold}77`, background:'rgba(232,200,74,.1)', color:T.gold, cursor:'pointer' }}>abrir matéria de capa →</button>}
+      </section>
+      <aside style={{ display:'grid', gridTemplateRows:'auto auto 1fr', gap:14 }}>
+        <div style={{ padding:'18px', border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)' }}><div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.24em', textTransform:'uppercase', color:T.faint, marginBottom:12 }}>estado da temporada</div><div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>{metrics.map(([label,value,detail]) => <div key={label} style={{ minWidth:0 }}><div style={{ fontFamily:T.disp, fontSize:30, color:T.gold, lineHeight:.9 }}>{value}</div><div style={{ fontFamily:T.mono, fontSize:6.5, color:T.faint, letterSpacing:'.14em', textTransform:'uppercase', marginTop:6 }}>{label}</div><div style={{ fontFamily:T.body, fontSize:11, color:T.dim, marginTop:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{detail}</div></div>)}</div></div>
+        <div style={{ padding:'18px', border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)' }}><div style={{ display:'flex', justifyContent:'space-between', fontFamily:T.mono, fontSize:7, letterSpacing:'.2em', color:T.faint, textTransform:'uppercase' }}><span>temporada em curso</span><span>{pct}%</span></div><div style={{ height:5, marginTop:10, background:'rgba(255,255,255,.06)' }}><div style={{ height:'100%', width:`${pct}%`, background:`linear-gradient(90deg,${T.clay},${T.gold})` }} /></div></div>
+        <div style={{ padding:'18px', border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)' }}><div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.24em', textTransform:'uppercase', color:T.faint, marginBottom:10 }}>próximo compromisso</div>{nextT ? <><div style={{ fontFamily:T.disp, fontSize:27, color:T.white, textTransform:'uppercase', lineHeight:1 }}>{nextT.name}</div><div style={{ display:'flex', gap:7, marginTop:10, flexWrap:'wrap' }}><CatPill category={nextT.category} small /><SurfacePill surface={nextT.surface} small /></div><div style={{ display:'flex', gap:8, marginTop:16 }}><button onClick={() => onViewBracket?.(nextT)} disabled={simulating} className="bu-cta bu-cta-load" style={{ flex:1, justifyContent:'center' }}>chave</button><button onClick={() => onSimulate?.()} disabled={simulating} className="bu-cta bu-cta-primary" style={{ flex:1, justifyContent:'center' }}>{simulating ? `${simProgress}...` : 'simular'}</button></div></> : <div style={{ fontFamily:T.cond, fontSize:18, color:T.grassLight, textTransform:'uppercase' }}>temporada concluída</div>}</div>
+      </aside>
+    </div>
+    <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) minmax(300px,.52fr)', gap:14, marginTop:14 }}>
+      <section style={{ border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)', padding:'18px' }}><div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:12, marginBottom:13 }}><div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', textTransform:'uppercase', color:T.faint }}>mesa de dados</div><button onClick={() => onOpenTab?.('analistas')} style={{ border:0, background:'transparent', color:T.gold, cursor:'pointer', fontFamily:T.mono, fontSize:7, letterSpacing:'.16em', textTransform:'uppercase' }}>ver análises →</button></div><div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10 }}>{orderedFeed.slice(1,4).map((article,index) => <button key={article.id ?? index} onClick={() => onOpenArticle(article)} style={{ textAlign:'left', minHeight:138, padding:'13px 14px', cursor:'pointer', border:`1px solid ${(NEWS_COLOR[article.type]?.c ?? T.gold)}55`, borderTop:`3px solid ${(NEWS_COLOR[article.type]?.c ?? T.gold)}`, background:'rgba(255,255,255,.018)' }}><div style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.16em', textTransform:'uppercase' }}>{article.journalist?.name ?? 'redação de dados'}</div><div style={{ fontFamily:T.cond, fontSize:18, color:T.white, textTransform:'uppercase', lineHeight:1.08, marginTop:9 }}>{article.headline}</div><div style={{ fontFamily:T.mono, fontSize:7, color:T.dim, lineHeight:1.5, marginTop:9 }}>{article.statLine ?? article.deck}</div></button>)}</div></section>
+      <section style={{ border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)', padding:'18px' }}><div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', textTransform:'uppercase', color:T.faint, marginBottom:13 }}>topo em disputa</div><div style={{ display:'grid', gap:8 }}>{top8.slice(0,4).map(({ player, pts }, index) => <button key={player.id} onClick={() => onOpenProfile?.(player)} style={{ display:'grid', gridTemplateColumns:'30px 1fr auto', alignItems:'center', gap:9, padding:'7px 0', border:'none', borderBottom:index === 3 ? 'none' : '1px solid rgba(255,255,255,.06)', background:'transparent', cursor:'pointer', textAlign:'left' }} title={`Abrir ficha de ${player.name}`}><div style={{ fontFamily:T.disp, fontSize:22, color:index === 0 ? T.gold : T.dim }}>#{index + 1}</div><PlayerAvatar player={player} size={27} /><div style={{ fontFamily:T.mono, fontSize:8, color:T.faint }}>{pts.toLocaleString()}</div></button>)}</div></section>
+    </div>
+  </div>;
+}
+
+function GeralView({ state, onViewBracket, onSimulate, onFastSimulate, simulating, simProgress, onOpenTab, onOpenProfile }) {
   const { tourPlayers, prospects, rankingStore, tournamentResults, calendarIndex, year } = state;
   const [selectedArticle, setSelectedArticle] = React.useState(null);
 
@@ -767,7 +814,7 @@ function GeralView({ state, onViewBracket, onSimulate, onFastSimulate, simulatin
   const nextT        = CALENDAR[calendarIndex];
   const isSeasonDone = calendarIndex >= total;
 
-  const feed = state?.newsEngine?.feed ?? [];
+  const feed = (state?.newsEngine?.feed ?? []).map(repairLegacyArticle);
   const orderedFeed = [...feed].sort((a, b) => getEditorialWeight(b) - getEditorialWeight(a));
   const latestBreakingArticle = orderedFeed.find(article => article?.type === 'BREAKING') ?? null;
   const heroArticle = orderedFeed[0] ?? null;
@@ -931,6 +978,28 @@ function GeralView({ state, onViewBracket, onSimulate, onFastSimulate, simulatin
       </div>
     );
   }
+
+  return <NewsroomCommandDeck
+    year={year}
+    calendarIndex={calendarIndex}
+    total={total}
+    pct={pct}
+    heroArticle={heroArticle}
+    orderedFeed={orderedFeed}
+    leader={leader}
+    leaderPts={leaderPts}
+    top8={top8}
+    seasonLeaders={seasonLeaders}
+    nextT={nextT}
+    nextSurf={nextSurf}
+    onViewBracket={onViewBracket}
+    onSimulate={onSimulate}
+    simulating={simulating}
+    simProgress={simProgress}
+    onOpenArticle={setSelectedArticle}
+    onOpenTab={onOpenTab}
+    onOpenProfile={onOpenProfile}
+  />;
 
   return (
     <div style={{ animation:'bu-slide-up .4s cubic-bezier(.22,.68,0,1.2) both' }}>
@@ -1265,7 +1334,7 @@ function GeralView({ state, onViewBracket, onSimulate, onFastSimulate, simulatin
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 // CALENDÁRIO VIEW
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-function CalendarioView({ state }) {
+function CalendarioView({ state, onViewBracket }) {
   const [openMonth, setOpenMonth] = useState(null);
   const { tournamentResults, calendarIndex, year } = state;
 
@@ -1310,6 +1379,7 @@ function CalendarioView({ state }) {
   const totalM1000 = CALENDAR.filter(t=>t.category==='MASTERS_1000').length;
   const totalDone  = Object.keys(tournamentResults).length;
   const totalAll   = CALENDAR.length;
+  const nextTournament = CALENDAR[calendarIndex] ?? null;
 
   return (
     <div style={{ animation:'bu-in .4s ease both' }}>
@@ -1339,6 +1409,13 @@ function CalendarioView({ state }) {
       </div>
 
       <div style={{ padding:'32px 40px' }}>
+        {nextTournament && (
+          <div style={{ display:'grid', gridTemplateColumns:'auto minmax(0,1fr) auto', gap:18, alignItems:'center', marginBottom:22, padding:'16px 18px', border:`1px solid ${(CAT[nextTournament.category] ?? CAT.ATP_250).main}55`, background:`linear-gradient(90deg, ${(CAT[nextTournament.category] ?? CAT.ATP_250).main}18, rgba(255,255,255,.015))` }}>
+            <div style={{ fontFamily:T.mono, fontSize:8, color:(CAT[nextTournament.category] ?? CAT.ATP_250).main, letterSpacing:'.2em' }}>EM JOGO AGORA</div>
+            <div><div style={{ fontFamily:T.cond, fontSize:22, fontWeight:800, letterSpacing:'.04em', color:T.white, textTransform:'uppercase' }}>{nextTournament.name}</div><div style={{ fontFamily:T.mono, fontSize:8, color:T.dim, letterSpacing:'.14em', marginTop:3 }}>{(CAT[nextTournament.category] ?? CAT.ATP_250).label} · {nextTournament.location} · {nextTournament.month}</div></div>
+            {onViewBracket && <button onClick={() => onViewBracket(nextTournament)} style={{ border:`1px solid ${(CAT[nextTournament.category] ?? CAT.ATP_250).main}`, background:'transparent', color:T.white, padding:'10px 13px', cursor:'pointer', fontFamily:T.mono, fontSize:8, letterSpacing:'.14em' }}>ABRIR CHAVE →</button>}
+          </div>
+        )}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:8, marginBottom:32 }}>
           {MONTHS_META.map(m => {
             const status  = monthStatus(m.num);
@@ -1361,7 +1438,7 @@ function CalendarioView({ state }) {
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                     <span style={{ fontFamily:T.disp, fontSize:13, letterSpacing:'.08em', color:T.faint }}>{m.short}</span>
                     {current && <span style={{ fontFamily:T.mono, fontSize:7, letterSpacing:'.18em', color:T.gold, border:'1px solid rgba(232,200,74,.4)', padding:'2px 5px' }}>ATUAL</span>}
-                    {done    && <span style={{ fontFamily:T.mono, fontSize:10, color:T.grassLight }}>S</span>}
+                    {done    && <span style={{ fontFamily:T.mono, fontSize:10, color:T.grassLight }}>✓</span>}
                   </div>
                   <div style={{ fontFamily:T.disp, fontSize:22, letterSpacing:'.04em', color:current?T.gold:done?T.grassLight:T.dim, textTransform:'uppercase', lineHeight:1, marginBottom:6 }}>
                     {m.name}
@@ -1439,7 +1516,7 @@ function CalendarioView({ state }) {
                               {weekTours.map((t, idx) => {
                                 const res   = tournamentResults[t.id];
                                 const champ = res?._slim ? res.champion : res?.bracket?.champion;
-                                const cat   = CAT[t.category] ?? { main:'#888', icon:'x}' };
+                                const cat   = CAT[t.category] ?? { main:'#888', icon:'•' };
                                 const isParallel = !!t.parallelGroup && (t.category === 'ATP_250' || t.category === 'ATP_500');
                                 return (
                                   <div key={t.id} style={{ padding:'8px 0', borderBottom: idx === weekTours.length - 1 ? 'none' : '1px solid rgba(255,255,255,.05)', display:'flex', alignItems:'center', gap:8 }}>
@@ -1609,13 +1686,16 @@ function RankingsView({ state, dispatch }) {
     const seasonStartRank = historyRank ?? player?.rankPosition ?? entry.position;
     const rankMove = Number.isFinite(Number(seasonStartRank)) ? Number(seasonStartRank) - Number(entry.position) : 0;
     const seasonPoints = seasonPointsByPlayer[player.id] ?? 0;
+    const defendingPoints = mainTab === 'juniors' ? 0 : (rankingStore?.playerResults?.[player.id] ?? [])
+      .filter(r => Number(r?.season) === Number(state.year) - 1)
+      .reduce((sum, r) => sum + Number(r?.points ?? 0), 0);
     const form20 = form20ByPlayer[player.id] ?? { wins:0, losses:0, total:0, pct:0 };
     const pointsRank = Math.min(1, seasonPoints / 5000);
     const formRank = form20.total ? form20.pct / 100 : 0.45;
     const moveRank = Math.max(-1, Math.min(1, rankMove / 20));
     const ovrRank = Math.min(1, overallRating(player.attrs ?? {}) / 100);
     const momentum = Math.round(Math.max(0, Math.min(100, (formRank * 46) + (pointsRank * 28) + ((moveRank + 1) / 2 * 16) + (ovrRank * 10))));
-    return { ...entry, seasonStartRank, rankMove, seasonPoints, form20, momentum };
+    return { ...entry, seasonStartRank, rankMove, seasonPoints, defendingPoints, form20, momentum };
   });
 
   const analyticsList = mainTab === 'juniors' ? enrichedList : (tourSub === 'live' ? enrichedList : []);
@@ -2082,13 +2162,19 @@ function RankingsView({ state, dispatch }) {
         allPlayers={[...tourPlayers, ...prospects]}
         rankingStore={rankingStore}
         tournamentResults={allTournamentResults}
-        coachPool={state.coachPool ?? []}
         dispatch={dispatch}
         year={state.year}
         rivalrySystem={state.rivalrySystem ?? null}
         newsEngine={state.newsEngine ?? null}
         sponsorPool={state.sponsorPool ?? null}
+        coachMarket={state.coachMarket ?? null}
         chronicleEngine={state.chronicleEngine ?? null}
+        historyBook={state.historyBook ?? null}
+        radarFollowed={(state.radar?.followedPlayerIds ?? []).includes(selPlayer.id)}
+        onToggleRadar={(player) => {
+          const ids = state.radar?.followedPlayerIds ?? [];
+          dispatch?.({ type:'SET_RADAR_FOLLOWED', playerIds: ids.includes(player.id) ? ids.filter(id => id !== player.id) : [...ids, player.id] });
+        }}
       />
     );
   }
@@ -2219,7 +2305,7 @@ function RankingsView({ state, dispatch }) {
       'Parece menos fase e mais chegada ao proprio centro competitivo.',
     ],
     PRIME_STABLE: [
-      'Um profissional em plena faixa de rendimento, solido e previsivel.',
+      'Um profissional em plena faixa de rendimento, sólido e previsível.',
       'Nao encanta sempre, mas entrega quase toda semana.',
       'O ranking reflete uma carreira em ritmo funcional.',
     ],
@@ -2295,7 +2381,7 @@ function RankingsView({ state, dispatch }) {
     ],
     UNDERDOG_STORY: [
       'Uma historia de resistencia que ganhou mais paginas que o previsto.',
-      'Segue provando que previsao baixa nao encerra carreira.',
+      'Segue provando que previsão baixa não encerra carreira.',
       'O circuito adora quando um nome assim insiste ate incomodar.',
     ],
     FORMER_HYPE_SILENT: [
@@ -2432,7 +2518,7 @@ function RankingsView({ state, dispatch }) {
   };
 
   const RankRow = ({ entry, idx }) => {
-    const { player, position, points, rankMove, seasonPoints, form20, momentum } = entry;
+    const { player, position, points, rankMove, seasonPoints, defendingPoints, form20, momentum } = entry;
     const pc    = rankColor(position);
     const ovr   = overallRating(player.attrs);
     const isTop = position <= 3;
@@ -2443,7 +2529,7 @@ function RankingsView({ state, dispatch }) {
     return (
       <div onClick={() => setSelPlayer(player)} style={{
         display:'grid',
-        gridTemplateColumns:'74px 44px minmax(170px,260px) 68px 126px minmax(360px,1fr) 128px 108px 116px 108px 108px',
+        gridTemplateColumns:'74px 44px minmax(170px,260px) 68px 126px minmax(300px,1fr) 128px 98px 108px 96px 108px 108px',
         alignItems:'center',
         gap:12,
         padding: isTop ? '14px 22px' : '10px 22px',
@@ -2502,6 +2588,10 @@ function RankingsView({ state, dispatch }) {
         <div style={{ textAlign:'right' }}>
           <div style={{ fontFamily:T.disp, fontSize:22, color:T.gold, lineHeight:1 }}>{seasonPoints.toLocaleString()}</div>
           <div style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.14em', marginTop:2 }}>PTS ANO</div>
+        </div>
+        <div style={{ textAlign:'right' }} title="Pontos ativos da temporada anterior que ainda serão defendidos até o fim do calendário.">
+          <div style={{ fontFamily:T.disp, fontSize:20, color:defendingPoints ? '#FF9F43' : T.faint, lineHeight:1 }}>{defendingPoints ? defendingPoints.toLocaleString() : '—'}</div>
+          <div style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.14em', marginTop:2 }}>DEFESA</div>
         </div>
         <div style={{ textAlign:'right' }}>
           <div style={{ fontFamily:T.disp, fontSize:22, color:moveColor, lineHeight:1 }}>
@@ -2599,7 +2689,7 @@ function RankingsView({ state, dispatch }) {
         <div style={{ border:'1px solid rgba(255,255,255,.07)', background:'rgba(255,255,255,.012)', overflow:'hidden' }}>
           <div style={{
             display:'grid',
-            gridTemplateColumns:'74px 44px minmax(170px,260px) 68px 126px minmax(360px,1fr) 128px 108px 116px 108px 108px',
+            gridTemplateColumns:'74px 44px minmax(170px,260px) 68px 126px minmax(300px,1fr) 128px 98px 108px 96px 108px 108px',
             gap:12,
             padding:'10px 22px',
             borderBottom:'1px solid rgba(255,255,255,.07)',
@@ -2619,6 +2709,7 @@ function RankingsView({ state, dispatch }) {
             <div>Forma 20</div>
             <div style={{ textAlign:'right' }}>Momentum</div>
             <div style={{ textAlign:'right' }}>Pts Ano</div>
+            <div style={{ textAlign:'right' }}>Defesa</div>
             <div style={{ textAlign:'right' }}>Mov.</div>
             <div style={{ textAlign:'right' }}>Pts</div>
           </div>
@@ -2735,9 +2826,9 @@ function NoticiasView({ state }) {
 
       {allItems.length===0 ? (
         <div className="ui-empty-state" style={{ minHeight:'60vh', border:'none', background:'transparent', boxShadow:'none' }}>
-          <div className="ui-empty-kicker">Reda��o</div>
-          <div className="ui-empty-title">Nenhuma not�cia ainda</div>
-          <div className="ui-empty-copy">Simule torneios para abrir a cobertura do circuito, destravar manchetes e alimentar a reda��o.</div>
+          <div className="ui-empty-kicker">Redação</div>
+          <div className="ui-empty-title">Nenhuma notícia ainda</div>
+          <div className="ui-empty-copy">Simule torneios para abrir a cobertura do circuito, destravar manchetes e alimentar a redação.</div>
         </div>
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 400px' }}>
@@ -2813,81 +2904,81 @@ function NoticiasView({ state }) {
 // ANALYTICS VIEW
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 
-//  Configs locais (SIGNATURE_SHOTS / RALLY_PATTERNS não exportados ainda) 
+// — Configs locais (SIGNATURE_SHOTS / RALLY_PATTERNS não exportados ainda) —
 const AN_STYLES = {
   // Estilos originais
-  AGG_BASELINER: { label:'Agg. Baseliner',      icon:'a',  color:'#FF6B35', refs:'Djokovic · Alcaraz'      },
-  CTR_PUNCHER:   { label:'Counter-Puncher',      icon:'x:️', color:'#FF4444', refs:'Nadal · Murray'          },
-  ALL_COURT:     { label:'All-Court',            icon:'x}',  color:'#FFD700', refs:'Federer · Graf'          },
-  SRV_VOL:       { label:'Serve & Volley',       icon:'x',  color:'#00FF88', refs:'McEnroe · Edberg'        },
-  BIG_SERVER:    { label:'Big Server',           icon:'x',  color:'#AA44FF', refs:'Isner · Karlovic'        },
-  RETRIEVER:     { label:'Retriever',            icon:'x',  color:'#00AAFF', refs:'Wozniacki · Ferrer'      },
-  TAKEALLRISK:   { label:'Take All Risk',        icon:'x}',  color:'#FF69B4', refs:'Kyrgios · Gulbis'        },
+  AGG_BASELINER: { label:'Agg. Baseliner',      icon:'◆',  color:'#FF6B35', refs:'Djokovic · Alcaraz'      },
+  CTR_PUNCHER:   { label:'Counter-Puncher',      icon:'◆', color:'#FF4444', refs:'Nadal · Murray'          },
+  ALL_COURT:     { label:'All-Court',            icon:'◆',  color:'#FFD700', refs:'Federer · Graf'          },
+  SRV_VOL:       { label:'Serve & Volley',       icon:'◆',  color:'#00FF88', refs:'McEnroe · Edberg'        },
+  BIG_SERVER:    { label:'Big Server',           icon:'◆',  color:'#AA44FF', refs:'Isner · Karlovic'        },
+  RETRIEVER:     { label:'Retriever',            icon:'◆',  color:'#00AAFF', refs:'Wozniacki · Ferrer'      },
+  TAKEALLRISK:   { label:'Take All Risk',        icon:'◆',  color:'#FF69B4', refs:'Kyrgios · Gulbis'        },
   // Estilos expandidos
-  GRINDER:       { label:'Grinder',              icon:'a"️',  color:'#FF8800', refs:'Hewitt · Robredo'        },
-  PWR_BASE:      { label:'Power Baseliner',      icon:'x',  color:'#FF3300', refs:'Medvedev · Agassi'       },
-  TACT_TEC:      { label:'Tactical Technician',  icon:'x',  color:'#00CCFF', refs:'Henin · Stosur'          },
-  NET_SPEC:      { label:'Net Specialist',       icon:'x"️', color:'#88FF44', refs:'Navratilova · Rafter'    },
-  ADPT_TAC:      { label:'Adaptive Tactical',    icon:'x}',  color:'#C84FEB', refs:'Thiem · Zverev'          },
+  GRINDER:       { label:'Grinder',              icon:'◆',  color:'#FF8800', refs:'Hewitt · Robredo'        },
+  PWR_BASE:      { label:'Power Baseliner',      icon:'◆',  color:'#FF3300', refs:'Medvedev · Agassi'       },
+  TACT_TEC:      { label:'Tactical Technician',  icon:'◆',  color:'#00CCFF', refs:'Henin · Stosur'          },
+  NET_SPEC:      { label:'Net Specialist',       icon:'◆', color:'#88FF44', refs:'Navratilova · Rafter'    },
+  ADPT_TAC:      { label:'Adaptive Tactical',    icon:'◆',  color:'#C84FEB', refs:'Thiem · Zverev'          },
 };
 
 const AN_SIGS = {
   // Forehand
-  INSIDE_OUT_FH:    { label:'Inside-Out FH',       icon:'x}',  color:'#FF6B35' },
-  INSIDE_IN_FH:     { label:'Forehand Inside-In',  icon:' ️',  color:'#FF8C42' },
-  BANANA_FH:        { label:'Banana FH',           icon:'x9',  color:'#FFD700' },
-  HEAVY_TOPSPIN_CC: { label:'Cruzado Pesado',      icon:'a"️',  color:'#FF6B35' },
-  SHORT_ANGLE_FH:   { label:'ngulo Curto FH',     icon:'x',  color:'#FFC107' },
-  RUNNING_FH:       { label:'FH em Corrida',       icon:'x',  color:'#FF9800' },
+  INSIDE_OUT_FH:    { label:'Inside-Out FH',       icon:'•',  color:'#FF6B35' },
+  INSIDE_IN_FH:     { label:'Forehand Inside-In',  icon:'•',  color:'#FF8C42' },
+  BANANA_FH:        { label:'Banana FH',           icon:'•',  color:'#FFD700' },
+  HEAVY_TOPSPIN_CC: { label:'Cruzado Pesado',      icon:'•',  color:'#FF6B35' },
+  SHORT_ANGLE_FH:   { label:'Ângulo Curto FH',      icon:'•',   color:'#FFC107' },
+  RUNNING_FH:       { label:'FH em Corrida',       icon:'•',  color:'#FF9800' },
   // Topspin pesado
-  HEAVY_TOP_CC:     { label:'Topspin Pesado CC',   icon:'xR',  color:'#00BCD4' },
-  HEAVY_TOP_DTL:    { label:'Topspin Pesado DTL',  icon:'a',  color:'#0097A7' },
-  HEAVY_TOP_BODY:   { label:'Topspin no Corpo',    icon:'x}',  color:'#26C6DA' },
+  HEAVY_TOP_CC:     { label:'Topspin Pesado CC',   icon:'•',  color:'#00BCD4' },
+  HEAVY_TOP_DTL:    { label:'Topspin Pesado DTL',  icon:'•',  color:'#0097A7' },
+  HEAVY_TOP_BODY:   { label:'Topspin no Corpo',    icon:'•',  color:'#26C6DA' },
   // Backhand
-  DTL_BH:           { label:'Backhand DTL',        icon:'x}',  color:'#E91E63' },
-  BANANA_BH:        { label:'Banana BH',           icon:'xR',  color:'#FFC107' },
-  SLICE_BH:         { label:'Slice BH',            icon:'xR`',  color:'#2ECC71' },
-  BH_CHIP_RETURN:   { label:'Chip BH',             icon:'S️',  color:'#4CAF50' },
-  TOPSPIN_CROSS:    { label:'Topspin Cruzado',     icon:'x',  color:'#00BCD4' },
-  SHORT_ANGLE_BH:   { label:'ngulo Curto BH',     icon:'x',  color:'#00E5FF' },
+  DTL_BH:           { label:'Backhand DTL',        icon:'•',  color:'#E91E63' },
+  BANANA_BH:        { label:'Banana BH',           icon:'•',  color:'#FFC107' },
+  SLICE_BH:         { label:'Slice BH',            icon:'•',  color:'#2ECC71' },
+  BH_CHIP_RETURN:   { label:'Chip BH',             icon:'•',  color:'#4CAF50' },
+  TOPSPIN_CROSS:    { label:'Topspin Cruzado',     icon:'•',  color:'#00BCD4' },
+  SHORT_ANGLE_BH:   { label:'Ângulo Curto BH',      icon:'•',   color:'#00E5FF' },
   // Táticos
-  DROP_SHOT:        { label:'Drop Shot',           icon:'x',  color:'#F48FB1' },
-  MOONBALL:         { label:'Moonball',            icon:'xR"',  color:'#B0BEC5' },
-  TOPSPIN_PASS:     { label:'Passing Topspin',     icon:'x',  color:'#66BB6A' },
-  SLICE_APPROACH:   { label:'Slice Aproximação',   icon:'x}',  color:'#81C784' },
-  LOB_ATTACK:       { label:'Lob Ofensivo',        icon:'xR',  color:'#AB47BC' },
+  DROP_SHOT:        { label:'Drop Shot',           icon:'•',  color:'#F48FB1' },
+  MOONBALL:         { label:'Moonball',            icon:'•',  color:'#B0BEC5' },
+  TOPSPIN_PASS:     { label:'Passing Topspin',     icon:'•',  color:'#66BB6A' },
+  SLICE_APPROACH:   { label:'Slice Aproximação',   icon:'•',  color:'#81C784' },
+  LOB_ATTACK:       { label:'Lob Ofensivo',        icon:'•',  color:'#AB47BC' },
   // Saque
-  BIG_SERVE:        { label:'Saque Dominador',     icon:'a',  color:'#AA44FF' },
-  FLAT_SERVE_T:     { label:'Saque no T',          icon:'x',  color:'#7E57C2' },
-  WIDE_SLICE_SERVE: { label:'Saque Slice Aberto',  icon:' "️',  color:'#9575CD' },
-  KICK_SERVE:       { label:'Kick Serve',          icon:'x',  color:'#8D6E63' },
-  BODY_SERVE:       { label:'Saque no Corpo',      icon:'x}',  color:'#A1887F' },
+  BIG_SERVE:        { label:'Saque Dominador',     icon:'•',  color:'#AA44FF' },
+  FLAT_SERVE_T:     { label:'Saque no T',          icon:'•',  color:'#7E57C2' },
+  WIDE_SLICE_SERVE: { label:'Saque Slice Aberto',  icon:'•',  color:'#9575CD' },
+  KICK_SERVE:       { label:'Kick Serve',          icon:'•',  color:'#8D6E63' },
+  BODY_SERVE:       { label:'Saque no Corpo',      icon:'•',  color:'#A1887F' },
   // Rede
-  VOLLEY_FINISH:    { label:'Voleio Finalizador',  icon:'x`',  color:'#00FF88' },
-  DROP_VOLLEY:      { label:'Drop Volley',         icon:'x',  color:'#80CBC4' },
-  SWINGING_VOLLEY:  { label:'Swing Volley',        icon:'a️',  color:'#26A69A' },
-  SMASH:            { label:'Smash',               icon:'x',  color:'#EF5350' },
+  VOLLEY_FINISH:    { label:'Voleio Finalizador',  icon:'•',  color:'#00FF88' },
+  DROP_VOLLEY:      { label:'Drop Volley',         icon:'•',  color:'#80CBC4' },
+  SWINGING_VOLLEY:  { label:'Swing Volley',        icon:'•',  color:'#26A69A' },
+  SMASH:            { label:'Smash',               icon:'•',  color:'#EF5350' },
   // Power
-  FLAT_WINNER:      { label:'Flat Winner',         icon:'x',  color:'#EF5350' },
+  FLAT_WINNER:      { label:'Flat Winner',         icon:'•',  color:'#EF5350' },
   // Defesa
-  DEFENSIVE_SLICE:  { label:'Slice Defensivo',     icon:'x:️', color:'#78909C' },
-  RUNNING_DOWN_LOB: { label:'Defesa em Corrida',   icon:'xR️', color:'#90A4AE' },
+  DEFENSIVE_SLICE:  { label:'Slice Defensivo',     icon:'•', color:'#78909C' },
+  RUNNING_DOWN_LOB: { label:'Defesa em Corrida',   icon:'•', color:'#90A4AE' },
 };
 
 const AN_RALLY = {
-  CROSS_HEAVY:         { label:'Cruzado Dominante',    icon:' ️',  color:'#FF6B35' },
-  DTL_HUNTER:          { label:'Caçador DTL',           icon:'x}',  color:'#EF5350' },
-  DEEP_GRINDER:        { label:'Fundão Implacável',     icon:'⬇️',  color:'#FF4444' },
-  SHORT_ANGLE_BUILDER: { label:'Construtor de ngulos', icon:'x',  color:'#FFD700' },
-  CENTRE_CONTROL:      { label:'Controle Central',      icon:'a️',  color:'#CBD5E1' },
-  AGGRESSIVE_EARLY:    { label:'Ataque Precoce',        icon:'a',  color:'#FF69B4' },
-  SERVE_PLUS_ONE:      { label:'Serve + 1',             icon:'1️⒣', color:'#AA44FF' },
-  NET_APPROACH:        { label:'Aproximação Rede',      icon:'🏃',  color:'#00FF88' },
-  DEFENSIVE_BASE:      { label:'Base Defensiva',        icon:'x:️', color:'#00AAFF' },
-  RHYTHM_DISRUPTION:   { label:'Quebra de Ritmo',       icon:'x}',  color:'#2ECC71' },
+  CROSS_HEAVY:         { label:'Cruzado Dominante',    icon:'◇',  color:'#FF6B35' },
+  DTL_HUNTER:          { label:'Caçador DTL',           icon:'◇',  color:'#EF5350' },
+  DEEP_GRINDER:        { label:'Fundão Implacável',     icon:'◇',  color:'#FF4444' },
+  SHORT_ANGLE_BUILDER: { label:'Construtor de Ângulos', icon:'◇',   color:'#FFD700' },
+  CENTRE_CONTROL:      { label:'Controle Central',      icon:'◇',  color:'#CBD5E1' },
+  AGGRESSIVE_EARLY:    { label:'Ataque Precoce',        icon:'◇',  color:'#FF69B4' },
+  SERVE_PLUS_ONE:      { label:'Serve + 1',             icon:'◇', color:'#AA44FF' },
+  NET_APPROACH:        { label:'Aproximação Rede',      icon:'◇',  color:'#00FF88' },
+  DEFENSIVE_BASE:      { label:'Base Defensiva',        icon:'◇', color:'#00AAFF' },
+  RHYTHM_DISRUPTION:   { label:'Quebra de Ritmo',       icon:'◇',  color:'#2ECC71' },
 };
 
-//  computeAnalytics: extrai win rates por estilo/sig/rally 
+// — computeAnalytics: extrai win rates por estilo/sig/rally —
 function computeAnalytics(state) {
   const allResults = {
     ...(state.historicalTournamentResults ?? {}),
@@ -2896,7 +2987,7 @@ function computeAnalytics(state) {
 
   if (!allResults || Object.keys(allResults).length === 0) return null;
 
-  // Mapa de id   jogador (inclui aposentados)
+  // Mapa de id  — jogador (inclui aposentados)
   const allPlayers = [
     ...(state.tourPlayers ?? []),
     ...(state.prospects   ?? []),
@@ -2904,7 +2995,7 @@ function computeAnalytics(state) {
   ];
   const pMap = Object.fromEntries(allPlayers.map(p => [p.id, p]));
 
-  // Acumuladores: { key   { wins, losses, vs: { oppKey   { wins, losses } } } }
+  // Acumuladores: { key  — { wins, losses, vs: { oppKey  — { wins, losses } } } }
   const styleAcc  = {};
   const sigAcc    = {};
   const rallyAcc  = {};
@@ -2921,7 +3012,7 @@ function computeAnalytics(state) {
 
   Object.values(allResults).forEach(res => {
     if (res._slim) {
-      // Slim format  temos apenas IDs, buscar estilo no playerMap
+      // Slim format — temos apenas IDs, buscar estilo no playerMap
       (res.matches ?? []).forEach(({ w, l }) => {
         const wp = pMap[w];
         const lp = pMap[l];
@@ -3000,7 +3091,7 @@ function computeAnalytics(state) {
   };
 }
 
-//  Cor de performance 
+// — Cor de performance —
 function anPerfColor(wr) {
   if (wr >= 0.58) return '#2ECC71';
   if (wr >= 0.54) return '#A8E063';
@@ -3009,7 +3100,7 @@ function anPerfColor(wr) {
   return '#EF5350';
 }
 
-//  Barra de win rate 
+// — Barra de win rate —
 function AnBar({ winRate, height=5 }) {
   const pct = (winRate * 100).toFixed(1);
   const c   = anPerfColor(winRate);
@@ -3028,7 +3119,7 @@ function AnBar({ winRate, height=5 }) {
   );
 }
 
-//  Card de linha expandível 
+// — Card de linha expandível —
 function AnRow({ row, rankIdx }) {
   const [open, setOpen] = React.useState(false);
   const { cfg, wins, losses, total, winRate, vs } = row;
@@ -3101,7 +3192,7 @@ function AnRow({ row, rankIdx }) {
           </div>
           {vs.length > 0 && (
             <div style={{ fontFamily:T.mono, fontSize:8, color:RC.dim,
-              transform: open ? 'rotate(180deg)' : 'none', transition:'transform .2s' }}></div>
+              transform: open ? 'rotate(180deg)' : 'none', transition:'transform .2s' }}>⌄</div>
           )}
         </div>
       </div>
@@ -3151,7 +3242,7 @@ function AnRow({ row, rankIdx }) {
   );
 }
 
-//  Resumo de balanceamento 
+// — Resumo de balanceamento —
 function AnBalanceSummary({ rows, label }) {
   const strong = rows.filter(r => r.winRate >= 0.58);
   const ok     = rows.filter(r => r.winRate >= 0.46 && r.winRate < 0.58);
@@ -3186,12 +3277,12 @@ function AnBalanceSummary({ rows, label }) {
   );
 }
 
-//  Painel por sub-aba 
+// — Painel por sub-aba —
 function AnSection({ rows, label, emptyMsg }) {
   if (!rows || rows.length === 0) {
     return (
       <div style={{ textAlign:'center', padding:'60px 0', color:RC.dim }}>
-        <div style={{ fontSize:36, marginBottom:12, opacity:.3 }}>x`</div>
+        <div style={{ fontSize:36, marginBottom:12, opacity:.3 }}>◇</div>
         <div style={{ fontFamily:T.mono, fontSize:10, letterSpacing:'.3em' }}>{emptyMsg}</div>
       </div>
     );
@@ -3205,7 +3296,7 @@ function AnSection({ rows, label, emptyMsg }) {
   );
 }
 
-//  Main AnalyticsView 
+// — Main AnalyticsView —
 function AnalyticsView({ state }) {
   const [sub, setSub] = React.useState('arquétipos');
   const data = useMemo(() => {
@@ -3268,8 +3359,8 @@ function AnalyticsView({ state }) {
 
       <div style={{ padding:'28px 40px' }}>
       {sub==='arquétipos' && <AnSection rows={data.styles} label="Arquétipos"        emptyMsg="SEM DADOS DE ESTILOS — SIMULE TORNEIOS" />}
-        {sub==='golpes'     && <AnSection rows={data.sigs}    label="Golpes Assinatura" emptyMsg="SEM DADOS DE GOLPES  SIMULE TORNEIOS" />}
-        {sub==='rally'      && <AnSection rows={data.rally}   label="Padrões de Rally"  emptyMsg="SEM DADOS DE RALLY  SIMULE TORNEIOS" />}
+        {sub==='golpes'     && <AnSection rows={data.sigs}    label="Golpes Assinatura" emptyMsg="SEM DADOS DE GOLPES — SIMULE TORNEIOS" />}
+        {sub==='rally'      && <AnSection rows={data.rally}   label="Padrões de Rally"  emptyMsg="SEM DADOS DE RALLY — SIMULE TORNEIOS" />}
       </div>
     </div>
   );
@@ -3279,7 +3370,7 @@ function AnalyticsView({ state }) {
 // RECORDES VIEW (em construção, mas com placeholders)
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// RECORDES  helpers
+// RECORDES — helpers
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 const RC = {
   gold:   '#E8C84A', silver:'#CBD5E1', bronze:'#C97C3A',
@@ -3310,7 +3401,7 @@ const SHOT_TYPE_META = {
   LOB_ATK:      { label: 'Lob Ofensivo', color: RC.purple },
   BANANA:       { label: 'Banana', color: '#FFB74D' },
   PASSING:      { label: 'Passing', color: '#7E57C2' },
-  SHORT_ANGLE:  { label: 'Ângulo Curto', color: '#4DD0E1' },
+  SHORT_ANGLE:  { label: 'ângulo Curto', color: '#4DD0E1' },
   SLICE_SHORT:  { label: 'Slice Curto', color: '#26C6DA' },
   HALF_VOLLEY:  { label: 'Half Volley', color: '#66BB6A' },
   HEAVY_TOP:    { label: 'Heavy Top', color: '#EC407A' },
@@ -3318,11 +3409,11 @@ const SHOT_TYPE_META = {
   SHORT_ACCEL:  { label: 'Aceleração Curta', color: '#FF8A65' },
 };
 
-// Lê recordes do recordsStore incremental  O(jogadores), não O(histórico)
+// Lê recordes do recordsStore incremental — O(jogadores), não O(histórico)
 function computeTennisRecords(state) {
   const { year: currentYear } = state;
 
-  //  1. Obter ou migrar o store 
+  // — 1. Obter ou migrar o store —
   const store = state.recordsStore;
   const hasStore = store?._version === 1 && Object.keys(store.playerStats ?? {}).length > 0;
 
@@ -3331,7 +3422,7 @@ function computeTennisRecords(state) {
     return _computeTennisRecordsLegacy(state);
   }
 
-  const GS_IDS = ['JAN_GS_MERIDIAN','MAI_GS_ROLAND','JUN_GS_ALBION','AGO_GS_EMPIRE'];
+  const GS_IDS = ['B1_GS_MERIDIAN','B2_GS_TERRA','B3_GS_HIGHLAND','B4_GS_URBAN','B5_GS_VELVET','B6_GS_CRYSTAL'];
   const fmtAvg = (value) => Number.isFinite(value) ? +value.toFixed(2) : 0;
 
   // Conta partidas por jogador/temporada a partir do histórico, para suportar médias anuais
@@ -3371,7 +3462,7 @@ function computeTennisRecords(state) {
   });
   Object.values(state.tournamentResults ?? {}).forEach((res) => countResultMatches(res, currentYear));
 
-  //  2. Monta lista de "players" enriquecidos a partir do store 
+  // — 2. Monta lista de "players" enriquecidos a partir do store —
   // Para cada entrada do store, busca o player vivo para ratings/foto atuais.
   // Se não encontrado (aposentado pré-slim), usa o snapshot salvo no store.
   const allLivePlayers = [
@@ -3381,8 +3472,9 @@ function computeTennisRecords(state) {
   ];
   const playerMap = Object.fromEntries(allLivePlayers.map(p => [p.id, p]));
 
-  const players = Object.values(store.playerStats).map(s => {
-    const p = playerMap[s.id];
+  const players = Object.entries(store.playerStats).map(([storeId, s]) => {
+    const playerId = s.id ?? storeId;
+    const p = playerMap[playerId];
 
     // identity: prefere player vivo; fallback para snapshot no store
     const name        = p?.name        ?? s.name;
@@ -3394,7 +3486,7 @@ function computeTennisRecords(state) {
     if (!name) return null; // entrada vazia, ignorar
 
     // player-like object para RPodium (precisa de .player)
-    const playerObj = p ?? { id: s.id, name, nationality, age, color, styleId, photo };
+    const playerObj = p ?? { id: playerId, name, nationality, age, color, styleId, photo };
 
     // Campos derivados
     const winRate     = s.matchesPlayed >= 100 ? +((s.wins / s.matchesPlayed)*100).toFixed(1) : 0;
@@ -3410,12 +3502,19 @@ function computeTennisRecords(state) {
     const dominantSurf = Object.entries(s.surfTitles ?? {}).sort((a,b)=>b[1]-a[1])[0]?.[0] ?? 'HARD';
     const careerGrandSlam = GS_IDS.every(id => (s.gsWonIds ?? []).includes(id));
     const longevidade = (s.titleYears ?? []).length;
+    const yearsWithTitles = [...new Set(s.titleYears ?? [])].sort((a,b)=>a-b);
+    const titleEra = yearsWithTitles.reduce((run, yr, index) => {
+      const current = index && yr === yearsWithTitles[index-1] + 1 ? run.current + 1 : 1;
+      return { current, best: Math.max(run.best, current) };
+    }, { current:0, best:0 }).best;
 
     const surfWinRate = {
       HARD:   (s.surfWins?.HARD  + s.surfLosses?.HARD  ) >= 100 ? +((s.surfWins.HARD   / (s.surfWins.HARD   + s.surfLosses.HARD  )) * 100).toFixed(1) : null,
       CLAY:   (s.surfWins?.CLAY  + s.surfLosses?.CLAY  ) >= 100 ? +((s.surfWins.CLAY   / (s.surfWins.CLAY   + s.surfLosses.CLAY  )) * 100).toFixed(1) : null,
       GRASS:  (s.surfWins?.GRASS + s.surfLosses?.GRASS ) >= 100 ? +((s.surfWins.GRASS  / (s.surfWins.GRASS  + s.surfLosses.GRASS )) * 100).toFixed(1) : null,
       INDOOR: (s.surfWins?.INDOOR+ s.surfLosses?.INDOOR) >= 100 ? +((s.surfWins.INDOOR / (s.surfWins.INDOOR + s.surfLosses.INDOOR)) * 100).toFixed(1) : null,
+      STREET: (s.surfWins?.STREET+ s.surfLosses?.STREET) >= 30 ? +((s.surfWins.STREET / (s.surfWins.STREET + s.surfLosses.STREET)) * 100).toFixed(1) : null,
+      CARPET: (s.surfWins?.CARPET+ s.surfLosses?.CARPET) >= 30 ? +((s.surfWins.CARPET / (s.surfWins.CARPET + s.surfLosses.CARPET)) * 100).toFixed(1) : null,
     };
 
     // Best season
@@ -3429,7 +3528,7 @@ function computeTennisRecords(state) {
       if (d.wins   > bestSeasonWins)   bestSeasonWins = d.wins;
       if ((d.aces ?? 0) > bestSeasonAces) { bestSeasonAces = d.aces ?? 0; bestSeasonAcesYr = +yr; }
       if ((d.winners ?? 0) > bestSeasonWinners) { bestSeasonWinners = d.winners ?? 0; bestSeasonWinnersYr = +yr; }
-      const seasonMatches = d.matchesPlayed ?? seasonMatchIndex[s.id]?.[+yr] ?? 0;
+      const seasonMatches = d.matchesPlayed ?? seasonMatchIndex[playerId]?.[+yr] ?? 0;
       if (seasonMatches > 0) {
         const acesAvg = fmtAvg((d.aces ?? 0) / seasonMatches);
         const winnersAvg = fmtAvg((d.winners ?? 0) / seasonMatches);
@@ -3446,7 +3545,7 @@ function computeTennisRecords(state) {
       }
     });
 
-    const currentSeasonMatches = s.seasonData?.[currentYear]?.matchesPlayed ?? seasonMatchIndex[s.id]?.[currentYear] ?? 0;
+    const currentSeasonMatches = s.seasonData?.[currentYear]?.matchesPlayed ?? seasonMatchIndex[playerId]?.[currentYear] ?? 0;
     const careerAcesPerMatch = s.matchesPlayed > 0 ? fmtAvg((s.aces ?? 0) / s.matchesPlayed) : 0;
     const careerWinnersPerMatch = s.matchesPlayed > 0 ? fmtAvg((s.winners ?? 0) / s.matchesPlayed) : 0;
     const currentSeasonAcesPerMatch = currentSeasonMatches > 0 ? fmtAvg((s.seasonData?.[currentYear]?.aces ?? 0) / currentSeasonMatches) : 0;
@@ -3458,7 +3557,7 @@ function computeTennisRecords(state) {
 
     return {
       // identity
-      id: s.id, player: playerObj,
+      id: playerId, player: playerObj,
       name, nationality, age, color, styleId,
       overallRating: p?.attrs ? overallRating(p.attrs) : 0,
       // raw stats (passado direto do store)
@@ -3470,9 +3569,9 @@ function computeTennisRecords(state) {
       semifinals: s.semifinals ?? 0,
       gsFinalsWon: s.gsFinalsWon, gsFinalsLost: s.gsFinalsLost,
       wins: s.wins, losses: s.losses, matchesPlayed: s.matchesPlayed,
-      surfWins: s.surfWins ?? {HARD:0,CLAY:0,GRASS:0,INDOOR:0},
-      surfLosses: s.surfLosses ?? {HARD:0,CLAY:0,GRASS:0,INDOOR:0},
-      surfTitles: s.surfTitles ?? {HARD:0,CLAY:0,GRASS:0,INDOOR:0},
+      surfWins: s.surfWins ?? {HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
+      surfLosses: s.surfLosses ?? {HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
+      surfTitles: s.surfTitles ?? {HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
       winStreak: s.winStreak, careerPts: s.careerPts,
       bagels: s.bagels ?? 0, doubleBagels: s.doubleBagels ?? 0,
       tiebreaksWon: s.tiebreaksWon ?? 0,
@@ -3483,7 +3582,7 @@ function computeTennisRecords(state) {
       youngestChampAge: s.youngestChampAge, oldestChampAge: s.oldestChampAge,
       // derived
       winRate, finalsRate, titleBreadth, dominantSurf,
-      careerGrandSlam, longevidade, surfWinRate, setsWinRate,
+      careerGrandSlam, longevidade, titleEra, surfWinRate, setsWinRate,
       bestSeasonPts, bestSeasonPtsYr, bestSeasonTitles, bestSeasonTitlesYr, bestSeasonWins,
       bestSeasonAces, bestSeasonAcesYr, bestSeasonWinners, bestSeasonWinnersYr,
       bestSeasonAcesAvg, bestSeasonAcesAvgYr, bestSeasonAcesAvgMatches,
@@ -3502,7 +3601,7 @@ function computeTennisRecords(state) {
     };
   }).filter(Boolean);
 
-  //  3. Helpers ”€
+  // — 3. Helpers —”€—
   const top3 = (arr, sortFn, filterFn) =>
     (filterFn ? arr.filter(filterFn) : arr).sort(sortFn).slice(0,10);
   const byDesc = (fn) => (a,b) => fn(b) - fn(a);
@@ -3526,6 +3625,11 @@ function computeTennisRecords(state) {
   const allSeasonWinners = [];
   const allSeasonAcesAvg = [];
   const allSeasonWinnersAvg = [];
+  const matchRecords = (store.matchRecords ?? []).map(m => ({
+    ...m,
+    winner: playerMap[m.winnerId] ?? { id:m.winnerId, name:`#${m.winnerId}` },
+    loser: playerMap[m.loserId] ?? { id:m.loserId, name:`#${m.loserId}` },
+  }));
   players.forEach(s => {
     Object.entries(s.seasonData).forEach(([yr, d]) => {
       if (d.pts    > 0) allSeasonPts.push({    ...s, bestSeasonPts:    d.pts,    bestSeasonPtsYr:    +yr });
@@ -3542,7 +3646,7 @@ function computeTennisRecords(state) {
     });
   });
 
-  //  4. Monta e retorna o objeto de recordes 
+  // — 4. Monta e retorna o objeto de recordes —
   return {
     players, currentYear,
     career: {
@@ -3576,10 +3680,17 @@ function computeTennisRecords(state) {
       clayWinRate:       top3(players, byDesc(s=>s.surfWinRate.CLAY??0),   s=>s.surfWinRate.CLAY!==null),
       grassWinRate:      top3(players, byDesc(s=>s.surfWinRate.GRASS??0),  s=>s.surfWinRate.GRASS!==null),
       indoorWinRate:     top3(players, byDesc(s=>s.surfWinRate.INDOOR??0), s=>s.surfWinRate.INDOOR!==null),
+      streetTitles:      top3(players, byDesc(s=>s.surfTitles.STREET??0), s=>(s.surfTitles.STREET??0)>0),
+      streetWins:        top3(players, byDesc(s=>s.surfWins.STREET??0), s=>(s.surfWins.STREET??0)>0),
+      streetWinRate:     top3(players, byDesc(s=>s.surfWinRate.STREET??0), s=>s.surfWinRate.STREET!==null),
+      carpetTitles:      top3(players, byDesc(s=>s.surfTitles.CARPET??0), s=>(s.surfTitles.CARPET??0)>0),
+      carpetWins:        top3(players, byDesc(s=>s.surfWins.CARPET??0), s=>(s.surfWins.CARPET??0)>0),
+      carpetWinRate:     top3(players, byDesc(s=>s.surfWinRate.CARPET??0), s=>s.surfWinRate.CARPET!==null),
       prospectsTitles:   top3(players, byDesc(s=>s.prospects_titles),       s=>s.prospects_titles>0),
       prospectsFinals:   top3(players, byDesc(s=>s.prospects_finals_titles), s=>s.prospects_finals_titles>0),
       mostFinalLosses:   top3(players, byDesc(s=>s.finalLosses),      s=>s.finalLosses>0),
       mostLongevidade:   top3(players, byDesc(s=>s.longevidade),       s=>s.longevidade>1),
+      longestTitleEra:   top3(players, byDesc(s=>s.titleEra),          s=>s.titleEra>1),
       youngestChamp:     top3(players, (a,b)=>(a.youngestChampAge??99)-(b.youngestChampAge??99), s=>s.youngestChampAge!==null),
       oldestChamp:       top3(players, (a,b)=>(b.oldestChampAge??0)-(a.oldestChampAge??0),       s=>s.oldestChampAge!==null),
       careerGrandSlam:   players.filter(s=>s.careerGrandSlam).sort(byDesc(s=>s.gs)),
@@ -3594,6 +3705,13 @@ function computeTennisRecords(state) {
       shotPointLeaders,
       mostDoubleFaults:  top3(players, byDesc(s=>s.doubleFaults),      s=>s.doubleFaults>0),
       mostUnforcedErrors:top3(players, byDesc(s=>s.unforcedErrors),    s=>s.unforcedErrors>0),
+    },
+    legendary: {
+      matches: matchRecords,
+      longest: [...matchRecords].sort((a,b) => b.totalGames-a.totalGames).slice(0, 8),
+      rallies: [...matchRecords].filter(m=>m.maxRally>0).sort((a,b)=>b.maxRally-a.maxRally).slice(0,8),
+      pressure: [...matchRecords].filter(m=>m.tiebreaks>0 || m.heat>0).sort((a,b)=>(b.tiebreaks*20+b.heat)-(a.tiebreaks*20+a.heat)).slice(0,8),
+      serving: [...matchRecords].filter(m=>m.aces>0).sort((a,b)=>b.aces-a.aces).slice(0,8),
     },
     season: {
       bestSeasonPts:    allSeasonPts.sort((a,b)=>b.bestSeasonPts-a.bestSeasonPts).slice(0,10),
@@ -3628,7 +3746,7 @@ function _computeTennisRecordsLegacy(state) {
   const playerMap = Object.fromEntries(allPlayers.map(p => [p.id, p]));
 
   // Por jogador: acumular tudo em uma única passada pelos resultados
-  const stats = {}; // playerId   statsObj
+  const stats = {}; // playerId → statsObj
   const getS = (id) => {
     if (!stats[id]) stats[id] = {
       id,
@@ -3637,15 +3755,15 @@ function _computeTennisRecordsLegacy(state) {
       titlesByCategory:{}, titlesBySurface:{},
       finals:0, semifinals:0, qf:0, r16:0,
       careerPts:0, wins:0, losses:0,
-      surfWins:{HARD:0,CLAY:0,GRASS:0,INDOOR:0}, surfLosses:{HARD:0,CLAY:0,GRASS:0,INDOOR:0},
-      surfTitles:{HARD:0,CLAY:0,GRASS:0,INDOOR:0},
+      surfWins:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0}, surfLosses:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
+      surfTitles:{HARD:0,CLAY:0,GRASS:0,STREET:0,CARPET:0,INDOOR:0},
       winStreak:0, curStreak:0,
       matchesPlayed:0,
-      seasonData:{}, // year   { pts, titles, wins }
+      seasonData:{}, // year → { pts, titles, wins }
       gsFinalsWon:0, gsFinalsLost:0,
       youngestChampAge:null, youngestChampName:null,
       oldestChampAge:null, oldestChampName:null,
-      // idade por categoria  para o recorde "campeão mais jovem por categoria"
+      // idade por categoria — para o recorde "campeão mais jovem por categoria"
       youngestChampAgeByCategory: { GRAND_SLAM:null, MASTERS_1000:null, ATP_500:null, ATP_250:null, ATP_100:null, FINALS:null },
       oldestChampAgeByCategory:  { GRAND_SLAM:null, MASTERS_1000:null, ATP_500:null, ATP_250:null, ATP_100:null, FINALS:null },
       // novos campos
@@ -3675,7 +3793,7 @@ function _computeTennisRecordsLegacy(state) {
     const surf = surface ?? 'HARD';
 
     if (res._slim) {
-      //  SLIM FORMAT 
+      // — SLIM FORMAT —
       // Champion
       if (res.champion) {
         const champ = res.champion;
@@ -3686,7 +3804,7 @@ function _computeTennisRecordsLegacy(state) {
         if (category === 'ATP_500')          s.atp500++;
         if (category === 'ATP_250')          s.atp250++;
         if (category === 'FINALS')           s.finals_titles++;
-        if (category === 'ATP_PROSPECTS')    s.prospects_titles++;
+        if (category === 'ATP_PROSPECTS' || category === 'JUNIOR_50' || category === 'JUNIOR_100' || category === 'JUNIOR_SLAM')    s.prospects_titles++;
         if (category === 'PROSPECTS_FINALS') s.prospects_finals_titles++;
         s.titlesByCategory[category] = (s.titlesByCategory[category]||0) + 1;
         s.surfTitles[surf] = (s.surfTitles[surf]||0) + 1;
@@ -3729,7 +3847,7 @@ function _computeTennisRecordsLegacy(state) {
         ws.seasonData[yr].wins++;
         // sets stats
         if (sd?.length) {
-          // wa=true   a=winner's games, b=loser's games; wa=false   reversed
+          // wa=true  — a=winner's games, b=loser's games; wa=false  — reversed
           const wBagelsInMatch = sd.filter(([a,b]) => wa ? b===0 : a===0).length;
           const lBagelsInMatch = sd.filter(([a,b]) => wa ? a===0 : b===0).length;
           ws.bagels += wBagelsInMatch;
@@ -3737,7 +3855,7 @@ function _computeTennisRecordsLegacy(state) {
           sd.forEach(([a,b]) => {
             ws.setsWon++;
             if (l) getS(l).setsLost++;
-            if (a === 7 || b === 7) ws.tiebreaksWon++;
+            if (isTiebreakSetScore(a, b)) ws.tiebreaksWon++;
           });
           if (l) {
             const ls = getS(l);
@@ -3768,7 +3886,7 @@ function _computeTennisRecordsLegacy(state) {
       }
 
     } else {
-      //  FULL BRACKET FORMAT (temporada atual / saves antigos) 
+      // — FULL BRACKET FORMAT (temporada atual / saves antigos) —
       const { bracket } = res;
       if (!bracket) return;
 
@@ -3782,7 +3900,7 @@ function _computeTennisRecordsLegacy(state) {
         if (category === 'ATP_250')         { s.atp250++; }
         if (category === 'ATP_100')         { s.atp100++; }
         if (category === 'FINALS')          { s.finals_titles++; }
-        if (category === 'ATP_PROSPECTS')   { s.prospects_titles++; }
+        if (category === 'ATP_PROSPECTS' || category === 'JUNIOR_50' || category === 'JUNIOR_100' || category === 'JUNIOR_SLAM')   { s.prospects_titles++; }
         if (category === 'PROSPECTS_FINALS'){ s.prospects_finals_titles++; }
         s.titlesByCategory[category] = (s.titlesByCategory[category]||0) + 1;
         s.surfTitles[surf] = (s.surfTitles[surf]||0) + 1;
@@ -3828,7 +3946,7 @@ function _computeTennisRecordsLegacy(state) {
               if (wBagelsInMatch >= 2) ws.doubleBagels++;
               sd.forEach(([a,b]) => {
                 ws.setsWon++;
-                if (a === 7 || b === 7) ws.tiebreaksWon++;
+                if (isTiebreakSetScore(a, b)) ws.tiebreaksWon++;
                 if (loser?.id) getS(loser.id).setsLost++;
               });
               if (loser?.id) {
@@ -3908,7 +4026,7 @@ function _computeTennisRecordsLegacy(state) {
     // Novos campos derivados
     const longevidade = s.titleYears.size; // anos com pelo menos 1 título
     const gsIds = s.gsWonIds;
-    const GS_IDS = ['JAN_GS_MERIDIAN','MAI_GS_ROLAND','JUN_GS_ALBION','AGO_GS_EMPIRE'];
+    const GS_IDS = ['B1_GS_MERIDIAN','B2_GS_TERRA','B3_GS_HIGHLAND','B4_GS_URBAN','B5_GS_VELVET','B6_GS_CRYSTAL'];
     const careerGrandSlam = GS_IDS.every(id => gsIds.has(id));
     const surfWinRate = {
       HARD:   s.surfWins.HARD + s.surfLosses.HARD >= 100 ? +((s.surfWins.HARD   / (s.surfWins.HARD + s.surfLosses.HARD)) * 100).toFixed(1) : null,
@@ -3938,7 +4056,7 @@ function _computeTennisRecordsLegacy(state) {
   const top3 = (arr, sortFn, filterFn) => (filterFn ? arr.filter(filterFn) : arr).sort(sortFn).slice(0,10);
   const byDesc = (fn) => (a,b) => fn(b) - fn(a);
 
-  // All season  player combinations (flat)
+  // All season — player combinations (flat)
   const allSeasonPts = [];
   const allSeasonTitles = [];
   players.forEach(s => {
@@ -3988,7 +4106,7 @@ function _computeTennisRecordsLegacy(state) {
       mostLongevidade:    top3(players, byDesc(s=>s.longevidade), s=>s.longevidade>1),
       youngestChamp:      top3(players, (a,b)=>(a.youngestChampAge??99)-(b.youngestChampAge??99), s=>s.youngestChampAge!==null),
       oldestChamp:        top3(players, (a,b)=>(b.oldestChampAge??0)-(a.oldestChampAge??0), s=>s.oldestChampAge!==null),
-      // por categoria  campeão mais jovem/velho
+      // por categoria — campeão mais jovem/velho
       youngestChampByCategory: Object.fromEntries(
         ['GRAND_SLAM','MASTERS_1000','ATP_500','ATP_250','ATP_100','FINALS'].map(cat => [
           cat,
@@ -4023,7 +4141,7 @@ function _computeTennisRecordsLegacy(state) {
   };
 }
 
-//  Podium card 
+// — Podium card —
 function RPodium({ rank, entry, value, label, sublabel, color=RC.gold }) {
   if (!entry) return null;
   const { player } = entry;
@@ -4107,7 +4225,131 @@ function RRecordRow({ rank, entry, value, label, sublabel, color=RC.gold }) {
   );
 }
 
-//  Record block €
+function TecnicosBancoView({ state }) {
+  const U = {
+    display: T.disp,
+    mono: T.mono,
+    body: T.body,
+    text: T.text,
+    textDim: T.dim,
+    subtle: T.vdim,
+    gold: T.gold,
+  };
+  const allPlayers = [...(state.tourPlayers ?? []), ...(state.prospects ?? [])];
+  const records = computeCoachRecords(state.coachMarket, allPlayers);
+  const coaches = records.ranking ?? [];
+  const free = coaches.filter(c => c.marketStatus === 'FREE').slice(0, 12);
+  const active = coaches.filter(c => c.marketStatus !== 'FREE');
+  const playerMap = Object.fromEntries(allPlayers.map(p => [p.id, p]));
+  const totalRep = coaches.reduce((s, c) => s + (c.reputation ?? 0), 0);
+  const hot = active
+    .filter(c => c.activePlayerName)
+    .sort((a, b) => (b.reputation ?? 0) - (a.reputation ?? 0) || (b.recordScore ?? 0) - (a.recordScore ?? 0))
+    .slice(0, 6);
+  const legendary = (records.legendaryPartnerships ?? []).slice(0, 6);
+  const metric = (label, value, tone = U.gold) => (
+    <div style={{ border:`1px solid ${tone}26`, background:`${tone}08`, padding:'10px 12px' }}>
+      <div style={{ fontFamily:U.display, fontSize:28, color:tone, lineHeight:1 }}>{value}</div>
+      <div style={{ fontFamily:U.mono, fontSize:7, color:U.subtle, letterSpacing:'.16em', textTransform:'uppercase', marginTop:4 }}>{label}</div>
+    </div>
+  );
+  const Card = ({ coach }) => {
+    const method = COACH_METHODS[coach.method] ?? COACH_METHODS.FORMADOR;
+    return (
+      <div style={{ border:`1px solid ${method.color}28`, background:`${method.color}08`, padding:13, minHeight:112 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', gap:12, marginBottom:7 }}>
+          <div style={{ fontFamily:U.display, fontSize:22, color:U.text, lineHeight:.9, textTransform:'uppercase' }}>{coach.name}</div>
+          <div style={{ fontFamily:U.display, fontSize:26, color:method.color, lineHeight:1 }}>{coach.recordScore}</div>
+        </div>
+        <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:8 }}>
+          {[method.label, coach.originLabel, coach.activePlayerName ? `com ${coach.activePlayerName}` : 'livre'].filter(Boolean).map(tag => (
+            <span key={tag} style={{ fontFamily:U.mono, fontSize:7, letterSpacing:'.12em', textTransform:'uppercase', color:method.color, border:`1px solid ${method.color}2A`, padding:'4px 6px' }}>{tag}</span>
+          ))}
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
+          {[['REP', coach.reputation], ['GS', coach.slams], ['TIT', coach.titles]].map(([k,v]) => (
+            <div key={k} style={{ border:'1px solid rgba(255,255,255,.06)', padding:'6px 7px' }}>
+              <div style={{ fontFamily:U.mono, fontSize:6, color:U.subtle, letterSpacing:2 }}>{k}</div>
+              <div style={{ fontFamily:U.display, fontSize:20, color:U.text }}>{v ?? 0}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div style={{ padding:18, color:U.text }}>
+      <div style={{ fontFamily:U.mono, fontSize:8, letterSpacing:4, color:U.gold, textTransform:'uppercase', marginBottom:10 }}>Banco Vivo</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,minmax(0,1fr))', gap:8, marginBottom:16 }}>
+        {metric('técnicos no circuito', coaches.length)}
+        {metric('parcerias ativas', active.length, '#5BB8E4')}
+        {metric('livres', free.length, '#8DD7A5')}
+        {metric('eras registradas', legendary.length, '#E8C84A')}
+        {metric('rep média', coaches.length ? Math.round(totalRep / coaches.length) : 0, '#FFB86B')}
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1.1fr .9fr', gap:16 }}>
+        <section>
+          <div style={{ fontFamily:U.display, fontSize:32, textTransform:'uppercase', marginBottom:10 }}>Ranking de técnicos</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10 }}>
+            {coaches.slice(0, 12).map(coach => <Card key={coach.id} coach={coach} />)}
+          </div>
+        </section>
+        <section style={{ display:'grid', gap:14 }}>
+          <div>
+            <div style={{ fontFamily:U.display, fontSize:26, textTransform:'uppercase', marginBottom:8 }}>Em alta</div>
+            <div style={{ display:'grid', gap:7, marginBottom:14 }}>
+              {hot.map(c => {
+                const method = COACH_METHODS[c.method] ?? COACH_METHODS.FORMADOR;
+                return (
+                  <div key={`hot-${c.id}`} style={{ border:`1px solid ${method.color}26`, borderLeft:`3px solid ${method.color}`, background:`${method.color}07`, padding:'9px 10px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:10 }}>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontFamily:U.display, fontSize:19, color:U.text, textTransform:'uppercase', lineHeight:1 }}>{c.name}</div>
+                        <div style={{ fontFamily:U.mono, fontSize:7, color:U.subtle, letterSpacing:'.12em', textTransform:'uppercase', marginTop:3 }}>{method.label} · com {c.activePlayerName}</div>
+                      </div>
+                      <div style={{ fontFamily:U.display, fontSize:22, color:method.color, lineHeight:1 }}>{c.reputation}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontFamily:U.display, fontSize:26, textTransform:'uppercase', marginBottom:8 }}>Livres no mercado</div>
+            <div style={{ display:'grid', gap:7 }}>{free.slice(0, 6).map(c => <Card key={c.id} coach={c} />)}</div>
+          </div>
+          <div>
+            <div style={{ fontFamily:U.display, fontSize:26, textTransform:'uppercase', marginBottom:8 }}>Parcerias lendárias</div>
+            <div style={{ display:'grid', gap:7, marginBottom:14 }}>
+              {legendary.map(part => {
+                const coach = state.coachMarket?.coachesById?.[part.coachId];
+                const player = playerMap[part.playerId];
+                return (
+                  <div key={part.id} style={{ border:'1px solid rgba(232,200,74,.22)', background:'rgba(232,200,74,.05)', padding:'9px 10px' }}>
+                    <div style={{ fontFamily:U.display, fontSize:18, color:U.text, textTransform:'uppercase', lineHeight:1 }}>{player?.name ?? part.playerId} + {coach?.name ?? part.coachName ?? part.coachId}</div>
+                    <div style={{ fontFamily:U.mono, fontSize:7, color:U.gold, letterSpacing:'.12em', textTransform:'uppercase', marginTop:4 }}>{part.slamsTogether ?? 0} GS · {part.titlesTogether ?? 0} títulos · desde {part.startYear}</div>
+                  </div>
+                );
+              })}
+              {legendary.length === 0 && (
+                <div style={{ border:'1px solid rgba(255,255,255,.07)', color:U.subtle, padding:'10px 12px', fontFamily:U.mono, fontSize:8, letterSpacing:'.12em', textTransform:'uppercase' }}>Ainda sem era consolidada</div>
+              )}
+            </div>
+            <div style={{ fontFamily:U.display, fontSize:26, textTransform:'uppercase', marginBottom:8 }}>Eventos recentes</div>
+            <div style={{ display:'grid', gap:7 }}>
+              {(records.recentEvents ?? []).slice(0, 8).map((event, idx) => (
+                <div key={`${event.type}-${idx}`} style={{ border:'1px solid rgba(255,255,255,.07)', background:'rgba(255,255,255,.018)', padding:'9px 10px' }}>
+                  <div style={{ fontFamily:U.mono, fontSize:7, color:U.subtle, letterSpacing:2, textTransform:'uppercase' }}>{event.type} · {event.year}</div>
+                  <div style={{ fontFamily:U.body, fontSize:12, color:U.textDim, lineHeight:1.45 }}>{event.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// — Record block —€—
 function RBlock({ title, icon, top3, getValue, getLabel, getSublabel, color=RC.gold }) {
   const [open, setOpen] = React.useState(false);
   const accent = color?.startsWith?.('rgba') ? '#9CA3AF' : color;
@@ -4115,7 +4357,7 @@ function RBlock({ title, icon, top3, getValue, getLabel, getSublabel, color=RC.g
     <div style={{ background:RC.bg, border:`1px solid ${RC.border}`, borderRadius:4,
       padding:'14px 12px', opacity:.45 }}>
       <div style={{ fontFamily:T.mono, fontSize:8, color:RC.dim, letterSpacing:3 }}>{icon} {title}</div>
-      <div style={{ fontFamily:T.disp, fontSize:10, color:RC.vdim, marginTop:8 }}>Sem dados  simule mais torneios</div>
+      <div style={{ fontFamily:T.disp, fontSize:10, color:RC.vdim, marginTop:8 }}>Sem dados — simule mais torneios</div>
     </div>
   );
   const leader = top3[0];
@@ -4211,7 +4453,7 @@ function RBlock({ title, icon, top3, getValue, getLabel, getSublabel, color=RC.g
   );
 }
 
-//  Section header 
+// — Section header —
 function RSec({ icon, title, color=RC.gold }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10, margin:'28px 0 12px',
@@ -4247,14 +4489,14 @@ function RIntro({ eyebrow, title, text, color=RC.gold }) {
   );
 }
 
-//  Tab: Carreira ”€
+// — Tab: Carreira —”€—
 function RecordCarreiraTab({ records }) {
   const { career } = records;
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
       <RIntro eyebrow="especialistas" title="Quem dominou cada piso" text="Os líderes aqui não são só campeões: são jogadores que aprenderam a transformar cada superfície em território próprio." color={RC.blue} />
 
-      <RSec icon="•" title="Títulos  Carreira" color={RC.gold} />
+      <RSec icon="•" title="Títulos — Carreira" color={RC.gold} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
         <RBlock icon="•" title="MAIS TÍTULOS" color={RC.gold} top3={career.mostTitles}
           getValue={s=>s.titles} getLabel={()=>'títulos totais'}
@@ -4296,7 +4538,7 @@ function RecordCarreiraTab({ records }) {
           top3={season.bestSeasonTitles}
           getValue={s=>s.bestSeasonTitles} getLabel={()=>'títulos em uma temporada'}
           getSublabel={s=>s.bestSeasonTitlesYr?`Temporada ${s.bestSeasonTitlesYr}`:null} />
-        <RBlock icon="•" title="MAIS VITRIAS EM UMA TEMPORADA" color={RC.orange}
+        <RBlock icon="•" title="MAIS VITÓRIAS EM UMA TEMPORADA" color={RC.orange}
           top3={season.bestSeasonWins}
           getValue={s=>s.bestSeasonWins} getLabel={()=>'vitórias em uma temporada'} />
         <RBlock icon="•" title="MAIS PONTOS CARREIRA" color={RC.cyan}
@@ -4312,7 +4554,7 @@ function RecordCarreiraTab({ records }) {
 
       <RSec icon="•" title="Performance & Sequências" color={RC.orange} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS VITRIAS  CARREIRA" color={RC.orange} top3={career.mostWins}
+        <RBlock icon="•" title="MAIS VITÓRIAS — CARREIRA" color={RC.orange} top3={career.mostWins}
           getValue={s=>s.wins} getLabel={()=>'vitórias'}
           getSublabel={s=>`em ${s.matchesPlayed} partidas`} />
         <RBlock icon="•" title="MELHOR WIN RATE (mín. 15 partidas)" color={RC.orange}
@@ -4323,12 +4565,12 @@ function RecordCarreiraTab({ records }) {
           getValue={s=>s.matchesPlayed} getLabel={()=>'partidas'} />
         <RBlock icon="•" title="MAIS FINAIS JOGADAS" color={RC.purple} top3={career.mostFinals}
           getValue={s=>s.finals} getLabel={()=>'finais'}
-          getSublabel={s=>`${s.titles} vencidas (${s.finalsRate??''}%)`} />
+          getSublabel={s=>`${s.titles} vencidas (${s.finalsRate??'—'}%)`} />
         <RBlock icon="•" title="MELHOR APROVEITAMENTO EM FINAIS" color={RC.gold}
           top3={career.bestFinalsRate}
           getValue={s=>`${s.finalsRate}%`} getLabel={()=>'finais ganhas (mín. 3)'}
           getSublabel={s=>`${s.titles}V · ${s.finals-s.titles}D`} />
-        <RBlock icon="•" title="MAIOR SEQU`NCIA DE VITRIAS" color={RC.red} top3={career.longestWinStreak}
+        <RBlock icon="•" title="MAIOR SEQUÊNCIA DE VITÓRIAS" color={RC.red} top3={career.longestWinStreak}
           getValue={s=>s.winStreak} getLabel={()=>'vitórias consecutivas'} />
         <RBlock icon="•" title="MAIS SEMIFINAIS" color={RC.blue} top3={career.mostSemis}
           getValue={s=>s.semifinals} getLabel={()=>'semifinais'} />
@@ -4339,25 +4581,25 @@ function RecordCarreiraTab({ records }) {
 
       <RSec icon="•" title="Idade & Longevidade" color={RC.pink} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="CAMPEÒO MAIS JOVEM  GERAL" color={RC.green} top3={career.youngestChamp}
+        <RBlock icon="•" title="CAMPEÃO MAIS JOVEM — GERAL" color={RC.green} top3={career.youngestChamp}
           getValue={s=>`${s.youngestChampAge}a`} getLabel={()=>'idade do 1º título'}
           getSublabel={s=>`${s.titles} título(s) carreira`} />
-        <RBlock icon="•" title="CAMPEÒO MAIS VELHO  GERAL" color={RC.orange} top3={career.oldestChamp}
+        <RBlock icon="•" title="CAMPEÃO MAIS VELHO — GERAL" color={RC.orange} top3={career.oldestChamp}
           getValue={s=>`${s.oldestChampAge}a`} getLabel={()=>'idade do último título'} />
         <RBlock icon="•" title="MAIS ANOS COM TÍTULO" color={'#A78BFA'} top3={career.mostLongevidade}
           getValue={s=>s.longevidade} getLabel={()=>'temporadas com ao menos 1 título'}
           getSublabel={s=>`${s.titles} títulos totais`} />
       </div>
 
-      {/*  Campeão mais jovem/velho por categoria  */}
+      {/* — Campeão mais jovem/velho por categoria — */}
       {(() => {
         const CATS = [
           { key:'GRAND_SLAM',   label:'Grand Slam',    icon:'⭐', color:'#E8C84A' },
-          { key:'MASTERS_1000', label:'Masters 1000',  icon:'x ', color:'#E040FB' },
-          { key:'ATP_500',      label:'ATP 500',        icon:'x!', color:'#00BCD4' },
-          { key:'ATP_250',      label:'ATP 250',        icon:'x}', color:'#66BB6A' },
-          { key:'ATP_100',      label:'ATP 100',        icon:'x', color:'#FF7043' },
-          { key:'FINALS',       label:'ATP Finals',     icon:'x}', color:'#F44336' },
+          { key:'MASTERS_1000', label:'Masters 1000',  icon:'◆', color:'#E040FB' },
+          { key:'ATP_500',      label:'ATP 500',        icon:'◇', color:'#00BCD4' },
+          { key:'ATP_250',      label:'ATP 250',        icon:'●', color:'#66BB6A' },
+          { key:'ATP_100',      label:'ATP 100',        icon:'○', color:'#FF7043' },
+          { key:'FINALS',       label:'ATP Finals',     icon:'★', color:'#F44336' },
         ];
         return (
           <>
@@ -4436,7 +4678,7 @@ function RecordCarreiraTab({ records }) {
         <RSec icon="•" title="Career Grand Slam" color={RC.gold} />
         <div style={{ background:RC.bg, border:`1px solid ${RC.gold}44`, borderRadius:4, padding:'14px 12px' }}>
           <div style={{ fontFamily:T.mono, fontSize:8, color:`${RC.gold}99`, letterSpacing:3, marginBottom:10 }}>
-            VENCERAM TODOS OS 4 GRAND SLAMS NA CARREIRA
+            VENCERAM TODOS OS 6 GRAND SLAMS NA CARREIRA
           </div>
           <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
             {career.careerGrandSlam.map((s,i) => (
@@ -4457,7 +4699,7 @@ function RecordCarreiraTab({ records }) {
   );
 }
 
-//  Tab: Superfícies 
+// — Tab: Superfícies —
 function RecordSuperficieTab({ records }) {
   const { career } = records;
   return (
@@ -4465,44 +4707,44 @@ function RecordSuperficieTab({ records }) {
 
       <RSec icon="•" title="Quadra Dura" color={RC.blue} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS TÍTULOS  QUADRA DURA" color={RC.blue} top3={career.hardTitles}
+        <RBlock icon="•" title="MAIS TÍTULOS — QUADRA DURA" color={RC.blue} top3={career.hardTitles}
           getValue={s=>s.surfTitles.HARD??0} getLabel={()=>'títulos em Hard'} />
-        <RBlock icon="•" title="MAIS VITRIAS  QUADRA DURA" color={RC.blue} top3={career.hardWins}
+        <RBlock icon="•" title="MAIS VITÓRIAS — QUADRA DURA" color={RC.blue} top3={career.hardWins}
           getValue={s=>s.surfWins.HARD??0} getLabel={()=>'vitórias em Hard'} />
-        <RBlock icon="•" title="MELHOR WIN RATE  HARD (mín. 100)" color={RC.blue} top3={career.hardWinRate}
+        <RBlock icon="•" title="MELHOR WIN RATE — HARD (mín. 100)" color={RC.blue} top3={career.hardWinRate}
           getValue={s=>`${s.surfWinRate.HARD}%`} getLabel={()=>'win rate em Hard'}
           getSublabel={s=>`${s.surfWins.HARD}V · ${s.surfLosses.HARD}D`} />
       </div>
 
       <RSec icon="•" title="Saibro" color={RC.clay} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS TÍTULOS  SAIBRO" color={RC.clay} top3={career.clayTitles}
+        <RBlock icon="•" title="MAIS TÍTULOS — SAIBRO" color={RC.clay} top3={career.clayTitles}
           getValue={s=>s.surfTitles.CLAY??0} getLabel={()=>'títulos em Saibro'} />
-        <RBlock icon="•" title="MAIS VITRIAS  SAIBRO" color={RC.clay} top3={career.clayWins}
+        <RBlock icon="•" title="MAIS VITÓRIAS — SAIBRO" color={RC.clay} top3={career.clayWins}
           getValue={s=>s.surfWins.CLAY??0} getLabel={()=>'vitórias em Saibro'} />
-        <RBlock icon="•" title="MELHOR WIN RATE  SAIBRO (mín. 100)" color={RC.clay} top3={career.clayWinRate}
+        <RBlock icon="•" title="MELHOR WIN RATE — SAIBRO (mín. 100)" color={RC.clay} top3={career.clayWinRate}
           getValue={s=>`${s.surfWinRate.CLAY}%`} getLabel={()=>'win rate em Saibro'}
           getSublabel={s=>`${s.surfWins.CLAY}V · ${s.surfLosses.CLAY}D`} />
       </div>
 
       <RSec icon="•" title="Grama" color={RC.grass} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS TÍTULOS  GRAMA" color={RC.grass} top3={career.grassTitles}
+        <RBlock icon="•" title="MAIS TÍTULOS — GRAMA" color={RC.grass} top3={career.grassTitles}
           getValue={s=>s.surfTitles.GRASS??0} getLabel={()=>'títulos em Grama'} />
-        <RBlock icon="•" title="MAIS VITRIAS  GRAMA" color={RC.grass} top3={career.grassWins}
+        <RBlock icon="•" title="MAIS VITÓRIAS — GRAMA" color={RC.grass} top3={career.grassWins}
           getValue={s=>s.surfWins.GRASS??0} getLabel={()=>'vitórias em Grama'} />
-        <RBlock icon="•" title="MELHOR WIN RATE  GRAMA (mín. 100)" color={RC.grass} top3={career.grassWinRate}
+        <RBlock icon="•" title="MELHOR WIN RATE — GRAMA (mín. 100)" color={RC.grass} top3={career.grassWinRate}
           getValue={s=>`${s.surfWinRate.GRASS}%`} getLabel={()=>'win rate em Grama'}
           getSublabel={s=>`${s.surfWins.GRASS}V · ${s.surfLosses.GRASS}D`} />
       </div>
 
       <RSec icon="•" title="Indoor" color={RC.purple ?? '#AA44FF'} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS TÍTULOS  INDOOR" color={RC.purple ?? '#AA44FF'} top3={career.indoorTitles}
+        <RBlock icon="•" title="MAIS TÍTULOS — INDOOR" color={RC.purple ?? '#AA44FF'} top3={career.indoorTitles}
           getValue={s=>s.surfTitles.INDOOR??0} getLabel={()=>'títulos em Indoor'} />
-        <RBlock icon="•" title="MAIS VITRIAS  INDOOR" color={RC.purple ?? '#AA44FF'} top3={career.indoorWins}
+        <RBlock icon="•" title="MAIS VITÓRIAS — INDOOR" color={RC.purple ?? '#AA44FF'} top3={career.indoorWins}
           getValue={s=>s.surfWins.INDOOR??0} getLabel={()=>'vitórias em Indoor'} />
-        <RBlock icon="•" title="MELHOR WIN RATE  INDOOR (mín. 100)" color={RC.purple ?? '#AA44FF'} top3={career.indoorWinRate}
+        <RBlock icon="•" title="MELHOR WIN RATE — INDOOR (mín. 100)" color={RC.purple ?? '#AA44FF'} top3={career.indoorWinRate}
           getValue={s=>`${s.surfWinRate.INDOOR}%`} getLabel={()=>'win rate em Indoor'}
           getSublabel={s=>`${s.surfWins.INDOOR}V · ${s.surfLosses.INDOOR}D`} />
       </div>
@@ -4510,9 +4752,17 @@ function RecordSuperficieTab({ records }) {
   );
 }
 
-//  Tab: Juniors €
-function RecordJuniorsTab({ records }) {
-  const { career, season, currentYear } = records;
+// — Tab: Juniors —€—
+function RecordJuniorsTab({ records, state }) {
+  const { career } = records;
+  const prospects = (state?.prospects ?? []).map(p => ({
+    id:p.id, player:p, name:p.name, age:p.age ?? 0,
+    overall: p.attrs ? overallRating(p.attrs) : (p.overallRating ?? 0),
+    potential: p.potential ?? p.potentialRating ?? 0,
+  }));
+  const youngest = [...prospects].filter(p=>p.age>0).sort((a,b)=>a.age-b.age).slice(0,10);
+  const strongest = [...prospects].filter(p=>p.overall>0).sort((a,b)=>b.overall-a.overall).slice(0,10);
+  const potential = [...prospects].filter(p=>p.potential>0).sort((a,b)=>b.potential-a.potential).slice(0,10);
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
       <RSec icon="•" title="Juniors" color={'#FF7043'} />
@@ -4521,18 +4771,24 @@ function RecordJuniorsTab({ records }) {
           getValue={s=>s.prospects_titles} getLabel={()=>'títulos no circuito'} />
         <RBlock icon="•" title="MAIS FINAIS JUNIORS" color={RC.gold} top3={career.prospectsFinals}
           getValue={s=>s.prospects_finals_titles} getLabel={()=>'Junior Finals'} />
+        <RBlock icon="•" title="MAIS JOVEM DA GERAÇÃO" color={RC.green} top3={youngest}
+          getValue={s=>`${s.age}a`} getLabel={()=>'idade no circuito junior'} />
+        <RBlock icon="•" title="MAIOR OVERALL PROSPECT" color={RC.purple} top3={strongest}
+          getValue={s=>s.overall} getLabel={()=>'overall atual'} />
+        <RBlock icon="•" title="MAIOR TETO PROJETADO" color={RC.cyan} top3={potential}
+          getValue={s=>s.potential} getLabel={()=>'potencial'} />
       </div>
     </div>
   );
 }
 
-//  Tab: Sets & Partidas 
+// — Tab: Sets & Partidas —
 function RecordSetsTab({ records }) {
   const { career } = records;
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
 
-      <RSec icon="•" title="Domínio  Sets" color={RC.red} />
+      <RSec icon="•" title="Domínio — Sets" color={RC.red} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
         <RBlock icon="•" title="MAIS BAGELS DADOS (6-0)" color={RC.red} top3={career.mostBagels}
           getValue={s=>s.bagels} getLabel={()=>'sets 6-0 aplicados'}
@@ -4555,7 +4811,7 @@ function RecordSetsTab({ records }) {
       <div style={{ marginTop:16, padding:'12px 14px', background:RC.bg,
         border:`1px solid ${RC.border}`, borderRadius:4,
         fontFamily:T.mono, fontSize:8, color:RC.dim, lineHeight:1.8 }}>
-        <span style={{ color:`${RC.orange}99`, marginRight:6 }}></span>
+        <span style={{ color:`${RC.orange}99`, marginRight:6 }}>◆</span>
         Bagels e tiebreaks são rastreados a partir desta temporada.
         Dados históricos (temporadas anteriores) são incluídos automaticamente conforme o save acumula.
       </div>
@@ -4590,21 +4846,22 @@ function RecordLegadoTab({ records }) {
       <RSec icon="•" title="Profundidade de Carreira" color={RC.orange} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
         <RBlock icon="•" title="MAIS PONTOS CARREIRA" color={RC.cyan} top3={career.mostCareerPts} getValue={s=>s.careerPts.toLocaleString()} getLabel={()=>'pontos acumulados'} />
-        <RBlock icon="•" title="MAIS VITRIAS  CARREIRA" color={RC.orange} top3={career.mostWins} getValue={s=>s.wins} getLabel={()=>'vitórias'} getSublabel={s=>`em ${s.matchesPlayed} partidas`} />
+        <RBlock icon="•" title="MAIS VITÓRIAS — CARREIRA" color={RC.orange} top3={career.mostWins} getValue={s=>s.wins} getLabel={()=>'vitórias'} getSublabel={s=>`em ${s.matchesPlayed} partidas`} />
         <RBlock icon="•" title="MELHOR WIN RATE (mín. 100)" color={RC.orange} top3={career.bestWinRate} getValue={s=>`${s.winRate}%`} getLabel={()=>'win rate'} getSublabel={s=>`${s.wins}V · ${s.losses}D`} />
         <RBlock icon="•" title="MAIS PARTIDAS JOGADAS" color={RC.dim} top3={career.mostMatches} getValue={s=>s.matchesPlayed} getLabel={()=>'partidas'} />
-        <RBlock icon="•" title="MAIS FINAIS JOGADAS" color={RC.purple} top3={career.mostFinals} getValue={s=>s.finals} getLabel={()=>'finais'} getSublabel={s=>`${s.titles} vencidas (${s.finalsRate??''}%)`} />
+        <RBlock icon="•" title="MAIS FINAIS JOGADAS" color={RC.purple} top3={career.mostFinals} getValue={s=>s.finals} getLabel={()=>'finais'} getSublabel={s=>`${s.titles} vencidas (${s.finalsRate??'—'}%)`} />
         <RBlock icon="•" title="MELHOR APROVEITAMENTO EM FINAIS" color={RC.gold} top3={career.bestFinalsRate} getValue={s=>`${s.finalsRate}%`} getLabel={()=>'finais ganhas (mín. 3)'} getSublabel={s=>`${s.titles}V · ${s.finals-s.titles}D`} />
-        <RBlock icon="•" title="MAIOR SEQU`NCIA DE VITRIAS" color={RC.red} top3={career.longestWinStreak} getValue={s=>s.winStreak} getLabel={()=>'vitórias consecutivas'} />
+        <RBlock icon="•" title="MAIOR SEQUÊNCIA DE VITÓRIAS" color={RC.red} top3={career.longestWinStreak} getValue={s=>s.winStreak} getLabel={()=>'vitórias consecutivas'} />
         <RBlock icon="•" title="MAIS SEMIFINAIS" color={RC.blue} top3={career.mostSemis} getValue={s=>s.semifinals} getLabel={()=>'semifinais'} />
         <RBlock icon="•" title="MAIS DERROTAS EM FINAIS" color={RC.dim} top3={career.mostFinalLosses} getValue={s=>s.finalLosses} getLabel={()=>'finais perdidas'} getSublabel={s=>`${s.titles} vencidas de ${s.finals} total`} />
       </div>
 
       <RSec icon="•" title="Idade e Longevidade" color={RC.pink} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="CAMPEÒO MAIS JOVEM  GERAL" color={RC.green} top3={career.youngestChamp} getValue={s=>`${s.youngestChampAge}a`} getLabel={()=>'idade do 1º título'} getSublabel={s=>`${s.titles} título(s)`} />
-        <RBlock icon="•" title="CAMPEÒO MAIS VELHO  GERAL" color={RC.orange} top3={career.oldestChamp} getValue={s=>`${s.oldestChampAge}a`} getLabel={()=>'idade do último título'} />
+        <RBlock icon="•" title="CAMPEÃO MAIS JOVEM — GERAL" color={RC.green} top3={career.youngestChamp} getValue={s=>`${s.youngestChampAge}a`} getLabel={()=>'idade do 1º título'} getSublabel={s=>`${s.titles} título(s)`} />
+        <RBlock icon="•" title="CAMPEÃO MAIS VELHO — GERAL" color={RC.orange} top3={career.oldestChamp} getValue={s=>`${s.oldestChampAge}a`} getLabel={()=>'idade do último título'} />
         <RBlock icon="•" title="MAIS ANOS COM TÍTULO" color={'#A78BFA'} top3={career.mostLongevidade} getValue={s=>s.longevidade} getLabel={()=>'temporadas com ao menos 1 título'} getSublabel={s=>`${s.titles} títulos totais`} />
+        <RBlock icon="•" title="MAIOR ERA CONSECUTIVA" color={RC.gold} top3={career.longestTitleEra} getValue={s=>s.titleEra} getLabel={()=>'anos seguidos com título'} getSublabel={s=>`${s.titles} títulos na carreira`} />
       </div>
 
       {career.careerGrandSlam?.length > 0 && (
@@ -4612,7 +4869,7 @@ function RecordLegadoTab({ records }) {
           <RSec icon="•" title="Career Grand Slam" color={RC.gold} />
           <div style={{ background:RC.bg, border:`1px solid ${RC.gold}44`, borderRadius:4, padding:'14px 12px' }}>
             <div style={{ fontFamily:T.mono, fontSize:8, color:`${RC.gold}99`, letterSpacing:3, marginBottom:10 }}>
-              VENCERAM TODOS OS 4 GRAND SLAMS NA CARREIRA
+              VENCERAM TODOS OS 6 GRAND SLAMS NA CARREIRA
             </div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
               {career.careerGrandSlam.map((s) => (
@@ -4642,7 +4899,7 @@ function RecordTemporadaTab({ records }) {
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
         <RBlock icon="•" title="MELHOR TEMPORADA (PONTOS)" color={RC.cyan} top3={season.bestSeasonPts} getValue={s=>s.bestSeasonPts.toLocaleString()} getLabel={()=>'pontos em uma temporada'} getSublabel={s=>s.bestSeasonPtsYr?`Temporada ${s.bestSeasonPtsYr}`:null} />
         <RBlock icon="•" title="MAIS TÍTULOS EM UMA TEMPORADA" color={RC.gold} top3={season.bestSeasonTitles} getValue={s=>s.bestSeasonTitles} getLabel={()=>'títulos em uma temporada'} getSublabel={s=>s.bestSeasonTitlesYr?`Temporada ${s.bestSeasonTitlesYr}`:null} />
-        <RBlock icon="•" title="MAIS VITRIAS EM UMA TEMPORADA" color={RC.orange} top3={season.bestSeasonWins} getValue={s=>s.bestSeasonWins} getLabel={()=>'vitórias em uma temporada'} />
+        <RBlock icon="•" title="MAIS VITÓRIAS EM UMA TEMPORADA" color={RC.orange} top3={season.bestSeasonWins} getValue={s=>s.bestSeasonWins} getLabel={()=>'vitórias em uma temporada'} />
         <RBlock icon="•" title="MAIS WINNERS EM UMA TEMPORADA" color={RC.red} top3={season.bestSeasonWinners} getValue={s=>s.bestSeasonWinners.toLocaleString()} getLabel={()=>'winners em uma temporada'} getSublabel={s=>s.bestSeasonWinnersYr?`Temporada ${s.bestSeasonWinnersYr}`:null} />
         <RBlock icon="•" title="MAIS ACES EM UMA TEMPORADA" color={RC.blue} top3={season.bestSeasonAces} getValue={s=>s.bestSeasonAces.toLocaleString()} getLabel={()=>'aces em uma temporada'} getSublabel={s=>s.bestSeasonAcesYr?`Temporada ${s.bestSeasonAcesYr}`:null} />
         <RBlock icon="•" title="MELHOR M0DIA DE WINNERS/JOGO" color={RC.red} top3={season.bestSeasonWinnersAvg} getValue={s=>s.bestSeasonWinnersAvg.toFixed(2)} getLabel={()=>'winners por jogo na temporada'} getSublabel={s=>`${s.bestSeasonWinnersAvgMatches} partidas · ${s.bestSeasonWinnersAvgYr}`} />
@@ -4658,7 +4915,7 @@ function RecordTemporadaTab({ records }) {
         <RBlock icon="•" title={`WINNERS/JOGO EM ${currentYear}`} color={RC.red} top3={season.currentWinnersAvg} getValue={s=>s.currentSeasonWinnersPerMatch.toFixed(2)} getLabel={()=>`média de winners`} getSublabel={s=>`${s.currentSeasonMatches} partidas`} />
         <RBlock icon="•" title={`ACES/JOGO EM ${currentYear}`} color={RC.blue} top3={season.currentAcesAvg} getValue={s=>s.currentSeasonAcesPerMatch.toFixed(2)} getLabel={()=>`média de aces`} getSublabel={s=>`${s.currentSeasonMatches} partidas`} />
         <RBlock icon="•" title={`DOUBLE FAULTS EM ${currentYear}`} color={RC.orange} top3={season.currentDoubleFaults} getValue={s=>s.currentSeasonDoubleFaults.toLocaleString()} getLabel={()=>`duplas faltas em ${currentYear}`} />
-        <RBlock icon="•" title={`ERROS NÒO FOR!ADOS EM ${currentYear}`} color={RC.dim} top3={season.currentUnforcedErrors} getValue={s=>s.currentSeasonUnforcedErrors.toLocaleString()} getLabel={()=>`UNF em ${currentYear}`} />
+        <RBlock icon="•" title={`ERROS NÃO FORÇADOS EM ${currentYear}`} color={RC.dim} top3={season.currentUnforcedErrors} getValue={s=>s.currentSeasonUnforcedErrors.toLocaleString()} getLabel={()=>`UNF em ${currentYear}`} />
       </div>
     </div>
   );
@@ -4677,20 +4934,20 @@ function RecordExecucaoTab({ records }) {
     <div style={{ display:'flex', flexDirection:'column' }}>
       <RIntro eyebrow="produção em quadra" title="Volume, agressão e custo" text="Esta página acompanha o lado mais bruto da execução: quem mais produziu winners e aces, quem mais viveu de tiebreak e quem pagou o preço do risco com duplas faltas e erros." color={RC.red} />
 
-      <RSec icon="•" title="Estatísticas de Execução  Carreira" color={RC.red} />
+      <RSec icon="•" title="Estatísticas de Execução — Carreira" color={RC.red} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS WINNERS  CARREIRA" color={RC.red} top3={career.mostWinners} getValue={s=>s.winners.toLocaleString()} getLabel={()=>'winners'} getSublabel={s=>`${s.matchesPlayed} partidas`} />
-        <RBlock icon="•" title="MAIS ACES  CARREIRA" color={RC.blue} top3={career.mostAces} getValue={s=>s.aces.toLocaleString()} getLabel={()=>'aces'} />
+        <RBlock icon="•" title="MAIS WINNERS — CARREIRA" color={RC.red} top3={career.mostWinners} getValue={s=>s.winners.toLocaleString()} getLabel={()=>'winners'} getSublabel={s=>`${s.matchesPlayed} partidas`} />
+        <RBlock icon="•" title="MAIS ACES — CARREIRA" color={RC.blue} top3={career.mostAces} getValue={s=>s.aces.toLocaleString()} getLabel={()=>'aces'} />
         <RBlock icon="•" title="MELHOR M0DIA DE WINNERS/JOGO" color={RC.red} top3={career.bestWinnersPerMatch} getValue={s=>s.careerWinnersPerMatch.toFixed(2)} getLabel={()=>'winners por jogo'} getSublabel={s=>`${s.matchesPlayed} partidas`} />
         <RBlock icon="•" title="MELHOR M0DIA DE ACES/JOGO" color={RC.blue} top3={career.bestAcesPerMatch} getValue={s=>s.careerAcesPerMatch.toFixed(2)} getLabel={()=>'aces por jogo'} getSublabel={s=>`${s.matchesPlayed} partidas`} />
-        <RBlock icon="•" title="MAIS DOUBLE FAULTS  CARREIRA" color={RC.orange} top3={career.mostDoubleFaults} getValue={s=>s.doubleFaults.toLocaleString()} getLabel={()=>'duplas faltas'} />
-        <RBlock icon="•" title="MAIS ERROS NÒO FOR!ADOS  CARREIRA" color={RC.dim} top3={career.mostUnforcedErrors} getValue={s=>s.unforcedErrors.toLocaleString()} getLabel={()=>'UNF acumulados'} />
+        <RBlock icon="•" title="MAIS DOUBLE FAULTS — CARREIRA" color={RC.orange} top3={career.mostDoubleFaults} getValue={s=>s.doubleFaults.toLocaleString()} getLabel={()=>'duplas faltas'} />
+        <RBlock icon="•" title="MAIS ERROS NÃO FORÇADOS — CARREIRA" color={RC.dim} top3={career.mostUnforcedErrors} getValue={s=>s.unforcedErrors.toLocaleString()} getLabel={()=>'UNF acumulados'} />
       </div>
 
       <RSec icon="•" title="Domínio de Sets" color={RC.red} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <RBlock icon="•" title="MAIS BAGELS DADOS (6-0)" color={RC.red} top3={career.mostBagels} getValue={s=>s.bagels} getLabel={()=>'sets 6-0 aplicados'} getSublabel={s=>`em ${s.matchesPlayed} partidas`} />
-        <RBlock icon="•" title="MAIS DOUBLE BAGELS (6-0 6-0)" color={'#E53E3E'} top3={career.mostDoubleBagels} getValue={s=>s.doubleBagels} getLabel={()=>'double bagels'} getSublabel={s=>`${s.bagels} bagels total`} />
+        <RBlock icon="•" title="MAIS SETS PERFEITOS (4-0)" color={RC.red} top3={career.mostBagels} getValue={s=>s.bagels} getLabel={()=>'sets 4-0 aplicados'} getSublabel={s=>`em ${s.matchesPlayed} partidas`} />
+        <RBlock icon="•" title="MAIS DOUBLE 4-0" color={'#E53E3E'} top3={career.mostDoubleBagels} getValue={s=>s.doubleBagels} getLabel={()=>'duas parciais 4-0'} getSublabel={s=>`${s.bagels} sets perfeitos`} />
         <RBlock icon="•" title="MELHOR % DE SETS VENCIDOS (mín. 10)" color={RC.orange} top3={career.bestSetsWinRate} getValue={s=>`${s.setsWinRate}%`} getLabel={()=>'sets ganhos'} getSublabel={s=>`${s.setsWon}V · ${s.setsLost}D`} />
         <RBlock icon="•" title="MAIS TIEBREAKS VENCIDOS" color={RC.cyan} top3={career.mostTiebreaks} getValue={s=>s.tiebreaksWon} getLabel={()=>'tiebreaks ganhos'} getSublabel={s=>`${s.matchesPlayed} partidas`} />
       </div>
@@ -4712,11 +4969,49 @@ function RecordExecucaoTab({ records }) {
       </div>
 
       <div style={{ marginTop:16, padding:'12px 14px', background:RC.bg, border:`1px solid ${RC.border}`, borderRadius:4, fontFamily:T.mono, fontSize:8, color:RC.dim, lineHeight:1.8 }}>
-        <span style={{ color:`${RC.orange}99`, marginRight:6 }}></span>
+        <span style={{ color:`${RC.orange}99`, marginRight:6 }}>◆</span>
         Este painel agora usa o golpe final real do ponto salvo no records store. Saves antigos ainda vão preencher isso aos poucos conforme novas partidas forem sendo jogadas.
+      </div>
+
+      <RSec icon="•" title="Asfalto" color={RC.orange} />
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+        <RBlock icon="•" title="MAIS TÍTULOS · ASFALTO" color={RC.orange} top3={career.streetTitles} getValue={s=>s.surfTitles.STREET??0} getLabel={()=>'títulos no Asfalto'} />
+        <RBlock icon="•" title="MAIS VITÓRIAS · ASFALTO" color={RC.orange} top3={career.streetWins} getValue={s=>s.surfWins.STREET??0} getLabel={()=>'vitórias no Asfalto'} />
+        <RBlock icon="•" title="MELHOR WIN RATE · ASFALTO" color={RC.orange} top3={career.streetWinRate} getValue={s=>`${s.surfWinRate.STREET}%`} getLabel={()=>'aproveitamento no Asfalto'} />
+      </div>
+
+      <RSec icon="•" title="Veludo" color={RC.pink} />
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+        <RBlock icon="•" title="MAIS TÍTULOS · VELUDO" color={RC.pink} top3={career.carpetTitles} getValue={s=>s.surfTitles.CARPET??0} getLabel={()=>'títulos no Veludo'} />
+        <RBlock icon="•" title="MAIS VITÓRIAS · VELUDO" color={RC.pink} top3={career.carpetWins} getValue={s=>s.surfWins.CARPET??0} getLabel={()=>'vitórias no Veludo'} />
+        <RBlock icon="•" title="MELHOR WIN RATE · VELUDO" color={RC.pink} top3={career.carpetWinRate} getValue={s=>`${s.surfWinRate.CARPET}%`} getLabel={()=>'aproveitamento no Veludo'} />
       </div>
     </div>
   );
+}
+
+function RecordPartidasTab({ records }) {
+  const matches = records.legendary?.matches ?? [];
+  const featured = records.legendary?.pressure?.[0] ?? records.legendary?.longest?.[0];
+  const lists = [
+    { title:'AS MAIS LONGAS', items:records.legendary?.longest ?? [], value:m=>`${m.totalGames} games` },
+    { title:'MAIOR PRESSÃO', items:records.legendary?.pressure ?? [], value:m=>m.tiebreaks ? `${m.tiebreaks} tiebreak${m.tiebreaks>1?'s':''}` : 'alta tensão' },
+    { title:'MAIORES RALLIES', items:records.legendary?.rallies ?? [], value:m=>`${m.maxRally} bolas` },
+  ];
+  const line = m => `${m.winner?.name ?? 'Vencedor'} d. ${m.loser?.name ?? 'adversário'} · ${m.score || 'placar registrado'}`;
+  return <div style={{ display:'flex', flexDirection:'column' }}>
+    <RIntro eyebrow="memória do circuito" title="Partidas que ficaram" text="O almanaque agora guarda as partidas, não apenas os totais: placares apertados, pressão, rallies e noites que mudaram um torneio." color={RC.gold} />
+    {!featured ? <div style={{ padding:'24px 16px', border:`1px solid ${RC.border}`, background:RC.bg, fontFamily:T.body, color:RC.dim }}>A primeira partida concluída passa a morar aqui. O arquivo começa a contar a própria história.</div> : <>
+      <div style={{ padding:'20px', border:`1px solid ${RC.gold}66`, background:`${RC.gold}0A`, marginBottom:18 }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, color:RC.gold, letterSpacing:'.24em', marginBottom:10 }}>PARTIDA EM DESTAQUE · {featured.tournamentName?.toUpperCase()} · {featured.year}</div>
+        <div style={{ fontFamily:T.disp, fontSize:28, color:T.white, lineHeight:1.05 }}>{line(featured)}</div>
+        <div style={{ fontFamily:T.body, color:T.dim, marginTop:10 }}>Foram {featured.totalGames} games {featured.tiebreaks ? `e ${featured.tiebreaks} tiebreak${featured.tiebreaks>1?'s':''}` : ''} numa partida que ficou marcada no circuito.</div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+        {lists.map(section => <div key={section.title} style={{ border:`1px solid ${RC.border}`, background:RC.bg, padding:'12px' }}><div style={{ fontFamily:T.mono, fontSize:8, color:RC.dim, letterSpacing:'.18em', marginBottom:10 }}>{section.title}</div>{section.items.slice(0,4).map(m=><div key={m.key} style={{ padding:'8px 0', borderTop:`1px solid ${RC.border}`, fontFamily:T.body, fontSize:12, color:T.dim }}><div style={{ color:T.white }}>{line(m)}</div><div style={{ fontFamily:T.mono, fontSize:8, color:RC.gold, marginTop:3 }}>{section.value(m)} · {m.tournamentName}</div></div>)}</div>)}
+      </div>
+    </>}
+  </div>;
 }
 
 function RecordDuelosTab({ state }) {
@@ -4734,8 +5029,19 @@ function RecordDuelosTab({ state }) {
     ...(state?.prospects ?? []),
   ];
   const playerMap = new Map(allPlayers.map(p => [p.id, p]));
+  const recordedDuels = Object.values((state?.recordsStore?.matchRecords ?? []).reduce((acc, m) => {
+    const ids = [m.winnerId, m.loserId].sort();
+    const key = ids.join('__');
+    const d = acc[key] ?? { key, p1Id:ids[0], p2Id:ids[1], p1Wins:0, p2Wins:0, totalMatches:0, intensity:0, status:'EM FORMAÇÃO', type:'H2H' };
+    if (m.winnerId === d.p1Id) d.p1Wins++; else d.p2Wins++;
+    d.totalMatches++;
+    d.intensity += (m.tiebreaks ?? 0) * .22 + (m.heat ?? 0) / 500 + (m.totalGames ?? 0) / 100;
+    acc[key] = d;
+    return acc;
+  }, {}));
+  const sourceDuels = rivalries.length ? rivalries : recordedDuels;
 
-  const duels = rivalries.slice(0, 12).map((r) => {
+  const duels = sourceDuels.sort((a,b)=>(b.intensity??0)-(a.intensity??0) || (b.totalMatches??0)-(a.totalMatches??0)).slice(0, 12).map((r) => {
     const p1 = playerMap.get(r.p1Id) ?? { id: r.p1Id, name: `#${r.p1Id}` };
     const p2 = playerMap.get(r.p2Id) ?? { id: r.p2Id, name: `#${r.p2Id}` };
     const total = r.totalMatches ?? 0;
@@ -4763,7 +5069,7 @@ function RecordDuelosTab({ state }) {
       <RIntro eyebrow="confrontos diretos" title="Duelos e rivalidades ativas" text="Aqui entram os maiores head-to-head do circuito: quem domina, quem equilibra e quais confrontos já viraram narrativa de era." color={RC.purple} />
       {duels.length === 0 ? (
         <div style={{ marginTop:8, padding:'18px 16px', border:`1px solid ${RC.border}`, background:RC.bg, fontFamily:T.mono, fontSize:9, color:RC.dim, letterSpacing:'.12em', textTransform:'uppercase' }}>
-          Sem duelos graduados ainda. Simule mais temporadas para a aba ganhar densidade.
+          Ainda não há confrontos registrados. Assim que o primeiro torneio terminar, os head-to-head começam a ganhar memória aqui — sem esperar a rivalidade “graduar”.
         </div>
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
@@ -4799,7 +5105,7 @@ function RecordDuelosTab({ state }) {
   );
 }
 
-//  MAIN RecordesView 
+// — MAIN RecordesView —
 function RecordesView({ state }) {
   const [tab, setTab] = useState('legado');
   const records = useMemo(() => {
@@ -4809,7 +5115,8 @@ function RecordesView({ state }) {
   const tabs = [
     { id:'legado',     label:'LEGADO',      color:RC.gold   },
     { id:'temporada',  label:'TEMPORADA',   color:RC.cyan   },
-    { id:'execucao',   label:'EXECU!ÒO',    color:RC.red    },
+    { id:'execucao',   label:'EXECUÇÃO',    color:RC.red    },
+    { id:'partidas',   label:'PARTIDAS',    color:RC.gold   },
     { id:'duelos',     label:'DUELOS',      color:RC.purple },
     { id:'superficie', label:'SUPERFÍCIES', color:RC.cyan   },
     { id:'prospects',  label:'PROSPECTS',   color:'#FF7043' },
@@ -4828,11 +5135,11 @@ function RecordesView({ state }) {
               Recordes<br/><span style={{ opacity:.3 }}>Históricos</span>
             </div>
             <div style={{ fontFamily:T.body, fontSize:13, color:T.dim, maxWidth:720, lineHeight:1.7, marginBottom:18 }}>
-              Um almanaque vivo do circuito. Separei esta área entre legado, corrida anual, execução estatística e domínio por superfície para a leitura ficar mais natural.
+              Um almanaque vivo do circuito: o que uma carreira acumulou, o que está acontecendo agora e as partidas que viraram memória.
             </div>
           </div>
           <div style={{ fontFamily:T.mono, fontSize:8, color:T.faint, letterSpacing:'.24em', alignSelf:'center', paddingBottom:20, textTransform:'uppercase' }}>
-            Top 3 por categoria · legado · temporada · execução · superfície
+            marcas vivas · histórias · superfícies · gerações
           </div>
         </div>
         <div style={{ display:'flex', gap:0 }}>
@@ -4853,16 +5160,17 @@ function RecordesView({ state }) {
       <div style={{ padding:'32px 40px' }}>
         {!records ? (
           <div style={{ textAlign:'center', padding:'80px 0', fontFamily:T.mono, fontSize:11, color:RC.vdim, letterSpacing:'.3em' }}>
-            NENHUM DADO DISPONÍVEL  SIMULE TORNEIOS PRIMEIRO
+            NENHUM DADO DISPONÍVEL — SIMULE TORNEIOS PRIMEIRO
           </div>
         ) : (
           <>
             {tab==='legado'     && <RecordLegadoTab     records={records} />}
             {tab==='temporada'  && <RecordTemporadaTab  records={records} />}
             {tab==='execucao'   && <RecordExecucaoTab   records={records} />}
+            {tab==='partidas'   && <RecordPartidasTab    records={records} />}
             {tab==='duelos'     && <RecordDuelosTab     state={state} />}
             {tab==='superficie' && <RecordSuperficieTab records={records} />}
-            {tab==='prospects'  && <RecordJuniorsTab  records={records} />}
+            {tab==='prospects'  && <RecordJuniorsTab  records={records} state={state} />}
           </>
         )}
       </div>
@@ -4871,17 +5179,17 @@ function RecordesView({ state }) {
 }
 
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-// LES"ES VIEW
+// LESÕES VIEW
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 const INJURY_TYPE_LABELS = {
-  WRIST:      { label: 'Pulso',          icon: 'x' },
-  ELBOW:      { label: 'Cotovelo',       icon: 'x' },
-  SHOULDER:   { label: 'Ombro',          icon: 'x9' },
-  BACK:       { label: 'Lombar',         icon: 'x' },
-  KNEE:       { label: 'Joelho',         icon: 'x' },
-  ANKLE:      { label: 'Tornozelo',      icon: 'x' },
-  HAMSTRING:  { label: 'Post. da Coxa',  icon: 'x' },
-  ABDOMINAL:  { label: 'Abdominal',      icon: 'a' },
+  WRIST:      { label: 'Pulso',          icon: '✚' },
+  ELBOW:      { label: 'Cotovelo',       icon: '✚' },
+  SHOULDER:   { label: 'Ombro',          icon: '✚' },
+  BACK:       { label: 'Lombar',         icon: '✚' },
+  KNEE:       { label: 'Joelho',         icon: '✚' },
+  ANKLE:      { label: 'Tornozelo',      icon: '✚' },
+  HAMSTRING:  { label: 'Post. da Coxa',  icon: '✚' },
+  ABDOMINAL:  { label: 'Abdominal',      icon: '✚' },
 };
 
 const INJURY_GRADE_META = {
@@ -4915,7 +5223,7 @@ function LesõesView({ state }) {
           ENFERMARIA
         </h2>
         <span style={{ fontFamily: T.mono, fontSize: 10, color: T.dim, letterSpacing: '.15em' }}>
-          LES"ES ATIVAS  T.{state.year}
+          LESÕES ATIVAS · T.{state.year}
         </span>
       </div>
 
@@ -4935,7 +5243,7 @@ function LesõesView({ state }) {
               background: INJURY_GRADE_META[g].bg,
               border: `1px solid ${INJURY_GRADE_META[g].color}33`,
             }}>
-              {summary[g]} {INJURY_GRADE_META[g].label.toUpperCase()}
+              {summary[g]}▶ {INJURY_GRADE_META[g].label.toUpperCase()}
             </div>
           ))}
         </div>
@@ -4945,7 +5253,7 @@ function LesõesView({ state }) {
         <div className="ui-empty-state" style={{ minHeight: 220 }}>
           <div className="ui-empty-kicker">Enfermaria</div>
           <div className="ui-empty-title" style={{ fontSize: 28 }}>Enfermaria vazia</div>
-          <div className="ui-empty-copy">Nenhum jogador tem les�o ativa neste momento. O circuito segue inteiro.</div>
+          <div className="ui-empty-copy">Nenhum jogador tem lesão ativa neste momento. O circuito segue inteiro.</div>
         </div>
       )}
 
@@ -4954,7 +5262,7 @@ function LesõesView({ state }) {
           {injured.map((player, idx) => {
             const inj       = player.injury;
             const grade     = INJURY_GRADE_META[inj.grade] ?? INJURY_GRADE_META[1];
-            const type      = INJURY_TYPE_LABELS[inj.type] ?? { label: inj.type ?? '?', icon: 'x' };
+            const type      = INJURY_TYPE_LABELS[inj.type] ?? { label: inj.type ?? 'Lesão', icon: '✚' };
             const rank      = player._rank;
             const slots     = inj.slotsRemaining ?? 0;
             const isSurgery = inj.grade === 4;
@@ -4962,7 +5270,7 @@ function LesõesView({ state }) {
             const photo     = typeof getPlayerPhoto === 'function' ? getPlayerPhoto(player.id) : null;
 
             const statusText = isSurgery
-              ? `Cirurgia  fora por ${slots} torneio${slots !== 1 ? 's' : ''}`
+              ? `Cirurgia — fora por ${slots} torneio${slots !== 1 ? 's' : ''}`
               : isPlaying
               ? 'Jogando com restrições'
               : slots === 0 ? 'Retorno próximo'
@@ -4996,7 +5304,7 @@ function LesõesView({ state }) {
                     fontFamily: T.disp, fontSize: 22, lineHeight: 1,
                     color: rank <= 10 ? T.gold : rank <= 32 ? T.dim : T.faint,
                   }}>
-                    {rank <= 900 ? `#${rank}` : ''}
+                    {rank <= 900 ? `#${rank}` : '—'}
                   </div>
                 </div>
 
@@ -5064,7 +5372,7 @@ function LesõesView({ state }) {
                     fontFamily: T.disp, fontSize: 28, lineHeight: 1,
                     color: grade.color, textShadow: `0 0 20px ${grade.color}66`,
                   }}>
-                    {isSurgery ? 'S' : inj.grade}
+                    {isSurgery ? 'SIM' : inj.grade}
                   </div>
                   <div style={{ fontFamily: T.mono, fontSize: 8, color: grade.color, letterSpacing: '.12em', opacity: .7, marginTop: 2 }}>
                     GRAU
@@ -5081,11 +5389,55 @@ function LesõesView({ state }) {
 
 function RTDView({ state }) {
   const year = state?.year ?? 2025;
+  const [sort, setSort] = useState({ key: 'seasonDelta', dir: 'desc' });
+  const [selectedId, setSelectedId] = useState(null);
   const fmtAge = (age) => {
     const n = Number(age);
     return Number.isFinite(n) ? `${Math.floor(n)} anos` : 'idade nao registrada';
   };
-  const rows = useMemo(() => {
+  const attrLabel = (key) => ({
+    velocidade: 'Velocidade',
+    explosividade: 'Explosividade',
+    resistencia: 'Resistencia',
+    defesa: 'Defesa',
+    fhPotencia: 'FH Potencia',
+    fhControle: 'FH Controle',
+    bhPotencia: 'BH Potencia',
+    bhControle: 'BH Controle',
+    topspin: 'Topspin',
+    slice: 'Slice',
+    saqueForca: 'Saque Forca',
+    saquePrecisao: 'Saque Precisao',
+    devolucao: 'Devolucao',
+    volley: 'Volley',
+    smash: 'Smash',
+    leitura: 'Leitura',
+    visaoTatica: 'Visao Tatica',
+    mentalidade: 'Mentalidade',
+    regularidade: 'Regularidade',
+    recuperacao: 'Recuperacao',
+    adaptacao: 'Adaptacao',
+  }[key] ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()));
+  const attrChangesFor = (player, ledger) => {
+    const attrs = player?.attrs ?? {};
+    const seasonDelta = ledger?.seasonAttrDelta;
+    const latestSeason = [...(player?._seasonHistory ?? [])].reverse().find(h => h.year === year || h.year === year + 1);
+    const rawDelta = seasonDelta && Object.keys(seasonDelta).length
+      ? seasonDelta
+      : latestSeason?.attrChanges && Object.keys(latestSeason.attrChanges).length
+        ? latestSeason.attrChanges
+        : player?._devState?.attrGrowthAccum ?? {};
+    return Object.entries(rawDelta ?? {})
+      .map(([key, delta]) => ({
+        key,
+        label: attrLabel(key),
+        delta: Number(delta) || 0,
+        current: Number(attrs[key] ?? 0),
+      }))
+      .filter(item => Math.abs(item.delta) >= 0.01)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  };
+  const baseRows = useMemo(() => {
     return [...(state?.tourPlayers ?? [])]
       .map(player => {
         const currentOverall = overallRating(player.attrs ?? {});
@@ -5098,10 +5450,34 @@ function RTDView({ state }) {
           ? (ledger.seasonDelta ?? (currentOverall - seasonStartOverall))
           : 0;
         const careerDelta = ledger.careerDelta ?? (currentOverall - debutOverall);
-        return { player, currentOverall, debutOverall, seasonDelta, careerDelta };
-      })
-      .sort((a, b) => Math.abs(b.seasonDelta) - Math.abs(a.seasonDelta));
+        const lastMonthDelta = ledger.currentYear === year ? (ledger.lastMonthDelta ?? 0) : 0;
+        const attrChanges = attrChangesFor(player, ledger);
+        const upCount = attrChanges.filter(a => a.delta > 0).length;
+        const downCount = attrChanges.filter(a => a.delta < 0).length;
+        return { player, currentOverall, debutOverall, seasonDelta, careerDelta, lastMonthDelta, attrChanges, upCount, downCount };
+      });
   }, [state?.tourPlayers, year]);
+  const rows = useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const valueOf = (row) => {
+      if (sort.key === 'rank') return row.player.rankPosition ?? 999;
+      if (sort.key === 'name') return row.player.name ?? '';
+      if (sort.key === 'currentOverall') return row.currentOverall;
+      if (sort.key === 'seasonDelta') return row.seasonDelta;
+      if (sort.key === 'careerDelta') return row.careerDelta;
+      if (sort.key === 'debutOverall') return row.debutOverall;
+      if (sort.key === 'lastMonthDelta') return row.lastMonthDelta;
+      if (sort.key === 'upCount') return row.upCount;
+      if (sort.key === 'downCount') return row.downCount;
+      return 0;
+    };
+    return [...baseRows].sort((a, b) => {
+      const av = valueOf(a), bv = valueOf(b);
+      if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * dir;
+      return ((av > bv ? 1 : av < bv ? -1 : 0) * dir) || ((a.player.rankPosition ?? 999) - (b.player.rankPosition ?? 999));
+    });
+  }, [baseRows, sort]);
+  const selectedRow = rows.find(r => r.player.id === selectedId) ?? rows[0] ?? null;
 
   const fmtDelta = (value) => {
     const n = Number(value) || 0;
@@ -5109,8 +5485,24 @@ function RTDView({ state }) {
     return `${n > 0 ? '+' : ''}${n.toFixed(1)}`;
   };
   const deltaColor = (value) => value > 0.05 ? '#7FDBB6' : value < -0.05 ? '#FF8A80' : 'rgba(242,237,228,.42)';
-  const biggestRise = rows.filter(r => r.seasonDelta > 0).slice(0, 3);
-  const biggestFall = [...rows].filter(r => r.seasonDelta < 0).sort((a, b) => a.seasonDelta - b.seasonDelta).slice(0, 3);
+  const biggestRise = [...baseRows].filter(r => r.seasonDelta > 0).sort((a, b) => b.seasonDelta - a.seasonDelta).slice(0, 3);
+  const biggestFall = [...baseRows].filter(r => r.seasonDelta < 0).sort((a, b) => a.seasonDelta - b.seasonDelta).slice(0, 3);
+  const setSortKey = (key) => setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
+  const SortHead = ({ id, children }) => (
+    <button onClick={() => setSortKey(id)} style={{
+      background:'transparent', border:'none', padding:0, textAlign:'left', cursor:'pointer',
+      fontFamily:T.mono, fontSize:7.5, color:sort.key === id ? T.gold : 'rgba(242,237,228,.38)',
+      letterSpacing:'.16em', textTransform:'uppercase',
+    }}>
+      {children} {sort.key === id ? (sort.dir === 'desc' ? '↓' : '↑') : ''}
+    </button>
+  );
+  const gains = selectedRow?.attrChanges?.filter(a => a.delta > 0).sort((a, b) => b.delta - a.delta) ?? [];
+  const losses = selectedRow?.attrChanges?.filter(a => a.delta < 0).sort((a, b) => a.delta - b.delta) ?? [];
+  const strongest = Object.entries(selectedRow?.player?.attrs ?? {})
+    .map(([key, value]) => ({ key, label: attrLabel(key), value: Number(value) || 0 }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
 
   return (
     <div style={{ padding:'28px clamp(18px,3vw,42px)', animation:'bu-in .35s ease both' }}>
@@ -5136,27 +5528,95 @@ function RTDView({ state }) {
         <RTDHighlight title="Maiores quedas da temporada" rows={biggestFall} color="#FF8A80" fmtDelta={fmtDelta} />
       </div>
 
-      <div style={{ border:'1px solid rgba(255,255,255,.07)', background:'rgba(255,255,255,.018)', overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'64px 1.8fr repeat(4, minmax(100px,.7fr))', padding:'10px 14px', borderBottom:'1px solid rgba(255,255,255,.07)', fontFamily:T.mono, fontSize:7.5, color:'rgba(242,237,228,.38)', letterSpacing:'.2em', textTransform:'uppercase' }}>
-          <div>Rank</div><div>Jogador</div><div>OVR atual</div><div>Temporada</div><div>Carreira</div><div>Estreia</div>
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1.35fr) minmax(360px,.65fr)', gap:16, alignItems:'start' }}>
+        <div style={{ border:'1px solid rgba(255,255,255,.07)', background:'rgba(255,255,255,.018)', overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'64px 1.8fr repeat(6, minmax(82px,.62fr))', padding:'10px 14px', borderBottom:'1px solid rgba(255,255,255,.07)' }}>
+            <SortHead id="rank">Rank</SortHead><SortHead id="name">Jogador</SortHead><SortHead id="currentOverall">OVR</SortHead><SortHead id="seasonDelta">Temp.</SortHead><SortHead id="lastMonthDelta">Mês</SortHead><SortHead id="careerDelta">Carreira</SortHead><SortHead id="upCount">Up</SortHead><SortHead id="downCount">Down</SortHead>
+          </div>
+          <div style={{ maxHeight:'62vh', overflow:'auto' }}>
+            {rows.map((row, idx) => {
+              const active = row.player.id === selectedRow?.player?.id;
+              return (
+                <div key={row.player.id} style={{
+                  display:'grid', gridTemplateColumns:'64px 1.8fr repeat(6, minmax(82px,.62fr))',
+                  alignItems:'center', padding:'11px 14px', borderBottom:'1px solid rgba(255,255,255,.045)',
+                  background:active ? 'rgba(232,200,74,.07)' : idx % 2 ? 'rgba(255,255,255,.012)' : 'transparent',
+                  borderLeft:active ? `3px solid ${T.gold}` : '3px solid transparent',
+                }}>
+                  <div style={{ fontFamily:T.mono, fontSize:10, color:'rgba(242,237,228,.28)' }}>#{row.player.rankPosition ?? '-'}</div>
+                  <button onClick={() => setSelectedId(row.player.id)} style={{ display:'flex', alignItems:'center', gap:10, minWidth:0, background:'transparent', border:'none', padding:0, textAlign:'left', cursor:'pointer' }}>
+                    <PlayerAvatar player={row.player} size={30} />
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontFamily:T.cond, fontSize:16, color:active ? T.gold : T.white, fontWeight:800, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{row.player.name}</div>
+                      <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(242,237,228,.25)', letterSpacing:'.14em' }}>{row.player.nationality ?? '--'} · {fmtAge(row.player.age)}</div>
+                    </div>
+                  </button>
+                  <div style={{ fontFamily:T.disp, fontSize:24, color:T.white }}>{row.currentOverall.toFixed(1)}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:24, color:deltaColor(row.seasonDelta) }}>{fmtDelta(row.seasonDelta)}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:24, color:deltaColor(row.lastMonthDelta) }}>{fmtDelta(row.lastMonthDelta)}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:24, color:deltaColor(row.careerDelta) }}>{fmtDelta(row.careerDelta)}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:22, color:'#7FDBB6' }}>{row.upCount}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:22, color:'#FF8A80' }}>{row.downCount}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-        {rows.map((row, idx) => (
-          <div key={row.player.id} style={{ display:'grid', gridTemplateColumns:'64px 1.8fr repeat(4, minmax(100px,.7fr))', alignItems:'center', padding:'11px 14px', borderBottom:'1px solid rgba(255,255,255,.045)', background:idx % 2 ? 'rgba(255,255,255,.012)' : 'transparent' }}>
-            <div style={{ fontFamily:T.mono, fontSize:10, color:'rgba(242,237,228,.28)' }}>#{row.player.rankPosition ?? '-'}</div>
-            <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
-              <PlayerAvatar player={row.player} size={30} />
+
+        {selectedRow && (
+          <div style={{ border:'1px solid rgba(232,200,74,.18)', background:'linear-gradient(180deg, rgba(232,200,74,.06), rgba(255,255,255,.018))', padding:18, position:'sticky', top:18 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+              <PlayerAvatar player={selectedRow.player} size={46} />
               <div style={{ minWidth:0 }}>
-                <div style={{ fontFamily:T.cond, fontSize:16, color:T.white, fontWeight:800, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{row.player.name}</div>
-                <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(242,237,228,.25)', letterSpacing:'.14em' }}>{row.player.nationality ?? '--'} · {fmtAge(row.player.age)}</div>
+                <div style={{ fontFamily:T.disp, fontSize:30, color:T.gold, lineHeight:1, textTransform:'uppercase' }}>{selectedRow.player.name}</div>
+                <div style={{ fontFamily:T.mono, fontSize:8, color:'rgba(242,237,228,.36)', letterSpacing:'.16em', marginTop:4 }}>#{selectedRow.player.rankPosition ?? '--'} · {selectedRow.player.nationality ?? '--'} · OVR {selectedRow.currentOverall.toFixed(1)}</div>
               </div>
             </div>
-            <div style={{ fontFamily:T.disp, fontSize:25, color:T.white }}>{row.currentOverall.toFixed(1)}</div>
-            <div style={{ fontFamily:T.disp, fontSize:25, color:deltaColor(row.seasonDelta) }}>{fmtDelta(row.seasonDelta)}</div>
-            <div style={{ fontFamily:T.disp, fontSize:25, color:deltaColor(row.careerDelta) }}>{fmtDelta(row.careerDelta)}</div>
-            <div style={{ fontFamily:T.disp, fontSize:25, color:'rgba(242,237,228,.55)' }}>{row.debutOverall.toFixed(1)}</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:16 }}>
+              {[['Temporada', selectedRow.seasonDelta], ['Mes', selectedRow.lastMonthDelta], ['Carreira', selectedRow.careerDelta]].map(([label, value]) => (
+                <div key={label} style={{ border:'1px solid rgba(255,255,255,.06)', background:'rgba(0,0,0,.18)', padding:'10px 8px' }}>
+                  <div style={{ fontFamily:T.mono, fontSize:6.5, color:'rgba(242,237,228,.3)', letterSpacing:'.18em', textTransform:'uppercase' }}>{label}</div>
+                  <div style={{ fontFamily:T.disp, fontSize:28, color:deltaColor(value), lineHeight:1, marginTop:5 }}>{fmtDelta(value)}</div>
+                </div>
+              ))}
+            </div>
+            <RTDAttrBlock title="Atributos que subiram" rows={gains} color="#7FDBB6" empty="Nenhuma alta registrada ainda." fmtDelta={fmtDelta} />
+            <RTDAttrBlock title="Atributos que desceram" rows={losses} color="#FF8A80" empty="Nenhuma queda registrada ainda." fmtDelta={fmtDelta} />
+            <div style={{ marginTop:14 }}>
+              <div style={{ fontFamily:T.mono, fontSize:7, color:'rgba(242,237,228,.34)', letterSpacing:'.25em', textTransform:'uppercase', marginBottom:10 }}>Top atributos atuais</div>
+              {strongest.map(attr => (
+                <div key={attr.key} style={{ marginBottom:8 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginBottom:4 }}>
+                    <span style={{ fontFamily:T.cond, fontSize:13, color:T.white, fontWeight:800, textTransform:'uppercase' }}>{attr.label}</span>
+                    <span style={{ fontFamily:T.mono, fontSize:10, color:T.gold }}>{attr.value}</span>
+                  </div>
+                  <div style={{ height:4, background:'rgba(255,255,255,.06)' }}><div style={{ height:'100%', width:`${Math.max(0, Math.min(100, attr.value))}%`, background:T.gold }} /></div>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
       </div>
+    </div>
+  );
+}
+
+function RTDAttrBlock({ title, rows, color, empty, fmtDelta }) {
+  return (
+    <div style={{ marginTop:12 }}>
+      <div style={{ fontFamily:T.mono, fontSize:7, color, letterSpacing:'.25em', textTransform:'uppercase', marginBottom:8 }}>{title}</div>
+      {rows.length ? rows.map(attr => (
+        <div key={attr.key} style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:10, alignItems:'center', padding:'7px 0', borderBottom:'1px solid rgba(255,255,255,.045)' }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontFamily:T.cond, fontSize:14, color:T.white, fontWeight:800, textTransform:'uppercase', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{attr.label}</div>
+            <div style={{ height:3, background:'rgba(255,255,255,.06)', marginTop:4 }}><div style={{ height:'100%', width:`${Math.max(0, Math.min(100, attr.current))}%`, background:color }} /></div>
+          </div>
+          <div style={{ fontFamily:T.disp, fontSize:20, color }}>{fmtDelta(attr.delta)}</div>
+          <div style={{ fontFamily:T.mono, fontSize:10, color:'rgba(242,237,228,.54)', minWidth:26, textAlign:'right' }}>{Math.round(attr.current)}</div>
+        </div>
+      )) : (
+        <div style={{ fontFamily:T.body, fontSize:12, color:'rgba(242,237,228,.35)', padding:'8px 0' }}>{empty}</div>
+      )}
     </div>
   );
 }
@@ -5180,11 +5640,295 @@ function RTDHighlight({ title, rows, color, fmtDelta }) {
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
 // COMPONENTE PRINCIPAL
 // """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""•""""""
-export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate, onFastSimulateRange, onViewBracket, simulating = false, simProgress = 0, simMode = 'headless', onSaveGame, onLoadGame, stopOnBreaking = false, onToggleStopOnBreaking = null }) {
+function ArquivoVivoView({ state, onOpen }) {
+  const completed = Object.keys(state?.tournamentResults ?? {}).length;
+  const cards = [
+    ['recordes', 'Recordes', 'Marcas que definem a escala do circuito.', '#E8C84A'],
+    ['chronicles', 'Crônicas', 'Capítulos e temporadas que merecem ser lembrados.', '#7DD8FF'],
+    ['hall-of-fame', 'Hall da Fama', 'Carreiras que já viraram parte da história.', '#FF8A80'],
+  ];
+  return <div style={{ padding:'clamp(26px,4vw,58px)', maxWidth:1180, margin:'0 auto', animation:'bu-in .35s ease' }}>
+    <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.32em', color:T.gold, marginBottom:12 }}>MEMÓRIA DO CIRCUITO · {state?.year}</div>
+    <h1 style={{ fontFamily:T.disp, fontSize:'clamp(48px,8vw,104px)', lineHeight:.82, letterSpacing:'.03em', margin:0, color:T.white }}>ARQUIVO<br/><span style={{ color:T.gold }}>VIVO</span></h1>
+    <p style={{ maxWidth:620, fontFamily:T.body, fontSize:15, color:T.dim, lineHeight:1.7, margin:'22px 0 34px' }}>O que hoje é resultado, amanhã é memória. Aqui o universo organiza suas eras, seus feitos e as histórias que sobrevivem ao placar.</p>
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:14 }}>
+      {cards.map(([id,title,copy,color], index) => <button key={id} onClick={() => onOpen(id)} style={{ textAlign:'left', minHeight:190, padding:22, background:`linear-gradient(145deg, ${color}18, rgba(255,255,255,.02))`, border:`1px solid ${color}55`, cursor:'pointer', color:T.white }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, color, letterSpacing:'.18em' }}>0{index+1} · ABRIR</div>
+        <div style={{ fontFamily:T.disp, fontSize:36, margin:'34px 0 8px', letterSpacing:'.04em' }}>{title}</div>
+        <div style={{ fontFamily:T.body, fontSize:12, color:T.dim, lineHeight:1.5 }}>{copy}</div>
+      </button>)}
+    </div>
+    <div style={{ marginTop:24, fontFamily:T.mono, fontSize:8, color:T.faint, letterSpacing:'.18em' }}>{completed} TORNEIOS JÁ ENTRARAM NO ARQUIVO DESTA TEMPORADA</div>
+  </div>;
+}
+
+function RadarDevelopmentPanel({ player, year }) {
+  const attrLabel = (key) => ({
+    velocidade:'Velocidade', explosividade:'Explosividade', resistencia:'Resistência', defesa:'Defesa',
+    fhPotencia:'FH potência', fhControle:'FH controle', bhPotencia:'BH potência', bhControle:'BH controle',
+    topspin:'Topspin', slice:'Slice', saqueForca:'Saque força', saquePrecisao:'Saque precisão', devolucao:'Devolução',
+    volley:'Voleio', smash:'Smash', leitura:'Leitura', visaoTatica:'Visão tática', mentalidade:'Mentalidade',
+    regularidade:'Regularidade', recuperacao:'Recuperação', adaptacao:'Adaptação',
+  }[key] ?? key);
+  const current = overallRating(player?.attrs ?? {});
+  const ledger = player?.developmentLedger ?? {};
+  const seasonDelta = Number(ledger.seasonDelta ?? 0);
+  const careerDelta = Number(ledger.careerDelta ?? (current - (ledger.debutOverall ?? current)));
+  const monthly = [...(ledger.history ?? [])]
+    .filter(row => Number.isFinite(Number(row?.afterOverall)))
+    .slice(-18);
+  const chartRows = monthly.length ? monthly : [{ id:'today', afterOverall:current, year, monthIndex:null, delta:0 }];
+  const minOvr = Math.floor(Math.min(...chartRows.map(row => Number(row.afterOverall)), current) - 1);
+  const maxOvr = Math.ceil(Math.max(...chartRows.map(row => Number(row.afterOverall)), current) + 1);
+  const range = Math.max(2, maxOvr - minOvr);
+  const chartW = 640, chartH = 156, pad = { left:30, right:12, top:14, bottom:24 };
+  const innerW = chartW - pad.left - pad.right, innerH = chartH - pad.top - pad.bottom;
+  const points = chartRows.map((row, index) => ({
+    ...row,
+    x:pad.left + (chartRows.length <= 1 ? innerW / 2 : index / (chartRows.length - 1) * innerW),
+    y:pad.top + (1 - ((Number(row.afterOverall) - minOvr) / range)) * innerH,
+  }));
+  const line = points.map(point => `${point.x},${point.y}`).join(' ');
+  const attrDeltas = Object.entries(ledger.seasonAttrDelta ?? ledger.lastAttrDelta ?? {})
+    .map(([key, delta]) => ({ key, label:attrLabel(key), delta:Number(delta) || 0, value:Number(player?.attrs?.[key] ?? 0) }))
+    .filter(row => Math.abs(row.delta) >= .01)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const rises = attrDeltas.filter(row => row.delta > 0).slice(0, 3);
+  const falls = attrDeltas.filter(row => row.delta < 0).slice(0, 3);
+  const movements = [...monthly].filter(row => Math.abs(Number(row.delta ?? 0)) >= .01).reverse().slice(0, 6);
+  const seasonRows = [...(player?._seasonHistory ?? [])].slice(-5).reverse();
+  const delta = (value) => `${value > 0 ? '+' : ''}${Number(value || 0).toFixed(1)}`;
+  const tone = (value) => value > .01 ? '#7FDBB6' : value < -.01 ? '#FF8A80' : T.dim;
+  const phase = player?.careerTrajectory?.forecast?.label ?? player?.careerTrajectory?.window?.phase?.replaceAll('_', ' ') ?? 'EM DESENVOLVIMENTO';
+
+  return <section style={{ marginTop:20, border:'1px solid rgba(125,216,255,.26)', background:'linear-gradient(145deg,rgba(125,216,255,.055),rgba(255,255,255,.014))', padding:'clamp(16px,2.2vw,24px)' }}>
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'end', gap:16, flexWrap:'wrap', marginBottom:16 }}>
+      <div>
+        <div style={{ fontFamily:T.mono, fontSize:8, color:'#7DD8FF', letterSpacing:'.23em' }}>EVOLUÇÃO DO JOGADOR · ANO {year}</div>
+        <div style={{ fontFamily:T.disp, fontSize:34, color:T.white, lineHeight:1, marginTop:5 }}>DESENVOLVIMENTO</div>
+      </div>
+      <div style={{ fontFamily:T.mono, fontSize:8, color:T.gold, letterSpacing:'.13em', textTransform:'uppercase' }}>{phase}</div>
+    </div>
+
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(110px,1fr))', gap:8 }}>
+      {[
+        ['OVERALL', current.toFixed(1), T.white],
+        ['TEMPORADA', delta(seasonDelta), tone(seasonDelta)],
+        ['ÚLTIMO CICLO', delta(Number(ledger.lastMonthDelta ?? 0)), tone(Number(ledger.lastMonthDelta ?? 0))],
+        ['CARREIRA', delta(careerDelta), tone(careerDelta)],
+      ].map(([label, value, color]) => <div key={label} style={{ padding:'10px 11px', background:'rgba(0,0,0,.17)', border:'1px solid rgba(255,255,255,.06)' }}>
+        <div style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:'.17em', color:T.faint }}>{label}</div>
+        <div style={{ fontFamily:T.disp, fontSize:28, lineHeight:1, color, marginTop:6 }}>{value}</div>
+      </div>)}
+    </div>
+
+    <div style={{ marginTop:16, padding:'12px 10px 4px', background:'rgba(0,0,0,.14)', overflowX:'auto' }}>
+      <div style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.16em', margin:'0 4px 8px' }}>CURVA DE OVERALL · ÚLTIMOS {chartRows.length} REGISTROS</div>
+      <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ display:'block', minWidth:480, width:'100%', height:'auto' }} role="img" aria-label={`Evolução de overall de ${player?.name ?? 'jogador'}`}>
+        {[0, .5, 1].map(step => { const y = pad.top + innerH * step; const value = (maxOvr - range * step).toFixed(0); return <g key={step}><line x1={pad.left} x2={chartW-pad.right} y1={y} y2={y} stroke="rgba(255,255,255,.08)" strokeDasharray="3 4"/><text x={pad.left-6} y={y+3} textAnchor="end" fill="rgba(242,237,228,.38)" fontSize="8" fontFamily="monospace">{value}</text></g>; })}
+        {points.length > 1 && <polyline points={line} fill="none" stroke="#7DD8FF" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />}
+        {points.map((point, index) => <g key={`${point.year}:${point.monthIndex}:${index}`}><circle cx={point.x} cy={point.y} r="3.7" fill={Number(point.delta) < 0 ? '#FF8A80' : '#7DD8FF'} stroke="#071015" strokeWidth="1.5"/>{index === points.length - 1 && <text x={point.x} y={point.y-9} textAnchor="middle" fill="#F3EFE8" fontSize="9" fontFamily="monospace">{Number(point.afterOverall).toFixed(1)}</text>}</g>)}
+      </svg>
+    </div>
+
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:14, marginTop:16 }}>
+      <div>
+        <div style={{ fontFamily:T.mono, fontSize:7, color:'#7FDBB6', letterSpacing:'.18em', marginBottom:7 }}>ATRIBUTOS EM ALTA</div>
+        {rises.length ? rises.map(row => <div key={row.key} style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:8, padding:'6px 0', borderTop:'1px solid rgba(255,255,255,.06)' }}><span style={{ fontFamily:T.cond, fontWeight:700, color:T.white }}>{row.label}</span><span style={{ fontFamily:T.mono, fontSize:9, color:'#7FDBB6' }}>{delta(row.delta)}</span><span style={{ fontFamily:T.mono, fontSize:9, color:T.dim }}>{Math.round(row.value)}</span></div>) : <div style={{ fontFamily:T.body, fontSize:12, color:T.faint }}>Ainda sem ganho registrado.</div>}
+      </div>
+      <div>
+        <div style={{ fontFamily:T.mono, fontSize:7, color:'#FF8A80', letterSpacing:'.18em', marginBottom:7 }}>ATRIBUTOS EM QUEDA</div>
+        {falls.length ? falls.map(row => <div key={row.key} style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:8, padding:'6px 0', borderTop:'1px solid rgba(255,255,255,.06)' }}><span style={{ fontFamily:T.cond, fontWeight:700, color:T.white }}>{row.label}</span><span style={{ fontFamily:T.mono, fontSize:9, color:'#FF8A80' }}>{delta(row.delta)}</span><span style={{ fontFamily:T.mono, fontSize:9, color:T.dim }}>{Math.round(row.value)}</span></div>) : <div style={{ fontFamily:T.body, fontSize:12, color:T.faint }}>Nenhuma queda registrada.</div>}
+      </div>
+      <div>
+        <div style={{ fontFamily:T.mono, fontSize:7, color:T.gold, letterSpacing:'.18em', marginBottom:7 }}>MOVIMENTOS DE OVERALL</div>
+        {movements.length ? movements.map((row, index) => <div key={`${row.year}:${row.monthIndex}:${index}`} style={{ display:'flex', justifyContent:'space-between', gap:8, padding:'6px 0', borderTop:'1px solid rgba(255,255,255,.06)' }}><span style={{ fontFamily:T.mono, fontSize:8, color:T.faint }}>{row.year}{row.monthIndex != null ? ` · CICLO ${Number(row.monthIndex)+1}` : ''}</span><span style={{ fontFamily:T.mono, fontSize:9, color:tone(Number(row.delta)) }}>{delta(Number(row.delta))} → {Number(row.afterOverall).toFixed(1)}</span></div>) : seasonRows.length ? seasonRows.map(row => <div key={row.year} style={{ display:'flex', justifyContent:'space-between', gap:8, padding:'6px 0', borderTop:'1px solid rgba(255,255,255,.06)' }}><span style={{ fontFamily:T.mono, fontSize:8, color:T.faint }}>{row.year}</span><span style={{ fontFamily:T.mono, fontSize:9, color:tone(Number(row.ovrDelta)) }}>{delta(Number(row.ovrDelta))} → {Number(row.ovr).toFixed(1)}</span></div>) : <div style={{ fontFamily:T.body, fontSize:12, color:T.faint }}>Os movimentos aparecem após o primeiro ciclo de desenvolvimento.</div>}
+      </div>
+    </div>
+  </section>;
+}
+
+function RadarLifeTimeline({ player, state }) {
+  const timeline = React.useMemo(() => buildFollowedPlayerTimeline(player, state), [player, state]);
+  if (!timeline.length) return null;
+  return <section style={{ marginTop:20, border:'1px solid rgba(232,200,74,.28)', padding:20, background:'linear-gradient(135deg,rgba(232,200,74,.065),rgba(255,255,255,.012))' }}>
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:12, marginBottom:14 }}>
+      <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:'#E8C84A' }}>ARQUIVO DE VIDA · {player.name.toUpperCase()}</div>
+      <div style={{ fontFamily:T.mono, fontSize:7, color:T.faint }}>{timeline.length} MARCOS</div>
+    </div>
+    <div style={{ position:'relative', display:'grid', gap:0, paddingLeft:17 }}>
+      <div style={{ position:'absolute', left:4, top:5, bottom:5, width:1, background:'rgba(232,200,74,.25)' }} />
+      {timeline.map(item => <div key={item.id} style={{ position:'relative', padding:'0 0 12px 14px' }}>
+        <span style={{ position:'absolute', left:-1, top:2, width:10, height:10, borderRadius:99, background:item.color, boxShadow:`0 0 0 3px ${item.color}22` }} />
+        <div style={{ display:'flex', gap:8, alignItems:'baseline', flexWrap:'wrap' }}>
+          <span style={{ fontFamily:T.mono, fontSize:7, color:item.color, letterSpacing:'.14em' }}>{String(item.date.month || 1).padStart(2,'0')}/{item.date.year}</span>
+          <span style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.13em' }}>{item.kind}</span>
+          <strong style={{ fontFamily:T.cond, fontSize:16, color:T.white, textTransform:'uppercase' }}>{item.icon} {item.title}</strong>
+        </div>
+        {item.text && <div style={{ marginTop:2, fontFamily:T.body, fontSize:12, color:T.dim }}>{item.text}</div>}
+        {!!item.impactTags?.length && <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:7 }}>
+          {item.impactTags.map(impact => <span
+            key={impact.label}
+            title={impact.text}
+            style={{
+              padding:'3px 6px',
+              border:`1px solid ${impact.tone === 'good' ? 'rgba(127,219,182,.32)' : 'rgba(255,138,128,.32)'}`,
+              background:impact.tone === 'good' ? 'rgba(127,219,182,.08)' : 'rgba(255,138,128,.08)',
+              color:impact.tone === 'good' ? '#7FDBB6' : '#FF8A80',
+              fontFamily:T.mono,
+              fontSize:7,
+              letterSpacing:'.08em',
+            }}
+          >{impact.label}</span>)}
+        </div>}
+      </div>)}
+    </div>
+  </section>;
+}
+
+function RadarView({ state, dispatch, onOpenProfile }) {
+  const [trajectoryPlayerId, setTrajectoryPlayerId] = React.useState(null);
+  const [exportingPdf, setExportingPdf] = React.useState(false);
+  const reportRef = React.useRef(null);
+  const radar = state?.radar ?? { followedPlayerIds: [], matchLog: [], weeklyDigest: [] };
+  const followedIds = radar.followedPlayerIds ?? [];
+  const allPlayers = [...(state?.tourPlayers ?? []), ...(state?.prospects ?? [])];
+  const playerById = new Map(allPlayers.map(player => [player.id, player]));
+  const followed = followedIds.map(id => playerById.get(id)).filter(Boolean);
+  const trajectoryPlayer = followed.find(player => player.id === trajectoryPlayerId) ?? followed[0] ?? null;
+  const suggestions = [...allPlayers]
+    .filter(player => !followedIds.includes(player.id))
+    .sort((a, b) => (a.rankPosition ?? 9999) - (b.rankPosition ?? 9999))
+    .slice(0, 16);
+  const setFollowed = (ids) => dispatch?.({ type:'SET_RADAR_FOLLOWED', playerIds:ids });
+  const latestDigest = [...(radar.weeklyDigest ?? [])].reverse()
+    .find((digest) => digest.entries?.some((entry) => entry.matches > 0 || entry.outcome))
+    ?? radar.weeklyDigest?.at(-1)
+    ?? null;
+  const allRecentMatches = [...(radar.matchLog ?? [])].slice(-40).reverse();
+  const allRecentAlerts = [...(radar.alerts ?? [])].slice(-40).reverse();
+  const recentYearbook = radar.seasonRecaps?.at(-1) ?? null;
+  const recentMatches = trajectoryPlayer
+    ? allRecentMatches.filter(match => match.playerAId === trajectoryPlayer.id || match.playerBId === trajectoryPlayer.id).slice(0, 10)
+    : [];
+  const recentAlerts = trajectoryPlayer
+    ? allRecentAlerts.filter(alert => alert.playerIds?.includes(trajectoryPlayer.id)).slice(0, 8)
+    : [];
+  const selectedDigestEntry = trajectoryPlayer
+    ? latestDigest?.entries?.find(entry => entry.playerId === trajectoryPlayer.id) ?? null
+    : null;
+  const exportFollowedPdf = async () => {
+    if (!trajectoryPlayer || !reportRef.current || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')]);
+      const canvas = await html2canvas(reportRef.current, { scale: 1.7, backgroundColor:'#07100f', useCORS:true, logging:false, windowWidth:reportRef.current.scrollWidth });
+      const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4', compress:true });
+      const margin = 10;
+      const pageWidth = 210 - margin * 2;
+      const imageHeight = canvas.height * pageWidth / canvas.width;
+      const pageHeight = 297 - margin * 2;
+      let offset = 0;
+      pdf.setFillColor(7, 16, 15);
+      pdf.rect(0, 0, 210, 297, 'F');
+      while (offset < imageHeight) {
+        if (offset > 0) { pdf.addPage(); pdf.setFillColor(7, 16, 15); pdf.rect(0, 0, 210, 297, 'F'); }
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin - offset, pageWidth, imageHeight, undefined, 'FAST');
+        offset += pageHeight;
+      }
+      const safeName = trajectoryPlayer.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase();
+      pdf.save(`radar-${safeName}-${state?.worldDate?.year ?? state?.year ?? 'save'}.pdf`);
+    } catch (error) {
+      console.error('[Radar] falha ao exportar PDF:', error);
+      window.alert('Não foi possível gerar o PDF deste dossiê. Tente novamente.');
+    } finally { setExportingPdf(false); }
+  };
+
+  return <div style={{ maxWidth:1180, margin:'0 auto', padding:'clamp(26px,4vw,56px)', animation:'bu-in .35s ease' }}>
+    <div style={{ display:'flex', justifyContent:'space-between', gap:18, alignItems:'end', flexWrap:'wrap', marginBottom:28 }}>
+      <div>
+        <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.32em', color:T.gold, marginBottom:10 }}>COBERTURA DIRIGIDA · {followed.length}/4</div>
+        <h1 style={{ fontFamily:T.disp, fontSize:'clamp(52px,8vw,96px)', lineHeight:.82, letterSpacing:'.03em', margin:0, color:T.white }}>RADAR<br/><span style={{ color:T.gold }}>DO CIRCUITO</span></h1>
+      </div>
+      <div style={{ maxWidth:370, fontFamily:T.body, fontSize:14, lineHeight:1.65, color:T.dim }}>Os jogos de cada acompanhado são resolvidos pelo Headless completo, mesmo quando o restante do torneio usa simulação rápida.</div>
+    </div>
+
+    {followed.length > 0 && <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', margin:'-10px 0 20px', padding:'10px 12px', border:'1px solid rgba(255,255,255,.08)', background:'rgba(255,255,255,.018)' }}>
+      <span style={{ fontFamily:T.mono, fontSize:7, color:T.faint, letterSpacing:'.18em' }}>FILTRO DE ALERTAS</span>
+      <button onClick={() => dispatch?.({ type:'SET_RADAR_SETTINGS', settings:{ showMatchAlerts: !(radar.settings?.showMatchAlerts !== false) } })} style={{ border:'1px solid rgba(232,200,74,.35)', background:radar.settings?.showMatchAlerts !== false ? 'rgba(232,200,74,.12)' : 'transparent', color:T.white, cursor:'pointer', padding:'6px 9px', fontFamily:T.mono, fontSize:7 }}>PARTIDAS {radar.settings?.showMatchAlerts !== false ? 'ON' : 'OFF'}</button>
+      <button onClick={() => dispatch?.({ type:'SET_RADAR_SETTINGS', settings:{ showMajorOnly: !(radar.settings?.showMajorOnly ?? true) } })} style={{ border:'1px solid rgba(125,216,255,.35)', background:radar.settings?.showMajorOnly ?? true ? 'rgba(125,216,255,.12)' : 'transparent', color:T.white, cursor:'pointer', padding:'6px 9px', fontFamily:T.mono, fontSize:7 }}>SÓ GRANDES {radar.settings?.showMajorOnly ?? true ? 'ON' : 'OFF'}</button>
+    </div>}
+
+    {followed.length === 0 ? <div style={{ border:'1px solid rgba(232,200,74,.38)', padding:28, background:'linear-gradient(135deg,rgba(232,200,74,.10),rgba(255,255,255,.02))', marginBottom:18 }}>
+      <div style={{ fontFamily:T.disp, fontSize:34, color:T.white }}>OBSERVE O CIRCUITO COMO SEMPRE — OU ESCOLHA UMA HISTÓRIA</div>
+      <div style={{ marginTop:9, fontFamily:T.body, fontSize:14, color:T.dim, lineHeight:1.65 }}>Com zero nomes, nada muda no Universo. Ao acompanhar alguém, o Radar passa a guardar jogos, momentos e resumos desse jogador.</div>
+    </div> : <>
+      <section style={{ display:'flex', gap:8, overflowX:'auto', padding:'0 0 12px', marginBottom:8, borderBottom:'1px solid rgba(255,255,255,.10)' }}>
+        {followed.map(player => {
+          const active = player.id === trajectoryPlayer?.id;
+          return <div key={player.id} style={{ display:'flex', flexShrink:0, border:`1px solid ${active ? '#E8C84A88' : 'rgba(255,255,255,.12)'}`, background:active ? 'rgba(232,200,74,.11)' : 'rgba(255,255,255,.018)' }}>
+            <button onClick={() => setTrajectoryPlayerId(player.id)} style={{ display:'flex', alignItems:'center', gap:9, border:'none', background:'transparent', color:active ? T.white : T.dim, cursor:'pointer', padding:'9px 10px', textAlign:'left' }}>
+              <PlayerAvatar player={player} size={28} />
+              <span><span style={{ display:'block', fontFamily:T.mono, fontSize:7, color:active ? T.gold : T.faint, letterSpacing:'.14em' }}>#{player.rankPosition ?? '—'} · RADAR</span><span style={{ display:'block', fontFamily:T.cond, fontSize:16, fontWeight:800, marginTop:2, maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{player.name}</span></span>
+            </button>
+            <button onClick={() => setFollowed(followedIds.filter(id => id !== player.id))} title={`Parar de acompanhar ${player.name}`} style={{ border:'none', borderLeft:'1px solid rgba(255,255,255,.08)', background:'transparent', color:T.faint, cursor:'pointer', padding:'0 9px', fontSize:16 }}>×</button>
+          </div>;
+        })}
+      </section>
+      {trajectoryPlayer && <div style={{ display:'flex', justifyContent:'space-between', gap:14, alignItems:'end', flexWrap:'wrap', margin:'16px 0 18px' }}>
+        <div><div style={{ fontFamily:T.mono, fontSize:8, color:T.gold, letterSpacing:'.22em' }}>DOSSIÊ INDIVIDUAL</div><div style={{ fontFamily:T.disp, fontSize:42, color:T.white, lineHeight:.9, marginTop:6 }}>{trajectoryPlayer.name}</div></div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button onClick={exportFollowedPdf} disabled={exportingPdf} style={{ border:'1px solid rgba(125,216,255,.46)', background:'rgba(125,216,255,.10)', color:T.white, cursor:exportingPdf?'wait':'pointer', padding:'9px 12px', fontFamily:T.mono, fontSize:8, letterSpacing:'.12em' }}>{exportingPdf ? 'GERANDO PDF...' : 'EXPORTAR PDF'}</button>
+          <button onClick={() => onOpenProfile?.(trajectoryPlayer)} style={{ border:'1px solid rgba(232,200,74,.42)', background:'rgba(232,200,74,.08)', color:T.white, cursor:'pointer', padding:'9px 12px', fontFamily:T.mono, fontSize:8, letterSpacing:'.12em' }}>ABRIR PERFIL</button>
+        </div>
+      </div>}
+      <div ref={reportRef} style={{ background:'#07100f', padding:'1px 0' }}>
+      {selectedDigestEntry && <section style={{ border:'1px solid rgba(125,216,255,.28)', padding:20, background:'rgba(125,216,255,.045)', marginBottom:20 }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:'#7DD8FF' }}>ÚLTIMO EPISÓDIO · {latestDigest.tournamentName?.toUpperCase()}</div>
+        <div style={{ borderLeft:`2px solid ${selectedDigestEntry.outcome?.round === 'W' || selectedDigestEntry.won ? '#57D38C' : '#D4561E'}`, padding:'2px 0 2px 11px', fontFamily:T.body, fontSize:13, color:T.dim, marginTop:14 }}>
+          <strong style={{ color:T.white, fontFamily:T.cond, fontSize:21 }}>{selectedDigestEntry.playerName}</strong>
+          <div style={{ marginTop:3, fontFamily:T.mono, fontSize:8, color:selectedDigestEntry.outcome?.round === 'W' ? '#57D38C' : '#7DD8FF', letterSpacing:'.12em' }}>{selectedDigestEntry.outcomeLabel?.toUpperCase()} · #{selectedDigestEntry.rank ?? '—'} {selectedDigestEntry.outcome ? `· +${selectedDigestEntry.outcome.points} PTS` : ''}</div>
+          {selectedDigestEntry.campaign?.length > 0 ? <div style={{ marginTop:9, display:'grid', gap:4 }}>{selectedDigestEntry.campaign.map(match => { const won = match.winnerId === selectedDigestEntry.playerId; return <div key={match.id} style={{ display:'grid', gridTemplateColumns:'auto 1fr auto', gap:7, alignItems:'center', fontFamily:T.mono, fontSize:8, color:T.faint }}><span style={{ color:won ? '#57D38C' : '#FF8A80' }}>{won ? 'V' : 'D'}</span><span>{roundLabelCopy(match.roundLabel).toUpperCase()} · {won ? 'AVANÇOU' : 'ELIMINADO'}</span><span style={{ color:T.gold }}>{match.score ?? '—'}</span></div>; })}</div> : <div style={{ marginTop:7, fontSize:12 }}>não entrou nesta chave</div>}
+        </div>
+      </section>}
+      {trajectoryPlayer && <>
+        <RadarTrajectory player={trajectoryPlayer} timeline={radar.rankTimeline?.[trajectoryPlayer.id] ?? []} />
+        <RadarDevelopmentPanel player={trajectoryPlayer} year={state?.year} />
+        <RadarLifeTimeline player={trajectoryPlayer} state={state} />
+      </>}
+      <section style={{ border:'1px solid rgba(255,255,255,.10)', padding:20, background:'rgba(255,255,255,.018)' }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:T.faint, marginBottom:14 }}>ÚLTIMAS PARTIDAS COM FIDELIDADE MÁXIMA</div>
+        {recentMatches.length ? recentMatches.map(match => <div key={match.id} style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:12, padding:'11px 0', borderTop:'1px solid rgba(255,255,255,.07)' }}><div><span style={{ fontFamily:T.cond, fontSize:17, color:T.white }}>{match.headline}</span><div style={{ fontFamily:T.mono, fontSize:8, color:T.faint, letterSpacing:'.12em', marginTop:4 }}>{match.tournamentName?.toUpperCase()} · {roundLabelCopy(match.roundLabel).toUpperCase()} · HEADLESS</div></div><div style={{ fontFamily:T.mono, fontSize:9, color:T.gold, alignSelf:'center' }}>{match.score || '—'}</div></div>) : <div style={{ fontFamily:T.body, color:T.dim }}>Ainda não houve jogos dos acompanhados nesta temporada.</div>}
+      </section>
+      {recentAlerts.length > 0 && <section style={{ marginTop:20, border:'1px solid rgba(212,86,30,.28)', padding:20, background:'rgba(212,86,30,.035)' }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:'#FF9A6A', marginBottom:10 }}>SINAIS QUE O RADAR MARCOU</div>
+        {recentAlerts.map(alert => <div key={alert.id} style={{ padding:'9px 0', borderTop:'1px solid rgba(255,255,255,.07)', fontFamily:T.cond, color:T.white, fontSize:17 }}><span style={{ color:'#FF9A6A', fontFamily:T.mono, fontSize:8, marginRight:8 }}>{alert.type.replaceAll('_',' ')}</span>{alert.headline}<span style={{ color:T.faint, fontFamily:T.mono, fontSize:7, marginLeft:8 }}>{alert.tournamentName}</span></div>)}
+      </section>}
+      {recentYearbook && <section style={{ marginTop:20, border:'1px solid rgba(196,107,255,.35)', padding:20, background:'rgba(196,107,255,.045)' }}>
+        <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:'#D6A8FF' }}>ARQUIVO DO RADAR · {recentYearbook.year}</div>
+        <div style={{ fontFamily:T.disp, color:T.white, fontSize:32, marginTop:8 }}>{recentYearbook.headline}</div>
+        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:14 }}>{recentYearbook.stories?.map(story => <div key={story.playerId} style={{ borderLeft:'2px solid #D6A8FF', paddingLeft:10, color:T.dim, fontFamily:T.body, fontSize:13 }}><strong style={{ color:T.white }}>{story.playerName}</strong> · {story.wins}/{story.matches} vitórias no Radar</div>)}</div>
+      </section>}
+      </div>
+    </>}
+
+    {followed.length < 4 && <section style={{ marginTop:20, border:'1px solid rgba(255,255,255,.10)', padding:20 }}>
+      <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.24em', color:T.faint, marginBottom:12 }}>ADICIONAR AO RADAR</div>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>{suggestions.map(player => <button key={player.id} onClick={() => setFollowed([...followedIds, player.id])} style={{ border:'1px solid rgba(255,255,255,.15)', background:'rgba(255,255,255,.025)', color:T.white, cursor:'pointer', padding:'9px 11px', fontFamily:T.cond, fontSize:15 }}>{player.name} <span style={{ color:T.gold, fontFamily:T.mono, fontSize:8 }}>#{player.rankPosition ?? '—'}</span></button>)}</div>
+    </section>}
+  </div>;
+}
+
+export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate, onFastSimulateRange, onViewBracket, simulating = false, simProgress = 0, simMode = 'headless', onSaveGame, onLoadGame, onRestoreAutosave, stopOnBreaking = false, onToggleStopOnBreaking = null }) {
   const [currentTab, setCurrentTab] = useState('geral');
+  const [navArea, setNavArea] = useState('agora');
+  const [accessibilityOpen, setAccessibilityOpen] = useState(false);
+  const [comfortMode, setComfortMode] = useState(() => ({ highContrast:false, reducedMotion:false, spacious:false }));
   const [fastMenuOpen, setFastMenuOpen] = useState(false);
   const [simMenuOpen,  setSimMenuOpen]  = useState(false);
   const [dismissedBreakingId, setDismissedBreakingId] = useState(null);
+  const [profilePlayer, setProfilePlayer] = useState(null);
+  const followedCount = state?.radar?.followedPlayerIds?.length ?? 0;
 
   useEffect(() => { injectStyles(); }, []);
 
@@ -5195,24 +5939,24 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
     return () => document.removeEventListener('click', close);
   }, [fastMenuOpen, simMenuOpen]);
 
-  const tabs = [
-    { id:'geral',        label:'GERAL',        icon:'0', active:true  },
-    { id:'calendario',   label:'CALENDÁRIO',   icon:'', active:true  },
-    { id:'rankings',     label:'RANKINGS',     icon:'', active:true  },
-    { id:'rtd',          label:'RTD',          icon:'RTD', active:true  },
-    { id:'imprensa',     label:'IMPRENSA',     icon:'', active:true  },
-    { id:'analistas',    label:'ANALISTAS',    icon:'🎙️', active:true  },
-    { id:'entrevistas',  label:'ENTREVISTAS',  icon:'🎤', active:true  },
-    { id:'recordes',     label:'RECORDES',     icon:'&', active:true  },
-    { id:'analytics',    label:'ANALYTICS',    icon:' ', active:true  },
-    { id:'hall-of-fame', label:'HALL OF FAME', icon:'":', active:true  },
-    { id:'chronicles',   label:'CRNICAS',     icon:'0', active:true  },
-    { id:'tecnicos',     label:'T0CNICOS',     icon:'x}', active:true  },
-    { id:'lesoes',        label:'LES"ES',        icon:'x', active:true  },
+  const navAreas = [
+    { id:'agora', label:'AGORA', tabs:[['geral','Central'], ['imprensa','Cobertura'], ...(followedCount ? [['radar', `Radar ${followedCount}/4`]] : [])] },
+    { id:'circuito', label:'CIRCUITO', tabs:[['calendario','Calendário'], ['rankings','Rankings'], ['analytics','Performance']] },
+    { id:'pessoas', label:'PESSOAS', tabs:[['tecnicos','Técnicos'], ['rtd','Evolução'], ['lesoes','Enfermaria']] },
+    { id:'mercado', label:'MERCADO', tabs:[['empresas','Empresas']] },
+    { id:'arquivo', label:'ARQUIVO', tabs:[['arquivo-vivo','Arquivo Vivo'], ['recordes','Recordes'], ['chronicles','Crônicas'], ['eras','Livro das Eras'], ['hall-of-fame','Hall da Fama']] },
   ];
+  const utilityTabs = [['analistas','Análises'], ['entrevistas','Entrevistas']];
+  const visibleTabs = [...(navAreas.find(area => area.id === navArea)?.tabs ?? []), ...utilityTabs];
+  const openTab = (tabId) => {
+    const containingArea = navAreas.find(area => area.tabs.some(([id]) => id === tabId));
+    if (containingArea) setNavArea(containingArea.id);
+    setCurrentTab(tabId);
+  };
 
   const nextT = CALENDAR[state?.calendarIndex];
   const latestBreakingArticle = (state?.newsEngine?.feed ?? []).find(article => article?.type === 'BREAKING') ?? null;
+  const latestCircuitShift = state?.latestCircuitShift ?? null;
   const showBreakingOverlay = latestBreakingArticle && latestBreakingArticle.id !== dismissedBreakingId;
   const totalDone = state ? Object.keys(state.tournamentResults).length : 0;
   const totalTournaments = CALENDAR.length;
@@ -5224,7 +5968,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
   const accentColor = simulating ? T.grassLight : nextSurf.main;
 
   return (
-    <div className="bu-screen">
+    <div className={`bu-screen ${comfortMode.reducedMotion ? 'bu-reduce-motion' : ''}`} style={{ filter:comfortMode.highContrast ? 'contrast(1.16)' : undefined, letterSpacing:comfortMode.spacious ? '.015em' : undefined }}>
       {showBreakingOverlay && (
         <BreakingNewsOverlay
           article={latestBreakingArticle}
@@ -5236,10 +5980,10 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
         />
       )}
 
-      {/*  ANIMATED BACKGROUND LAYERS  */}
+      {/* — ANIMATED BACKGROUND LAYERS — */}
       {/* Slow-moving ambient orbs */}
       <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, overflow:'hidden' }}>
-        {/* Primary orb  surface color */}
+        {/* Primary orb — surface color */}
         <div style={{
           position:'absolute', top:'-15%', right:'-8%',
           width:700, height:700, borderRadius:'50%',
@@ -5248,7 +5992,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
           animation:'bu-orb-drift 18s ease-in-out infinite',
           transition:'background 2s ease',
         }} />
-        {/* Secondary orb  gold */}
+        {/* Secondary orb — gold */}
         <div style={{
           position:'absolute', bottom:'-20%', left:'-5%',
           width:600, height:600, borderRadius:'50%',
@@ -5276,7 +6020,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
         <div style={{ width:'100%', height:1, background:`linear-gradient(90deg,transparent,${accentColor}22,transparent)`, animation:'bu-scan 14s linear infinite', opacity:.5, transition:'background 2s ease' }} />
       </div>
 
-      {/*  TOP BAR  BROADCAST STATION  */}
+      {/* — TOP BAR — BROADCAST STATION — */}
       <div style={{
         position:'sticky', top:0, zIndex:100,
         background:'rgba(3,5,7,.94)', backdropFilter:'blur(20px)',
@@ -5284,7 +6028,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
         height:56,
         display:'flex', alignItems:'stretch',
       }}>
-        {/* Station ID  left edge */}
+        {/* Station ID — left edge */}
         <div style={{
           display:'flex', alignItems:'center', gap:14, padding:'0 22px',
           borderRight:'1px solid rgba(255,255,255,.06)',
@@ -5302,7 +6046,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
           </div>
         </div>
 
-        {/* Center  sim status or progress */}
+        {/* Center — sim status or progress */}
         <div style={{ flex:1, display:'flex', alignItems:'center', padding:'0 22px', minWidth:0 }}>
           {simulating ? (
             <div style={{ display:'flex', alignItems:'center', gap:12, width:'100%' }}>
@@ -5310,22 +6054,23 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontFamily:T.mono, fontSize:8, color:T.grassLight, letterSpacing:'.22em', animation:'bu-blink 1.2s ease-in-out infinite', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                   {simMode === 'fast'
-                    ? `a FASTSIM  ${simProgress} TORNEIO${simProgress !== 1 ? 'S' : ''} PROCESSADO${simProgress !== 1 ? 'S' : ''}`
-                    : ` SIMULANDO  ${nextT?.name?.toUpperCase()} · ${simProgress} PARTIDAS`
+                    ? `⚡ FASTSIM — ${simProgress} TORNEIO${simProgress !== 1 ? 'S' : ''} PROCESSADO${simProgress !== 1 ? 'S' : ''}`
+                    : `▶ SIMULANDO — ${nextT?.name?.toUpperCase()} · ${simProgress} PARTIDAS`
                   }
                 </div>
                 <div style={{ marginTop:4, height:2, background:'rgba(255,255,255,.06)', overflow:'hidden' }}>
                   <div className="bu-sim-bar-fill" style={{ height:'100%', width:'60%', background:`linear-gradient(90deg,${T.grassLight},${T.grassLight}88)` }} />
                 </div>
               </div>
-              {onToggleStopOnBreaking && (
+           {onToggleStopOnBreaking && (
                 <button
                   onClick={() => onToggleStopOnBreaking(!stopOnBreaking)}
                   style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:'.18em', textTransform:'uppercase', color:stopOnBreaking ? '#FF8A80' : T.faint, background:stopOnBreaking ? 'rgba(255,82,82,.12)' : 'rgba(255,255,255,.03)', border:`1px solid ${stopOnBreaking ? 'rgba(255,82,82,.38)' : 'rgba(255,255,255,.08)'}`, padding:'8px 10px', cursor:'pointer', whiteSpace:'nowrap' }}
                 >
                   {stopOnBreaking ? 'pausar em breaking: on' : 'pausar em breaking: off'}
-                </button>
-              )}
+            </button>
+           )}
+           <button onClick={() => setAccessibilityOpen(v => !v)} aria-label="Opções de leitura" style={{ fontFamily:T.mono, fontSize:9, color:T.white, background:accessibilityOpen ? 'rgba(232,200,74,.16)' : 'rgba(255,255,255,.04)', border:`1px solid ${accessibilityOpen ? T.gold : 'rgba(255,255,255,.12)'}`, padding:'8px 9px', cursor:'pointer' }}>A+</button>
             </div>
           ) : (
             <div style={{ display:'flex', alignItems:'center', gap:16, width:'100%' }}>
@@ -5354,17 +6099,17 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
               </div>
               {nextT && !isSeasonDone && (
                 <div style={{ fontFamily:T.mono, fontSize:7.5, color:'rgba(242,237,228,.3)', letterSpacing:'.18em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:220 }}>
-                  PRXIMO: <span style={{ color:nextSurf.light }}>{nextT.name}</span>
+                  PRÓXIMO: <span style={{ color:nextSurf.light }}>{nextT.name}</span>
                 </div>
               )}
               {isSeasonDone && (
-                <div style={{ fontFamily:T.mono, fontSize:8, color:T.grassLight, letterSpacing:'.2em' }}>S TEMPORADA CONCLUÍDA</div>
+                <div style={{ fontFamily:T.mono, fontSize:8, color:T.grassLight, letterSpacing:'.2em' }}>✓ TEMPORADA CONCLUÍDA</div>
               )}
             </div>
           )}
         </div>
 
-        {/* Right  clock + controls */}
+        {/* Right — clock + controls */}
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 16px', borderLeft:'1px solid rgba(255,255,255,.06)', flexShrink:0 }}>
           {/* Live clock */}
           <div style={{ padding:'0 14px 0 0', borderRight:'1px solid rgba(255,255,255,.05)', marginRight:6 }}>
@@ -5383,7 +6128,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
             </button>
           )}
 
-          {/*  SIMULAR dropdown  */}
+          {/* — SIMULAR dropdown — */}
           {!isSeasonDone && onSimulate && (
             <div style={{ position:'relative' }} onClick={e => e.stopPropagation()}>
               <button
@@ -5391,23 +6136,23 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
                 onClick={() => !simulating && setSimMenuOpen(v => !v)}
                 disabled={simulating}
               >
-                <span style={{ fontSize:10 }}></span>
+                <span style={{ fontSize:10 }}>▶</span>
                 <span>SIMULAR</span>
-                <span style={{ fontSize:7, opacity:.6 }}>{simMenuOpen ? '' : ''}</span>
+                <span style={{ fontSize:7, opacity:.6 }}>{simMenuOpen ? '▴' : '▾'}</span>
               </button>
               {simMenuOpen && (
                 <div className="bu-fast-menu">
                   <div style={{ padding:'10px 16px 8px', borderBottom:'1px solid rgba(255,255,255,.06)', fontFamily:T.mono, fontSize:7, letterSpacing:'.4em', color:`${T.clay}66`, textTransform:'uppercase' }}>
-                     MODO SIMULA!ÒO
+                    ◈ MODO SIMULAÇÃO
                   </div>
                   {[
-                    { mode:'sim_month',    icon:'x&', label:'Simular Mês',          sub:`Todos os torneios de ${CALENDAR[state?.calendarIndex]?.month ?? 'Jan'}` },
+                    { mode:'sim_month',    icon:'▦', label:'Simular Mês',             sub:`Todos os torneios de ${CALENDAR[state?.calendarIndex]?.month ?? 'Jan'}` },
                     { mode:'sim_grandslam',icon:'⭐', label:'Até Grand Slam / Finals', sub:'Para antes do próximo GS ou Finals' },
-                    { mode:'sim_year',     icon:'x️', label:'Ano Inteiro',           sub:'Todos os torneios restantes' },
-                    { mode:'sim_5years',   icon:'⏩', label:'Simular 5 Anos',        sub:`${state?.year}${(state?.year??2025)+4} · avança temporadas` },
-                    { mode:'sim_decade',   icon:'⏩', label:'Simular 10 Anos',       sub:`${state?.year}${(state?.year??2025)+9} · avança temporadas` },
-                    { mode:'sim_15years',  icon:'⏩', label:'Simular 15 Anos',       sub:`${state?.year}${(state?.year??2025)+14} · avança temporadas` },
-                    { mode:'sim_20years',  icon:'⏩', label:'Simular 20 Anos',       sub:`${state?.year}${(state?.year??2025)+19} · avança temporadas` },
+                    { mode:'sim_year',     icon:'🗓️', label:'Ano Inteiro',            sub:'Todos os torneios restantes' },
+                    { mode:'sim_5years',   icon:'⏩', label:'Simular 5 Anos',          sub:`${state?.year}→${(state?.year??2025)+4} · avança temporadas` },
+                    { mode:'sim_decade',   icon:'⏩', label:'Simular 10 Anos',         sub:`${state?.year}→${(state?.year??2025)+9} · avança temporadas` },
+                    { mode:'sim_15years',  icon:'⏩', label:'Simular 15 Anos',         sub:`${state?.year}→${(state?.year??2025)+14} · avança temporadas` },
+                    { mode:'sim_20years',  icon:'⏩', label:'Simular 20 Anos',         sub:`${state?.year}→${(state?.year??2025)+19} · avança temporadas` },
                   ].map(opt => (
                     <div key={opt.mode} className="bu-fast-opt" onClick={() => { setSimMenuOpen(false); onSimulate(opt.mode); }}>
                       <span className="bu-fast-opt-icon">{opt.icon}</span>
@@ -5422,7 +6167,7 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
             </div>
           )}
 
-          {/*  RÁPIDO dropdown  */}
+          {/* — RÁPIDO dropdown — */}
           {!isSeasonDone && onFastSimulateRange && (
             <div style={{ position:'relative' }} onClick={e => e.stopPropagation()}>
               <button
@@ -5430,23 +6175,23 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
                 onClick={() => !simulating && setFastMenuOpen(v => !v)}
                 disabled={simulating}
               >
-                <span>aa</span>
+                <span>⚡</span>
                 <span>RÁPIDO</span>
-                <span style={{ fontSize:7, opacity:.6 }}>{fastMenuOpen ? '' : ''}</span>
+                <span style={{ fontSize:7, opacity:.6 }}>{fastMenuOpen ? '▴' : '▾'}</span>
               </button>
               {fastMenuOpen && (
                 <div className="bu-fast-menu">
                   <div style={{ padding:'10px 16px 8px', borderBottom:'1px solid rgba(255,255,255,.06)', fontFamily:T.mono, fontSize:7, letterSpacing:'.4em', color:'rgba(232,200,74,.4)', textTransform:'uppercase' }}>
-                    a FASTSIM
+                    ⚡ FASTSIM
                   </div>
                   {[
-                    { mode:'month',    icon:'x&', label:'Simular Mês',   sub:`Torneios de ${CALENDAR[state?.calendarIndex]?.month ?? 'Jan'}` },
-                    { mode:'champions',icon:'x', label:'Até o Champions', sub:'Até ATP Finals de Dezembro' },
-                    { mode:'year',     icon:'x️', label:'Ano Inteiro',    sub:'Todos os restantes da temporada' },
-                    { mode:'5years',   icon:'⏩', label:'5 Anos',         sub:`${state?.year}${(state?.year??2025)+4}` },
-                    { mode:'decade',   icon:'⏩', label:'10 Anos',         sub:`${state?.year}${(state?.year??2025)+9}` },
-                    { mode:'15years',  icon:'⏩', label:'15 Anos',         sub:`${state?.year}${(state?.year??2025)+14}` },
-                    { mode:'20years',  icon:'⏩', label:'20 Anos',         sub:`${state?.year}${(state?.year??2025)+19}` },
+                    { mode:'month',    icon:'▦', label:'Simular Mês',      sub:`Torneios de ${CALENDAR[state?.calendarIndex]?.month ?? 'Jan'}` },
+                    { mode:'champions',icon:'★', label:'Até o Champions', sub:'Até ATP Finals de Dezembro' },
+                    { mode:'year',     icon:'🗓️', label:'Ano Inteiro',    sub:'Todos os restantes da temporada' },
+                    { mode:'5years',   icon:'⏩', label:'5 Anos',           sub:`${state?.year}→${(state?.year??2025)+4}` },
+                    { mode:'decade',   icon:'⏩', label:'10 Anos',          sub:`${state?.year}→${(state?.year??2025)+9}` },
+                    { mode:'15years',  icon:'⏩', label:'15 Anos',          sub:`${state?.year}→${(state?.year??2025)+14}` },
+                    { mode:'20years',  icon:'⏩', label:'20 Anos',          sub:`${state?.year}→${(state?.year??2025)+19}` },
                   ].map(opt => (
                     <div key={opt.mode} className="bu-fast-opt" onClick={() => { setFastMenuOpen(false); onFastSimulateRange(opt.mode); }}>
                       <span className="bu-fast-opt-icon">{opt.icon}</span>
@@ -5461,10 +6206,10 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
             </div>
           )}
 
-          {/*  Avançar ano  */}
+          {/* — Avançar ano — */}
           {isSeasonDone && dispatch && (
             <button className="bu-cta bu-cta-advance" onClick={() => dispatch({ type:'ADVANCE_YEAR' })}>
-              <span></span>
+              <span>→</span>
               <span>ANO {(state?.year ?? 2025) + 1}</span>
             </button>
           )}
@@ -5473,13 +6218,15 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
           <div style={{ width:1, height:24, background:'rgba(255,255,255,.06)', margin:'0 2px' }} />
 
           {onSaveGame && <button className="bu-cta bu-cta-save" onClick={onSaveGame} disabled={simulating}><span>💾</span><span>SALVAR</span></button>}
-          {onLoadGame && <button className="bu-cta bu-cta-load" onClick={onLoadGame} disabled={simulating}><span>x</span></button>}
+          {onRestoreAutosave && <button className="bu-cta" onClick={onRestoreAutosave} disabled={simulating} title="Recuperar o backup automatico mais recente"><span>↶</span><span>RECUPERAR</span></button>}
+          <button className="bu-cta" onClick={() => { setNavArea('agora'); setCurrentTab('radar'); }} disabled={simulating} title="Configurar jogadores acompanhados"><span>◉</span><span>RADAR {followedCount}/4</span></button>
+          {onLoadGame && <button className="bu-cta bu-cta-load" onClick={onLoadGame} disabled={simulating}><span>📂</span><span>CARREGAR</span></button>}
 
           <button className="bu-cta bu-cta-back" onClick={onBack}>  VOLTAR</button>
         </div>
       </div>
 
-      {/*  NAVIGATION  CHANNEL SELECTOR  */}
+      {/* — NAVIGATION — CHANNEL SELECTOR — */}
       <div style={{
         position:'sticky', top:56, zIndex:99,
         background:'rgba(3,5,7,.90)', backdropFilter:'blur(14px)',
@@ -5487,22 +6234,47 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
         display:'flex', overflowX:'auto', padding:'0 10px',
         gap:2,
       }} className="bu-scroll">
-        {tabs.map((tab, i) => (
+        {navAreas.map(area => (
           <button
-            key={tab.id}
-            className={`bu-tab ${currentTab === tab.id ? 'active' : ''} ${!tab.active ? 'locked' : ''}`}
-            onClick={() => tab.active && setCurrentTab(tab.id)}
-            style={{ animationDelay:`${i*.04}s` }}
+            key={area.id}
+            onClick={() => { setNavArea(area.id); openTab(area.tabs[0][0]); }}
+            style={{ border:'none', borderBottom:navArea === area.id ? `2px solid ${T.gold}` : '2px solid transparent', background:navArea === area.id ? 'rgba(232,200,74,.08)' : 'transparent', color:navArea === area.id ? T.gold : 'rgba(242,237,228,.52)', cursor:'pointer', fontFamily:T.mono, fontSize:8, letterSpacing:'.18em', padding:'15px 13px 12px', whiteSpace:'nowrap' }}
+          >{area.label}</button>
+        ))}
+        <span style={{ width:1, background:'rgba(255,255,255,.08)', margin:'9px 5px' }} />
+        {visibleTabs.map(([id, label]) => (
+          <button
+            key={id}
+            className={`bu-tab ${currentTab === id ? 'active' : ''}`}
+            onClick={() => openTab(id)}
           >
             <span className="bu-tab-dot" />
-            {tab.label}
+            {label}
           </button>
         ))}
         {/* Right fade */}
         <div style={{ flexShrink:0, width:40, background:'linear-gradient(90deg,transparent,rgba(3,5,7,.9))', pointerEvents:'none', position:'sticky', right:0 }} />
       </div>
 
-      {/*  BOTTOM ACCENT LINE  */}
+      {accessibilityOpen && (
+        <div style={{ position:'fixed', zIndex:120, top:64, right:16, width:260, padding:15, background:'rgba(5,9,12,.98)', border:`1px solid ${T.gold}66`, boxShadow:'0 18px 42px rgba(0,0,0,.45)' }}>
+          <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:'.2em', color:T.gold, marginBottom:10 }}>LEITURA & CONFORTO</div>
+          {[['highContrast','Contraste reforçado'],['spacious','Mais respiro no texto'],['reducedMotion','Reduzir movimento']].map(([key,label]) => <label key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, padding:'9px 0', borderTop:'1px solid rgba(255,255,255,.07)', fontFamily:T.body, fontSize:12, color:T.white, cursor:'pointer' }}><span>{label}</span><input type="checkbox" checked={comfortMode[key]} onChange={() => setComfortMode(prev => ({ ...prev, [key]:!prev[key] }))} /></label>)}
+        </div>
+      )}
+
+      {latestCircuitShift && (
+        <button
+          onClick={() => openTab('imprensa')}
+          style={{ width:'100%', position:'relative', zIndex:3, display:'grid', gridTemplateColumns:'auto minmax(0,1fr) auto', gap:14, alignItems:'center', textAlign:'left', padding:'11px 24px', border:'none', borderBottom:'1px solid rgba(102,199,255,.22)', background:'linear-gradient(90deg,rgba(102,199,255,.14),rgba(232,200,74,.07),transparent)', color:T.white, cursor:'pointer' }}
+        >
+          <span style={{ fontFamily:T.mono, fontSize:8, color:'#7DD8FF', letterSpacing:'.24em', whiteSpace:'nowrap' }}>ECOS DA ÚLTIMA SEMANA</span>
+          <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:T.cond, fontWeight:700, fontSize:16, letterSpacing:'.05em', textTransform:'uppercase' }}>{latestCircuitShift.headline}</span>
+          <span style={{ fontFamily:T.mono, fontSize:7.5, color:'rgba(242,237,228,.5)', letterSpacing:'.16em', whiteSpace:'nowrap' }}>ABRIR COBERTURA →</span>
+        </button>
+      )}
+
+      {/* — BOTTOM ACCENT LINE — */}
       <div style={{
         position:'fixed', bottom:0, left:0, right:0, height:2, zIndex:100,
         background:`linear-gradient(90deg,transparent,${T.clay} 20%,${T.gold} 50%,${T.grassLight} 80%,transparent)`,
@@ -5511,22 +6283,48 @@ export default function BroadcastUniverse({ state, dispatch, onBack, onSimulate,
         transition:'background 2s ease',
       }} />
 
-      {/*  CONTENT  */}
+      {/* — CONTENT — */}
       <div className="bu-scroll" style={{ width:'100%', padding:'0 0 80px', minHeight:'calc(100vh - 100px)', position:'relative', zIndex:1 }}>
-        {currentTab === 'geral'        && state && <GeralView state={state} onViewBracket={onViewBracket} onSimulate={onSimulate} onFastSimulate={onFastSimulateRange} simulating={simulating} simProgress={simProgress} onOpenTab={setCurrentTab} />}
-        {currentTab === 'calendario'   && state && <CalendarioView state={state} />}
+        {currentTab === 'geral'        && state && <GeralView state={state} onViewBracket={onViewBracket} onSimulate={onSimulate} onFastSimulate={onFastSimulateRange} simulating={simulating} simProgress={simProgress} onOpenTab={openTab} onOpenProfile={setProfilePlayer} />}
+        {currentTab === 'calendario'   && state && <CalendarioView state={state} onViewBracket={onViewBracket} />}
         {currentTab === 'rankings'     && state && <RankingsView state={state} dispatch={dispatch} />}
+        {currentTab === 'tecnicos'     && state && <TecnicosBancoView state={state} />}
         {currentTab === 'rtd'          && state && <RTDView state={state} />}
         {currentTab === 'imprensa'     && state && <PressCenter state={state} />}
         {currentTab === 'analistas'    && state && <AnalystView state={state} />}
         {currentTab === 'entrevistas'  && state && <InterviewView state={state} />}
         {currentTab === 'recordes'     && state && <RecordesView state={state} />}
+        {currentTab === 'arquivo-vivo' && state && <ArquivoVivoView state={state} onOpen={openTab} />}
         {currentTab === 'analytics'    && state && <AnalyticsView state={state} />}
         {currentTab === 'hall-of-fame' && state && <HallOfFameView state={state} />}
         {currentTab === 'chronicles'   && state && <ChronicleView state={state} />}
-        {currentTab === 'tecnicos'     && state && <TecnicosView state={state} />}
+        {currentTab === 'eras'         && state && <ErasView state={state} onOpenProfile={setProfilePlayer} />}
         {currentTab === 'lesoes'        && state && <LesõesView state={state} />}
+        {currentTab === 'radar'         && state && <RadarView state={state} dispatch={dispatch} onOpenProfile={setProfilePlayer} />}
+        {currentTab === 'empresas'      && state && <CompaniesView state={state} onOpenPlayer={setProfilePlayer} />}
       </div>
+      {profilePlayer && (
+        <DefinitivePlayerProfile
+          playerData={profilePlayer}
+          rankingStore={state?.rankingStore}
+          allPlayers={[...(state?.tourPlayers ?? []), ...(state?.prospects ?? [])]}
+          tournamentResults={{ ...(state?.historicalTournamentResults ?? {}), ...(state?.tournamentResults ?? {}) }}
+          rivalrySystem={state?.rivalrySystem ?? null}
+          newsEngine={state?.newsEngine ?? null}
+          sponsorPool={state?.sponsorPool ?? null}
+          coachMarket={state?.coachMarket ?? null}
+          chronicleEngine={state?.chronicleEngine ?? null}
+          historyBook={state?.historyBook ?? null}
+          dispatch={dispatch}
+          year={state?.year ?? null}
+          radarFollowed={(state?.radar?.followedPlayerIds ?? []).includes(profilePlayer.id)}
+          onToggleRadar={(player) => {
+            const ids = state?.radar?.followedPlayerIds ?? [];
+            dispatch?.({ type:'SET_RADAR_FOLLOWED', playerIds: ids.includes(player.id) ? ids.filter(id => id !== player.id) : [...ids, player.id] });
+          }}
+          onBack={() => setProfilePlayer(null)}
+        />
+      )}
     </div>
   );
 }
